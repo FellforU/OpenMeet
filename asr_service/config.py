@@ -10,5 +10,5 @@ HOST = "127.0.0.1"
 PORT = 18090
 
 # Supported engines
-AVAILABLE_ENGINES = ["whisper", "qwen3", "paraformer"]
+AVAILABLE_ENGINES = ["whisper", "qwen3", "paraformer", "openai-whisper", "alibaba-asr"]
 DEFAULT_ENGINE = "whisper"
