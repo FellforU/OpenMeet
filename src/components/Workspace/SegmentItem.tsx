@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Typography } from "antd";
 import type { Segment } from "../../types";
 import { useTranscriptionStore } from "../../stores/transcriptionStore";
@@ -16,7 +17,7 @@ function formatTime(seconds: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-export function SegmentItem({ segment, onRenameSpeaker }: SegmentItemProps) {
+export const SegmentItem = memo(function SegmentItem({ segment, onRenameSpeaker }: SegmentItemProps) {
   const seekTo = useTranscriptionStore((s) => s.seekTo);
 
   return (
@@ -34,4 +35,4 @@ export function SegmentItem({ segment, onRenameSpeaker }: SegmentItemProps) {
       <Text style={{ flex: 1, lineHeight: 1.6 }}>{segment.text}</Text>
     </div>
   );
-}
+});
