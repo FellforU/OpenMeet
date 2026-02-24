@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { ConfigProvider, Layout, theme } from "antd";
+import { Sidebar } from "./components/Sidebar";
 
-const { Sider, Content } = Layout;
+const { Content } = Layout;
 
 function App() {
   const [collapsed, setCollapsed] = useState(false);
@@ -9,20 +10,10 @@ function App() {
   return (
     <ConfigProvider theme={{ algorithm: theme.defaultAlgorithm }}>
       <Layout style={{ minHeight: "100vh" }}>
-        <Sider
-          collapsible
-          collapsed={collapsed}
-          onCollapse={setCollapsed}
-          width={240}
-        >
-          <div style={{ padding: 16, color: "#fff", fontWeight: 600 }}>
-            OpenMeet
-          </div>
-        </Sider>
+        <Sidebar collapsed={collapsed} onCollapse={setCollapsed} />
         <Layout>
-          <Content style={{ padding: 24 }}>
-            <h1>Welcome to OpenMeet</h1>
-            <p>AI Meeting Transcription Tool</p>
+          <Content style={{ padding: 24, background: "#fafafa" }}>
+            <h2>Select or create a project to get started</h2>
           </Content>
         </Layout>
       </Layout>
