@@ -1,6 +1,7 @@
 import { Button, Layout } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { ProjectList } from "./ProjectList";
+import { SearchBar } from "./SearchBar";
 import { useProjectStore } from "../../stores/projectStore";
 
 const { Sider } = Layout;
@@ -47,6 +48,7 @@ export function Sidebar({ collapsed, onCollapse }: SidebarProps) {
               New
             </Button>
           </div>
+          <SearchBar />
           <ProjectList />
         </>
       )}

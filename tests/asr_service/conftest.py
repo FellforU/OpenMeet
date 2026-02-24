@@ -2,7 +2,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from asr_service.main import app
-from asr_service.routers import jobs, engines, stream
+from asr_service.routers import jobs, engines, stream, search
 from asr_service.job_manager import JobManager
 
 
@@ -13,6 +13,7 @@ async def client():
     jobs.set_manager(manager)
     engines.set_manager(manager)
     stream.set_manager(manager)
+    search.set_manager(manager)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
@@ -21,3 +22,4 @@ async def client():
     jobs.set_manager(None)
     engines.set_manager(None)
     stream.set_manager(None)
+    search.set_manager(None)
