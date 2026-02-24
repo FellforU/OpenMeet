@@ -1,12 +1,9 @@
 import { Button, Space, Upload, message } from "antd";
-import {
-  UploadOutlined,
-  AudioOutlined,
-  ExportOutlined,
-} from "@ant-design/icons";
+import { UploadOutlined, ExportOutlined } from "@ant-design/icons";
 import { useTranscriptionStore } from "../../stores/transcriptionStore";
 import { useProjectStore } from "../../stores/projectStore";
 import { useEngineStore } from "../../stores/engineStore";
+import { RecordButton } from "./RecordButton";
 
 export function ActionButtons() {
   const { setAudioFile, startTranscription, job } = useTranscriptionStore();
@@ -17,8 +14,6 @@ export function ActionButtons() {
 
   const handleUpload = (file: File) => {
     const objectUrl = URL.createObjectURL(file);
-    // For Tauri, we use the actual file path
-    // For dev, use object URL as fallback
     const filePath = (file as unknown as { path?: string }).path || file.name;
     setAudioFile(filePath, objectUrl);
 
@@ -28,11 +23,10 @@ export function ActionButtons() {
 
     message.success(`Loaded: ${file.name}`);
 
-    // Start transcription with selected engine settings
     const lang = selectedLanguage === "auto" ? null : selectedLanguage;
     startTranscription(selectedEngine, selectedModelSize, lang);
 
-    return false; // prevent default upload
+    return false;
   };
 
   return (
@@ -49,13 +43,7 @@ export function ActionButtons() {
           Upload
         </Button>
       </Upload>
-      <Button
-        icon={<AudioOutlined />}
-        disabled
-        title="Real-time recording (coming soon)"
-      >
-        Record
-      </Button>
+      <RecordButton />
       <Button
         icon={<ExportOutlined />}
         disabled

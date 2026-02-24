@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from asr_service.routers import health, jobs, engines
+from asr_service.routers import health, jobs, engines, stream
 from asr_service.job_manager import JobManager
 
 
@@ -13,6 +13,7 @@ async def lifespan(app: FastAPI):
     manager = JobManager()
     jobs.set_manager(manager)
     engines.set_manager(manager)
+    stream.set_manager(manager)
     yield
     # Shutdown: cleanup
 
@@ -34,6 +35,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(jobs.router)
 app.include_router(engines.router)
+app.include_router(stream.router)
 
 
 if __name__ == "__main__":
