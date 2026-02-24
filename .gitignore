@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+.venv/
+
+# Build
+dist/
+target/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Models (large files)
+models/
+
+# Tauri
+src-tauri/target/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Temp
+*.tmp
+*.log
+
+# Environment
+.env
+.env.local
