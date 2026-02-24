@@ -6,9 +6,14 @@ from asr_service.main import app
 
 @pytest.fixture
 async def client():
+    from asr_service.routers import jobs
+    jobs._jobs.clear()
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+
+    jobs._jobs.clear()
 
 
 async def test_create_job(client):
