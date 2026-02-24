@@ -1,5 +1,6 @@
 import { AudioPlayer } from "./AudioPlayer";
 import { ActionButtons } from "./ActionButtons";
+import { ExportButton } from "../Workspace/ExportButton";
 
 export function ControlBar() {
   return (
@@ -15,6 +16,7 @@ export function ControlBar() {
     >
       <AudioPlayer />
       <ActionButtons />
+      <ExportButton />
     </div>
   );
 }

@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi.responses import PlainTextResponse, JSONResponse
 from pydantic import BaseModel
 from typing import Optional
+import json
 import tempfile
 import shutil
 from pathlib import Path
@@ -173,3 +175,105 @@ async def cancel_job(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return _job_to_response(job)
+
+
+SUPPORTED_EXPORT_FORMATS = {"markdown", "json", "txt"}
+
+
+@router.get("/{job_id}/export")
+async def export_job(job_id: str, format: str = "markdown"):
+    manager = get_manager()
+    job = manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status not in (JobStatus.COMPLETED, JobStatus.READY):
+        raise HTTPException(status_code=400, detail="Job not ready for export")
+    if format not in SUPPORTED_EXPORT_FORMATS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported format. Use: {', '.join(SUPPORTED_EXPORT_FORMATS)}",
+        )
+
+    if format == "json":
+        data = {
+            "segments": [
+                {
+                    "start": s.start,
+                    "end": s.end,
+                    "text": s.text,
+                    "speaker": s.speaker,
+                }
+                for s in job.segments
+            ],
+            "summary": job.summary,
+        }
+        return JSONResponse(content=data)
+
+    if format == "txt":
+        lines = []
+        for s in job.segments:
+            minutes = int(s.start // 60)
+            seconds = int(s.start % 60)
+            prefix = f"[{s.speaker}] " if s.speaker else ""
+            lines.append(f"[{minutes:02d}:{seconds:02d}] {prefix}{s.text}")
+        return PlainTextResponse("\n".join(lines), media_type="text/plain; charset=utf-8")
+
+    # Default: markdown
+    return PlainTextResponse(
+        _job_to_markdown(job),
+        media_type="text/markdown; charset=utf-8",
+    )
+
+
+def _job_to_markdown(job: TranscriptionJob) -> str:
+    """Convert job results to Markdown format."""
+    lines = []
+
+    # Summary section
+    if job.summary:
+        topic = job.summary.get("topic", "Meeting Notes")
+        lines.append(f"# {topic}")
+        lines.append("")
+
+        conclusions = job.summary.get("conclusions", [])
+        if conclusions:
+            lines.append("## Conclusions")
+            lines.append("")
+            for c in conclusions:
+                lines.append(f"- {c}")
+            lines.append("")
+
+        action_items = job.summary.get("action_items", [])
+        if action_items:
+            lines.append("## Action Items")
+            lines.append("")
+            for item in action_items:
+                action = item.get("action", "")
+                owner = item.get("owner", "")
+                deadline = item.get("deadline", "")
+                line = f"- [ ] {action}"
+                if owner:
+                    line += f" (@{owner})"
+                if deadline:
+                    line += f" [Due: {deadline}]"
+                lines.append(line)
+            lines.append("")
+
+        discussion = job.summary.get("discussion", "")
+        if discussion:
+            lines.append("## Discussion")
+            lines.append("")
+            lines.append(discussion)
+            lines.append("")
+
+    # Transcript section
+    lines.append("## Transcript")
+    lines.append("")
+    for s in job.segments:
+        minutes = int(s.start // 60)
+        seconds = int(s.start % 60)
+        speaker = f"**{s.speaker}**: " if s.speaker else ""
+        lines.append(f"`[{minutes:02d}:{seconds:02d}]` {speaker}{s.text}")
+        lines.append("")
+
+    return "\n".join(lines)
