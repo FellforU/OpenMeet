@@ -3,7 +3,10 @@ from typing import Optional
 
 from asr_service.models.job import TranscriptionJob, JobStatus, Segment
 from asr_service.engines.base import AudioInput
+from asr_service.engines.base import AudioInput, EngineCapabilities
 from asr_service.engines.whisper_engine import WhisperEngine
+from asr_service.engines.qwen3_engine import Qwen3Engine
+from asr_service.engines.paraformer_engine import ParaformerEngine
 from asr_service.processors.audio_preprocessor import preprocess_audio
 
 
@@ -12,8 +15,10 @@ class JobManager:
 
     def __init__(self):
         self._jobs: dict[str, TranscriptionJob] = {}
-        self._engines: dict[str, WhisperEngine] = {
+        self._engines: dict[str, object] = {
             "whisper": WhisperEngine(),
+            "qwen3": Qwen3Engine(),
+            "paraformer": ParaformerEngine(),
         }
         self._running_tasks: dict[str, asyncio.Task] = {}
 
