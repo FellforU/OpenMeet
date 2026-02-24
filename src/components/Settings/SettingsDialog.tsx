@@ -3,8 +3,10 @@ import {
   SettingOutlined,
   DatabaseOutlined,
   InfoCircleOutlined,
+  KeyOutlined,
 } from "@ant-design/icons";
 import { ModelManager } from "./ModelManager";
+import { APIKeyTab } from "./APIKeyTab";
 
 const { Text, Paragraph } = Typography;
 
@@ -95,6 +97,16 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
         </span>
       ),
       children: <ModelManager />,
+    },
+    {
+      key: "api",
+      label: (
+        <span>
+          <KeyOutlined />
+          {" API Keys"}
+        </span>
+      ),
+      children: <APIKeyTab />,
     },
     {
       key: "about",
