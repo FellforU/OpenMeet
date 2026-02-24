@@ -1,9 +1,22 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from asr_service.routers import health, jobs
+from asr_service.job_manager import JobManager
 
-app = FastAPI(title="OpenMeet ASR Service", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    manager = JobManager()
+    jobs.set_manager(manager)
+    yield
+    # Shutdown: cleanup
+
+
+app = FastAPI(title="OpenMeet ASR Service", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
