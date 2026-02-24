@@ -1,11 +1,13 @@
-import { Tag, Typography } from "antd";
+import { Typography } from "antd";
 import type { Segment } from "../../types";
 import { useTranscriptionStore } from "../../stores/transcriptionStore";
+import { SpeakerBadge } from "./SpeakerBadge";
 
 const { Text } = Typography;
 
 interface SegmentItemProps {
   segment: Segment;
+  onRenameSpeaker?: (oldName: string, newName: string) => void;
 }
 
 function formatTime(seconds: number): string {
@@ -14,7 +16,7 @@ function formatTime(seconds: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-export function SegmentItem({ segment }: SegmentItemProps) {
+export function SegmentItem({ segment, onRenameSpeaker }: SegmentItemProps) {
   const seekTo = useTranscriptionStore((s) => s.seekTo);
 
   return (
@@ -27,9 +29,7 @@ export function SegmentItem({ segment }: SegmentItemProps) {
         {formatTime(segment.start)}
       </Text>
       {segment.speaker && (
-        <Tag color="blue" style={{ flexShrink: 0, fontSize: 11 }}>
-          {segment.speaker}
-        </Tag>
+        <SpeakerBadge speaker={segment.speaker} onRename={onRenameSpeaker} />
       )}
       <Text style={{ flex: 1, lineHeight: 1.6 }}>{segment.text}</Text>
     </div>
