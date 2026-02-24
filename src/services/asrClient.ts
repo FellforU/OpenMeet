@@ -2,6 +2,15 @@ import { invoke } from "@tauri-apps/api/core";
 
 const ASR_BASE_URL = "http://127.0.0.1:18090";
 
+async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const resp = await fetch(url, init);
+  if (!resp.ok) {
+    const detail = await resp.text().catch(() => "Unknown error");
+    throw new Error(`HTTP ${resp.status}: ${detail}`);
+  }
+  return resp.json();
+}
+
 export async function startAsrService(): Promise<string> {
   return invoke<string>("start_asr_service");
 }
@@ -14,8 +23,7 @@ export async function checkAsrHealth(): Promise<{
   status: string;
   engines: string[];
 }> {
-  const resp = await fetch(`${ASR_BASE_URL}/health`);
-  return resp.json();
+  return fetchJson(`${ASR_BASE_URL}/health`);
 }
 
 export interface CreateJobParams {
@@ -40,36 +48,31 @@ export interface JobResponse {
 export async function createJob(
   params: CreateJobParams = {}
 ): Promise<JobResponse> {
-  const resp = await fetch(`${ASR_BASE_URL}/jobs`, {
+  return fetchJson(`${ASR_BASE_URL}/jobs`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(params),
   });
-  return resp.json();
 }
 
 export async function getJob(jobId: string): Promise<JobResponse> {
-  const resp = await fetch(`${ASR_BASE_URL}/jobs/${jobId}`);
-  return resp.json();
+  return fetchJson(`${ASR_BASE_URL}/jobs/${jobId}`);
 }
 
 export async function pauseJob(jobId: string): Promise<JobResponse> {
-  const resp = await fetch(`${ASR_BASE_URL}/jobs/${jobId}/pause`, {
+  return fetchJson(`${ASR_BASE_URL}/jobs/${jobId}/pause`, {
     method: "PUT",
   });
-  return resp.json();
 }
 
 export async function resumeJob(jobId: string): Promise<JobResponse> {
-  const resp = await fetch(`${ASR_BASE_URL}/jobs/${jobId}/resume`, {
+  return fetchJson(`${ASR_BASE_URL}/jobs/${jobId}/resume`, {
     method: "PUT",
   });
-  return resp.json();
 }
 
 export async function cancelJob(jobId: string): Promise<JobResponse> {
-  const resp = await fetch(`${ASR_BASE_URL}/jobs/${jobId}/cancel`, {
+  return fetchJson(`${ASR_BASE_URL}/jobs/${jobId}/cancel`, {
     method: "PUT",
   });
-  return resp.json();
 }

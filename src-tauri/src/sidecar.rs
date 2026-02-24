@@ -2,6 +2,8 @@ use std::process::{Child, Command};
 use std::sync::Mutex;
 use tauri::State;
 
+const ASR_SERVICE_URL: &str = "http://127.0.0.1:18090";
+
 pub struct SidecarState {
     pub process: Mutex<Option<Child>>,
 }
@@ -10,6 +12,17 @@ impl SidecarState {
     pub fn new() -> Self {
         Self {
             process: Mutex::new(None),
+        }
+    }
+}
+
+impl Drop for SidecarState {
+    fn drop(&mut self) {
+        if let Ok(mut guard) = self.process.lock() {
+            if let Some(mut child) = guard.take() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
         }
     }
 }
@@ -37,8 +50,8 @@ pub async fn stop_asr_service(state: State<'_, SidecarState>) -> Result<String, 
     let mut proc_guard = state.process.lock().map_err(|e| e.to_string())?;
 
     if let Some(mut child) = proc_guard.take() {
-        child.kill().map_err(|e| e.to_string())?;
-        child.wait().map_err(|e| e.to_string())?;
+        let _ = child.kill();
+        let _ = child.wait();
         Ok("ASR service stopped".to_string())
     } else {
         Ok("ASR service not running".to_string())
@@ -48,8 +61,9 @@ pub async fn stop_asr_service(state: State<'_, SidecarState>) -> Result<String, 
 #[tauri::command]
 pub async fn check_asr_health() -> Result<String, String> {
     let client = reqwest::Client::new();
+    let url = format!("{}/health", ASR_SERVICE_URL);
     let resp = client
-        .get("http://127.0.0.1:18090/health")
+        .get(&url)
         .timeout(std::time::Duration::from_secs(3))
         .send()
         .await
