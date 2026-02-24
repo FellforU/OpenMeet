@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ConfigProvider, Layout, theme } from "antd";
 import { Sidebar } from "./components/Sidebar";
+import { HeaderBar } from "./components/HeaderBar";
 import { Workspace } from "./components/Workspace";
 import { ControlBar } from "./components/ControlBar";
 import { StatusBar } from "./components/StatusBar";
@@ -15,6 +16,7 @@ function App() {
       <Layout style={{ minHeight: "100vh" }}>
         <Sidebar collapsed={collapsed} onCollapse={setCollapsed} />
         <Layout style={{ display: "flex", flexDirection: "column" }}>
+          <HeaderBar />
           <Content
             style={{
               flex: 1,

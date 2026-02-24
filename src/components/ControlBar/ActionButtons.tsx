@@ -6,11 +6,14 @@ import {
 } from "@ant-design/icons";
 import { useTranscriptionStore } from "../../stores/transcriptionStore";
 import { useProjectStore } from "../../stores/projectStore";
+import { useEngineStore } from "../../stores/engineStore";
 
 export function ActionButtons() {
   const { setAudioFile, startTranscription, job } = useTranscriptionStore();
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const updateProject = useProjectStore((s) => s.updateProject);
+  const { selectedEngine, selectedModelSize, selectedLanguage } =
+    useEngineStore();
 
   const handleUpload = (file: File) => {
     const objectUrl = URL.createObjectURL(file);
@@ -25,8 +28,9 @@ export function ActionButtons() {
 
     message.success(`Loaded: ${file.name}`);
 
-    // Auto-start transcription
-    startTranscription("whisper", "base", null);
+    // Start transcription with selected engine settings
+    const lang = selectedLanguage === "auto" ? null : selectedLanguage;
+    startTranscription(selectedEngine, selectedModelSize, lang);
 
     return false; // prevent default upload
   };
@@ -48,7 +52,7 @@ export function ActionButtons() {
       <Button
         icon={<AudioOutlined />}
         disabled
-        title="Real-time recording (Phase 2)"
+        title="Real-time recording (coming soon)"
       >
         Record
       </Button>

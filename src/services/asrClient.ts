@@ -76,3 +76,18 @@ export async function cancelJob(jobId: string): Promise<JobResponse> {
     method: "PUT",
   });
 }
+
+export interface EngineInfo {
+  name: string;
+  supported_languages: string[];
+  supports_streaming: boolean;
+  supports_timestamps: boolean;
+  supports_diarization: boolean;
+  model_sizes: string[];
+  is_loaded: boolean;
+  current_model_size: string | null;
+}
+
+export async function listEngines(): Promise<EngineInfo[]> {
+  return fetchJson(`${ASR_BASE_URL}/engines`);
+}
