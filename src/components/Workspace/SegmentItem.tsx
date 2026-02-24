@@ -1,0 +1,37 @@
+import { Tag, Typography } from "antd";
+import type { Segment } from "../../types";
+import { useTranscriptionStore } from "../../stores/transcriptionStore";
+
+const { Text } = Typography;
+
+interface SegmentItemProps {
+  segment: Segment;
+}
+
+function formatTime(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+export function SegmentItem({ segment }: SegmentItemProps) {
+  const seekTo = useTranscriptionStore((s) => s.seekTo);
+
+  return (
+    <div style={{ display: "flex", gap: 8, padding: "6px 0", alignItems: "flex-start" }}>
+      <Text
+        code
+        style={{ cursor: "pointer", flexShrink: 0, fontSize: 12 }}
+        onClick={() => seekTo(segment.start)}
+      >
+        {formatTime(segment.start)}
+      </Text>
+      {segment.speaker && (
+        <Tag color="blue" style={{ flexShrink: 0, fontSize: 11 }}>
+          {segment.speaker}
+        </Tag>
+      )}
+      <Text style={{ flex: 1, lineHeight: 1.6 }}>{segment.text}</Text>
+    </div>
+  );
+}

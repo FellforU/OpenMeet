@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { ConfigProvider, Layout, theme } from "antd";
 import { Sidebar } from "./components/Sidebar";
+import { Workspace } from "./components/Workspace";
+import { ControlBar } from "./components/ControlBar";
+import { StatusBar } from "./components/StatusBar";
 
 const { Content } = Layout;
 
@@ -11,10 +14,19 @@ function App() {
     <ConfigProvider theme={{ algorithm: theme.defaultAlgorithm }}>
       <Layout style={{ minHeight: "100vh" }}>
         <Sidebar collapsed={collapsed} onCollapse={setCollapsed} />
-        <Layout>
-          <Content style={{ padding: 24, background: "#fafafa" }}>
-            <h2>Select or create a project to get started</h2>
+        <Layout style={{ display: "flex", flexDirection: "column" }}>
+          <Content
+            style={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
+          >
+            <Workspace />
           </Content>
+          <ControlBar />
+          <StatusBar />
         </Layout>
       </Layout>
     </ConfigProvider>
