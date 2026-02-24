@@ -23,7 +23,6 @@ export function AudioPlayer() {
     setIsPlaying,
     setCurrentTime,
     setDuration,
-    setPlaybackSpeed: _setPlaybackSpeed,
   } = useTranscriptionStore();
 
   useEffect(() => {
@@ -36,18 +35,18 @@ export function AudioPlayer() {
     audioRef.current.playbackRate = audio.playbackSpeed;
   }, [audio.playbackSpeed]);
 
-  // Sync external seekTo calls
+  // Sync external seekTo calls (e.g. clicking timestamps)
   useEffect(() => {
     if (!audioRef.current) return;
     const diff = Math.abs(audioRef.current.currentTime - audio.currentTime);
     if (diff > 1) {
       audioRef.current.currentTime = audio.currentTime;
-      if (!audio.isPlaying) {
+      // Only resume if already playing but paused due to seek
+      if (audio.isPlaying && audioRef.current.paused) {
         audioRef.current.play();
-        setIsPlaying(true);
       }
     }
-  }, [audio.currentTime, audio.isPlaying, setIsPlaying]);
+  }, [audio.currentTime, audio.isPlaying]);
 
   const togglePlay = () => {
     if (!audioRef.current) return;

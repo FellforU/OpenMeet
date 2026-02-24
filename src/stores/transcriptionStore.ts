@@ -2,6 +2,16 @@ import { create } from "zustand";
 import type { Segment, JobStatus, PipelineStep, Summary } from "../types";
 import * as api from "../services/asrClient";
 
+// Polling timer reference for cleanup
+let pollTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
+function cancelPolling() {
+  if (pollTimeoutId) {
+    clearTimeout(pollTimeoutId);
+    pollTimeoutId = null;
+  }
+}
+
 interface TranscriptionStore {
   job: {
     id: string | null;
@@ -62,6 +72,11 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
   ...initialState,
 
   setAudioFile: (filePath, objectUrl) => {
+    // Revoke previous blob URL to prevent memory leak
+    const prev = get().audio.objectUrl;
+    if (prev) {
+      URL.revokeObjectURL(prev);
+    }
     set({
       audio: { ...get().audio, source: "file", filePath, objectUrl },
     });
@@ -70,6 +85,9 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
   startTranscription: async (engine, modelSize, language) => {
     const { audio } = get();
     if (!audio.filePath) return;
+
+    // Cancel any existing polling
+    cancelPolling();
 
     const jobResp = await api.createJob({
       mode: "file",
@@ -92,6 +110,8 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
   },
 
   pollJobStatus: async (jobId) => {
+    cancelPolling();
+
     const poll = async () => {
       try {
         const jobResp = await api.getJob(jobId);
@@ -116,18 +136,20 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
             );
             set({ segments });
           }
+          pollTimeoutId = null;
           return;
         }
 
         if (jobResp.status === "cancelled" || jobResp.error) {
+          pollTimeoutId = null;
           return;
         }
 
         // Continue polling
-        setTimeout(() => poll(), 1000);
+        pollTimeoutId = setTimeout(() => poll(), 1000);
       } catch {
         // Retry on network error
-        setTimeout(() => poll(), 2000);
+        pollTimeoutId = setTimeout(() => poll(), 2000);
       }
     };
 
@@ -151,5 +173,12 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
     });
   },
 
-  reset: () => set(initialState),
+  reset: () => {
+    cancelPolling();
+    const prev = get().audio.objectUrl;
+    if (prev) {
+      URL.revokeObjectURL(prev);
+    }
+    set(initialState);
+  },
 }));
