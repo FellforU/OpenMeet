@@ -44,6 +44,8 @@ interface TranscriptionStore {
   setDuration: (duration: number) => void;
   setPlaybackSpeed: (speed: number) => void;
   updateSegmentText: (id: string, text: string) => void;
+  setSummary: (summary: Summary | null) => void;
+  setPipelineStep: (step: PipelineStep) => void;
   reset: () => void;
 }
 
@@ -172,6 +174,10 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
       ),
     });
   },
+
+  setSummary: (summary) => set({ summary }),
+
+  setPipelineStep: (step) => set({ job: { ...get().job, pipelineStep: step } }),
 
   reset: () => {
     cancelPolling();

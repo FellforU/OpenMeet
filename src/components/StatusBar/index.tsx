@@ -1,20 +1,11 @@
-import { Progress, Space, Typography, Tag } from "antd";
+import { Progress, Space, Typography } from "antd";
 import { useTranscriptionStore } from "../../stores/transcriptionStore";
+import { PipelineStatus } from "./PipelineStatus";
 
 const { Text } = Typography;
 
 export function StatusBar() {
   const { job } = useTranscriptionStore();
-
-  const statusColor: Record<string, string> = {
-    idle: "default",
-    running: "processing",
-    paused: "warning",
-    completed: "success",
-    post_processing: "processing",
-    ready: "success",
-    cancelled: "error",
-  };
 
   return (
     <div
@@ -28,9 +19,7 @@ export function StatusBar() {
         fontSize: 12,
       }}
     >
-      <Tag color={statusColor[job.status] || "default"} style={{ fontSize: 11 }}>
-        {job.status.toUpperCase()}
-      </Tag>
+      <PipelineStatus />
       {job.status === "running" && (
         <Progress
           percent={Math.round(job.progress)}
