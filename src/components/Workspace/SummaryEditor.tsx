@@ -1,11 +1,13 @@
 import { useState } from "react";
-import { Button, Input, Space, message } from "antd";
-import { EditOutlined, SaveOutlined, CloseOutlined } from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
+import { Pencil, Save, X } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "../ui/button";
+import { Textarea } from "../ui/textarea";
 import { useTranscriptionStore } from "../../stores/transcriptionStore";
 
-const { TextArea } = Input;
-
 export function SummaryEditor() {
+  const { t } = useTranslation("workspace");
   const summary = useTranscriptionStore((s) => s.summary);
   const setSummary = useTranscriptionStore((s) => s.setSummary);
   const [editing, setEditing] = useState(false);
@@ -13,7 +15,6 @@ export function SummaryEditor() {
 
   if (!summary) return null;
 
-  // Convert summary to display text
   const displayText = summary.editedMarkdown
     ?? summary.rawMarkdown
     ?? formatSummaryToMarkdown(summary);
@@ -26,7 +27,7 @@ export function SummaryEditor() {
   const handleSave = () => {
     setSummary({ ...summary, editedMarkdown: editText });
     setEditing(false);
-    message.success("Summary saved");
+    toast.success(t("common:toast.summarySaved"));
   };
 
   const handleCancel = () => {
@@ -36,52 +37,33 @@ export function SummaryEditor() {
 
   if (editing) {
     return (
-      <div style={{ padding: 12 }}>
-        <Space style={{ marginBottom: 8 }}>
-          <Button
-            type="primary"
-            size="small"
-            icon={<SaveOutlined />}
-            onClick={handleSave}
-          >
-            Save
+      <div className="p-3">
+        <div className="mb-2 flex gap-2">
+          <Button size="sm" onClick={handleSave}>
+            <Save className="mr-1.5 h-4 w-4" />
+            {t("common:action.save")}
           </Button>
-          <Button size="small" icon={<CloseOutlined />} onClick={handleCancel}>
-            Cancel
+          <Button variant="outline" size="sm" onClick={handleCancel}>
+            <X className="mr-1.5 h-4 w-4" />
+            {t("common:action.cancel")}
           </Button>
-        </Space>
-        <TextArea
+        </div>
+        <Textarea
           value={editText}
           onChange={(e) => setEditText(e.target.value)}
-          autoSize={{ minRows: 10, maxRows: 30 }}
-          style={{ fontFamily: "monospace", fontSize: 13 }}
+          className="min-h-[300px] font-mono text-[13px]"
         />
       </div>
     );
   }
 
   return (
-    <div style={{ padding: 12 }}>
-      <Button
-        size="small"
-        icon={<EditOutlined />}
-        onClick={handleEdit}
-        style={{ marginBottom: 8 }}
-      >
-        Edit Summary
+    <div className="p-3">
+      <Button variant="outline" size="sm" onClick={handleEdit} className="mb-2">
+        <Pencil className="mr-1.5 h-4 w-4" />
+        {t("summary.editSummary")}
       </Button>
-      <div
-        style={{
-          whiteSpace: "pre-wrap",
-          fontFamily: "monospace",
-          fontSize: 13,
-          lineHeight: 1.6,
-          padding: 12,
-          backgroundColor: "#fafafa",
-          borderRadius: 6,
-          border: "1px solid #f0f0f0",
-        }}
-      >
+      <div className="whitespace-pre-wrap rounded-md border border-border bg-muted/50 p-3 font-mono text-[13px] leading-relaxed">
         {displayText}
       </div>
     </div>

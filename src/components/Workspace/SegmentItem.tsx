@@ -1,10 +1,7 @@
 import { memo } from "react";
-import { Typography } from "antd";
 import type { Segment } from "../../types";
 import { useTranscriptionStore } from "../../stores/transcriptionStore";
 import { SpeakerBadge } from "./SpeakerBadge";
-
-const { Text } = Typography;
 
 interface SegmentItemProps {
   segment: Segment;
@@ -21,18 +18,17 @@ export const SegmentItem = memo(function SegmentItem({ segment, onRenameSpeaker 
   const seekTo = useTranscriptionStore((s) => s.seekTo);
 
   return (
-    <div style={{ display: "flex", gap: 8, padding: "6px 0", alignItems: "flex-start" }}>
-      <Text
-        code
-        style={{ cursor: "pointer", flexShrink: 0, fontSize: 12 }}
+    <div className="flex items-start gap-2 py-1.5">
+      <button
+        className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground hover:bg-accent"
         onClick={() => seekTo(segment.start)}
       >
         {formatTime(segment.start)}
-      </Text>
+      </button>
       {segment.speaker && (
         <SpeakerBadge speaker={segment.speaker} onRename={onRenameSpeaker} />
       )}
-      <Text style={{ flex: 1, lineHeight: 1.6 }}>{segment.text}</Text>
+      <span className="flex-1 leading-relaxed">{segment.text}</span>
     </div>
   );
 });
