@@ -57,6 +57,7 @@ class JobResultResponse(BaseModel):
     id: str
     status: str
     segments: list[SegmentResponse]
+    summary: Optional[dict] = None
 
 
 def _job_to_response(job: TranscriptionJob) -> JobResponse:
@@ -144,6 +145,7 @@ async def get_job_result(job_id: str):
             )
             for s in job.segments
         ],
+        summary=job.summary,
     )
 
 

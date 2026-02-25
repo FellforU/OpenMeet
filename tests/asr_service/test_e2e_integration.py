@@ -53,11 +53,14 @@ async def test_full_transcription_flow(client):
         assert start_resp.json()["status"] == "running"
 
         # Step 3: Poll until completion (with timeout)
+        # After transcription, PostProcessingPipeline runs and may
+        # transition status from completed → post_processing → ready
+        terminal_statuses = {"completed", "ready"}
         for _ in range(50):
             poll_resp = await client.get(f"/jobs/{job_id}")
             assert poll_resp.status_code == 200
             status = poll_resp.json()["status"]
-            if status == "completed":
+            if status in terminal_statuses:
                 break
             await asyncio.sleep(0.05)
         else:
@@ -71,7 +74,7 @@ async def test_full_transcription_flow(client):
         result_resp = await client.get(f"/jobs/{job_id}/result")
         assert result_resp.status_code == 200
         result = result_resp.json()
-        assert result["status"] == "completed"
+        assert result["status"] in terminal_statuses
         assert len(result["segments"]) == 3
 
         # Verify segment content
@@ -192,12 +195,13 @@ async def test_job_lifecycle_status_transitions(client):
         start_resp = await client.post(f"/jobs/{job_id}/start?audio_path=/tmp/test.wav")
         assert start_resp.json()["status"] == "running"
 
-        # RUNNING → COMPLETED (wait for async task)
+        # RUNNING → COMPLETED → (post-processing) → READY
+        terminal_statuses = {"completed", "ready"}
         for _ in range(50):
             poll = await client.get(f"/jobs/{job_id}")
-            if poll.json()["status"] == "completed":
+            if poll.json()["status"] in terminal_statuses:
                 break
             await asyncio.sleep(0.05)
 
-        assert poll.json()["status"] == "completed"
+        assert poll.json()["status"] in terminal_statuses
         assert poll.json()["progress"] == 100.0

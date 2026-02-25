@@ -37,12 +37,16 @@ class OpenAIWhisperEngine:
             model_sizes=["whisper-1"],
         )
 
+    def configure(self, credentials: dict[str, str]) -> None:
+        """Set runtime credentials (bypasses env vars)."""
+        if "api_key" in credentials:
+            self._api_key = credentials["api_key"]
+
     async def load_model(self, model_size: str = "whisper-1") -> None:
-        key = os.environ.get("OPENAI_API_KEY")
+        key = self._api_key or os.environ.get("OPENAI_API_KEY")
         if not key:
             raise ValueError(
-                "OPENAI_API_KEY environment variable not set. "
-                "Set it in Settings > API Keys."
+                "OPENAI_API_KEY not set. Configure it in Settings > ASR Models."
             )
         self._api_key = key
 

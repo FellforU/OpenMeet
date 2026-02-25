@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Upload, FileDown } from "lucide-react";
+import { Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
 import { useTranscriptionStore } from "../../stores/transcriptionStore";
@@ -57,10 +57,6 @@ export function ActionButtons() {
         {t("action.upload")}
       </Button>
       <RecordButton />
-      <Button variant="outline" size="sm" disabled title="Export (Phase 3)">
-        <FileDown className="mr-1.5 h-4 w-4" />
-        {t("action.export")}
-      </Button>
     </div>
   );
 }

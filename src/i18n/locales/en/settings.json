@@ -33,7 +33,13 @@
     "openai": "OpenAI GPT",
     "openaiDesc": "GPT-4o / GPT-4o-mini, leading general-purpose LLM",
     "gemini": "Google Gemini",
-    "geminiDesc": "Google multimodal model, supports long context"
+    "geminiDesc": "Google multimodal model, supports long context",
+    "configured": "Configured",
+    "notConfigured": "Not Configured",
+    "configureBtn": "Configure",
+    "configureTitle": "Configure {{provider}}",
+    "saveBtn": "Save",
+    "credentialsSaved": "Credentials saved"
   },
   "asr": {
     "title": "ASR Model Manager",
@@ -54,7 +60,8 @@
     "alibabaSecret": "Access Key Secret",
     "autoDegradation": "Enable auto-degradation",
     "autoDegradationDesc": "Automatically fall back to cloud API when local GPU is insufficient",
-    "securityNote": "API keys are stored locally and never sent to our servers."
+    "securityNote": "API keys are stored locally and never sent to our servers.",
+    "loading": "Loading..."
   },
   "about": {
     "description": "Local-first AI meeting transcription tool. Built with Tauri 2.x, React 19, FastAPI, Ollama.",

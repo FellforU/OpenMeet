@@ -39,13 +39,20 @@ class AlibabaASREngine:
             model_sizes=["paraformer-v2"],
         )
 
+    def configure(self, credentials: dict[str, str]) -> None:
+        """Set runtime credentials (bypasses env vars)."""
+        if "access_key_id" in credentials:
+            self._access_key_id = credentials["access_key_id"]
+        if "access_key_secret" in credentials:
+            self._access_key_secret = credentials["access_key_secret"]
+
     async def load_model(self, model_size: str = "paraformer-v2") -> None:
-        key_id = os.environ.get("ALIBABA_ACCESS_KEY_ID")
-        key_secret = os.environ.get("ALIBABA_ACCESS_KEY_SECRET")
+        key_id = self._access_key_id or os.environ.get("ALIBABA_ACCESS_KEY_ID")
+        key_secret = self._access_key_secret or os.environ.get("ALIBABA_ACCESS_KEY_SECRET")
         if not key_id or not key_secret:
             raise ValueError(
-                "ALIBABA_ACCESS_KEY_ID and ALIBABA_ACCESS_KEY_SECRET "
-                "environment variables not set. Set them in Settings > API Keys."
+                "ALIBABA_ACCESS_KEY_ID and ALIBABA_ACCESS_KEY_SECRET not set. "
+                "Configure them in Settings > ASR Models."
             )
         self._access_key_id = key_id
         self._access_key_secret = key_secret

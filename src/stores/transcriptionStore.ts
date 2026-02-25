@@ -44,6 +44,7 @@ interface TranscriptionStore {
   setDuration: (duration: number) => void;
   setPlaybackSpeed: (speed: number) => void;
   updateSegmentText: (id: string, text: string) => void;
+  updateSegmentSpeaker: (oldName: string, newName: string) => void;
   setSummary: (summary: Summary | null) => void;
   setPipelineStep: (step: PipelineStep) => void;
   reset: () => void;
@@ -136,7 +137,7 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
                 ...s,
               })
             );
-            set({ segments });
+            set({ segments, summary: data.summary || null });
           }
           pollTimeoutId = null;
           return;
@@ -171,6 +172,14 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
     set({
       segments: get().segments.map((s) =>
         s.id === id ? { ...s, text } : s
+      ),
+    });
+  },
+
+  updateSegmentSpeaker: (oldName, newName) => {
+    set({
+      segments: get().segments.map((s) =>
+        s.speaker === oldName ? { ...s, speaker: newName } : s
       ),
     });
   },

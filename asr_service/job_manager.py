@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from typing import Optional
 
 from asr_service.models.job import TranscriptionJob, JobStatus, Segment
@@ -10,6 +11,9 @@ from asr_service.engines.paraformer_engine import ParaformerEngine
 from asr_service.engines.openai_api_engine import OpenAIWhisperEngine
 from asr_service.engines.alibaba_asr_engine import AlibabaASREngine
 from asr_service.processors.audio_preprocessor import preprocess_audio
+from asr_service.services.post_processing import PostProcessingPipeline
+
+logger = logging.getLogger(__name__)
 
 
 class JobManager:
@@ -83,6 +87,16 @@ class JobManager:
             job.segments = segments
             job.progress = 100.0
             job.status = JobStatus.COMPLETED
+
+            # Run post-processing pipeline (fault-tolerant)
+            try:
+                pipeline = PostProcessingPipeline()
+                await pipeline.run(job)
+                await pipeline.close()
+            except Exception as e:
+                logger.warning("Post-processing failed: %s", e)
+                if job.status == JobStatus.POST_PROCESSING:
+                    job.status = JobStatus.COMPLETED
 
         except asyncio.CancelledError:
             job.status = JobStatus.CANCELLED

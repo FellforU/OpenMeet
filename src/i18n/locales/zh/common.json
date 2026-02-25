@@ -25,7 +25,9 @@
     "reload": "重新加载",
     "close": "关闭",
     "new": "新建",
-    "unload": "卸载"
+    "unload": "卸载",
+    "load": "加载",
+    "configure": "配置"
   },
   "status": {
     "idle": "空闲",
@@ -37,7 +39,8 @@
     "cancelled": "已取消",
     "running": "运行中",
     "loaded": "已加载",
-    "notLoaded": "未加载"
+    "notLoaded": "未加载",
+    "configuring": "配置中"
   },
   "language": {
     "auto": "自动检测",

@@ -18,6 +18,7 @@ import {
 import { Badge } from "../ui/badge";
 import { ModelManager } from "./ModelManager";
 import { LLMProviderTab } from "./LLMProviderTab";
+import { useSettingsStore } from "../../stores/settingsStore";
 
 interface SettingsDialogProps {
   open: boolean;
@@ -35,6 +36,7 @@ const LLM_PROVIDER_OPTIONS = [
 
 function GeneralSettings() {
   const { t } = useTranslation("settings");
+  const { general, setGeneral } = useSettingsStore();
 
   return (
     <div className="space-y-6 py-2">
@@ -45,7 +47,10 @@ function GeneralSettings() {
         <p className="text-xs text-muted-foreground">
           {t("general.defaultLLMProviderDesc")}
         </p>
-        <Select defaultValue="ollama">
+        <Select
+          value={general.defaultLLMProvider}
+          onValueChange={(v) => setGeneral({ defaultLLMProvider: v })}
+        >
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
@@ -67,13 +72,21 @@ function GeneralSettings() {
             {t("general.autoSummaryDesc")}
           </p>
         </div>
-        <Switch defaultChecked />
+        <Switch
+          checked={general.autoSummary}
+          onCheckedChange={(v) => setGeneral({ autoSummary: v })}
+        />
       </div>
       <div className="space-y-2">
         <label className="text-sm font-medium">
           {t("general.exportFormat")}
         </label>
-        <Select defaultValue="markdown">
+        <Select
+          value={general.exportFormat}
+          onValueChange={(v) =>
+            setGeneral({ exportFormat: v as "markdown" | "txt" | "json" })
+          }
+        >
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>

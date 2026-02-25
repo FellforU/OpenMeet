@@ -25,7 +25,9 @@
     "reload": "Reload",
     "close": "Close",
     "new": "New",
-    "unload": "Unload"
+    "unload": "Unload",
+    "load": "Load",
+    "configure": "Configure"
   },
   "status": {
     "idle": "Idle",
@@ -37,7 +39,8 @@
     "cancelled": "Cancelled",
     "running": "Running",
     "loaded": "Loaded",
-    "notLoaded": "Not Loaded"
+    "notLoaded": "Not Loaded",
+    "configuring": "Configuring"
   },
   "language": {
     "auto": "Auto Detect",

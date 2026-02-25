@@ -7,6 +7,7 @@ export function TranscriptPanel() {
   const { t } = useTranslation("workspace");
   const segments = useTranscriptionStore((s) => s.segments);
   const status = useTranscriptionStore((s) => s.job.status);
+  const updateSegmentSpeaker = useTranscriptionStore((s) => s.updateSegmentSpeaker);
 
   if (segments.length === 0 && status === "idle") {
     return (
@@ -20,7 +21,7 @@ export function TranscriptPanel() {
   return (
     <div className="h-full overflow-y-auto p-4">
       {segments.map((seg) => (
-        <SegmentItem key={seg.id} segment={seg} />
+        <SegmentItem key={seg.id} segment={seg} onRenameSpeaker={updateSegmentSpeaker} />
       ))}
       {status === "running" && (
         <div className="flex items-center gap-2 p-2 text-xs text-muted-foreground">

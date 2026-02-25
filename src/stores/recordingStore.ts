@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import * as api from "../services/asrClient";
+import { useTranscriptionStore } from "./transcriptionStore";
 import type { Segment } from "../types";
 
 type RecordingStatus = "idle" | "recording" | "paused";
@@ -137,7 +138,16 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
   stopRecording: async () => {
     clearElapsedTimer();
     closeWebSocket();
+
+    const { segments, jobId } = get();
     set({ status: "idle" });
+
+    // Sync segments to transcription store before cleanup
+    if (segments.length > 0) {
+      const { setSegments, setJobStatus } = useTranscriptionStore.getState();
+      setSegments(segments);
+      setJobStatus("completed");
+    }
 
     try {
       await invoke<string>("stop_recording");
@@ -145,7 +155,6 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
       // Ignore if not in Tauri
     }
 
-    const { jobId } = get();
     if (jobId) {
       try {
         await api.cancelJob(jobId);

@@ -33,7 +33,13 @@
     "openai": "OpenAI GPT",
     "openaiDesc": "GPT-4o / GPT-4o-mini，全球领先的通用 LLM",
     "gemini": "Google Gemini",
-    "geminiDesc": "Google 多模态大模型，支持长上下文"
+    "geminiDesc": "Google 多模态大模型，支持长上下文",
+    "configured": "已配置",
+    "notConfigured": "待配置",
+    "configureBtn": "配置",
+    "configureTitle": "配置 {{provider}}",
+    "saveBtn": "保存",
+    "credentialsSaved": "凭证已保存"
   },
   "asr": {
     "title": "ASR 模型管理",
@@ -54,7 +60,8 @@
     "alibabaSecret": "Access Key Secret",
     "autoDegradation": "启用自动降级",
     "autoDegradationDesc": "本地 GPU 不足时自动回退到云端 API",
-    "securityNote": "API 密钥仅存储在本地，不会发送到我们的服务器。"
+    "securityNote": "API 密钥仅存储在本地，不会发送到我们的服务器。",
+    "loading": "加载中..."
   },
   "about": {
     "description": "本地优先的 AI 会议转录工具。基于 Tauri 2.x、React 19、FastAPI、Ollama 构建。",

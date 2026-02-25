@@ -1,62 +1,110 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Shield, Server, Cloud } from "lucide-react";
+import { Shield } from "lucide-react";
 import { Alert, AlertDescription } from "../ui/alert";
-import { Input } from "../ui/input";
-import { Switch } from "../ui/switch";
-import { Badge } from "../ui/badge";
-import { PasswordInput } from "./PasswordInput";
+import { useSettingsStore } from "../../stores/settingsStore";
+import { ProviderCard } from "./ProviderCard";
+import { ProviderConfigModal } from "./ProviderConfigModal";
 
-interface LLMProvider {
+import ollamaSvg from "@lobehub/icons-static-svg/icons/ollama.svg";
+import deepseekSvg from "@lobehub/icons-static-svg/icons/deepseek-color.svg";
+import qwenSvg from "@lobehub/icons-static-svg/icons/qwen-color.svg";
+import zhipuSvg from "@lobehub/icons-static-svg/icons/zhipu-color.svg";
+import openaiSvg from "@lobehub/icons-static-svg/icons/openai.svg";
+import geminiSvg from "@lobehub/icons-static-svg/icons/gemini-color.svg";
+
+interface LLMProviderDef {
   key: string;
   type: "local" | "cloud";
-  fields: ("host" | "model" | "apiKey")[];
-  hostPlaceholder?: string;
-  modelPlaceholder?: string;
-  apiKeyPlaceholder?: string;
+  logoSrc: string;
+  brandColor: string;
+  fields: { key: string; labelKey: string; placeholder: string; isPassword: boolean }[];
+  isConfigured: (config: { enabled: boolean; apiKey?: string; host?: string; model?: string }) => boolean;
 }
 
-const LLM_PROVIDERS: LLMProvider[] = [
+const LLM_PROVIDERS: LLMProviderDef[] = [
   {
     key: "ollama",
     type: "local",
-    fields: ["host", "model"],
-    hostPlaceholder: "http://localhost:11434",
-    modelPlaceholder: "qwen2.5:7b",
+    logoSrc: ollamaSvg,
+    brandColor: "#000000",
+    fields: [
+      { key: "host", labelKey: "settings:llm.ollamaHost", placeholder: "http://localhost:11434", isPassword: false },
+      { key: "model", labelKey: "settings:llm.ollamaModel", placeholder: "qwen2.5:7b", isPassword: false },
+    ],
+    isConfigured: (c) => Boolean(c.host),
   },
   {
     key: "deepseek",
     type: "cloud",
-    fields: ["apiKey"],
-    apiKeyPlaceholder: "sk-...",
+    logoSrc: deepseekSvg,
+    brandColor: "#4D6BFE",
+    fields: [{ key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "sk-...", isPassword: true }],
+    isConfigured: (c) => Boolean(c.apiKey),
   },
   {
     key: "qwen",
     type: "cloud",
-    fields: ["apiKey"],
-    apiKeyPlaceholder: "sk-...",
+    logoSrc: qwenSvg,
+    brandColor: "#5B43D4",
+    fields: [{ key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "sk-...", isPassword: true }],
+    isConfigured: (c) => Boolean(c.apiKey),
   },
   {
     key: "zhipu",
     type: "cloud",
-    fields: ["apiKey"],
-    apiKeyPlaceholder: "...",
+    logoSrc: zhipuSvg,
+    brandColor: "#3859FF",
+    fields: [{ key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "...", isPassword: true }],
+    isConfigured: (c) => Boolean(c.apiKey),
   },
   {
     key: "openai",
     type: "cloud",
-    fields: ["apiKey"],
-    apiKeyPlaceholder: "sk-proj-...",
+    logoSrc: openaiSvg,
+    brandColor: "#10A37F",
+    fields: [{ key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "sk-proj-...", isPassword: true }],
+    isConfigured: (c) => Boolean(c.apiKey),
   },
   {
     key: "gemini",
     type: "cloud",
-    fields: ["apiKey"],
-    apiKeyPlaceholder: "AIza...",
+    logoSrc: geminiSvg,
+    brandColor: "#8E75B6",
+    fields: [{ key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "AIza...", isPassword: true }],
+    isConfigured: (c) => Boolean(c.apiKey),
   },
 ];
 
 export function LLMProviderTab() {
   const { t } = useTranslation("settings");
+  const { llmProviders, setLLMProvider } = useSettingsStore();
+  const [configuring, setConfiguring] = useState<string | null>(null);
+
+  const configuringDef = configuring
+    ? LLM_PROVIDERS.find((p) => p.key === configuring)
+    : null;
+
+  const configured = LLM_PROVIDERS.filter((p) =>
+    p.isConfigured(llmProviders[p.key] || { enabled: false })
+  );
+  const notConfigured = LLM_PROVIDERS.filter(
+    (p) => !p.isConfigured(llmProviders[p.key] || { enabled: false })
+  );
+
+  const handleSave = (values: Record<string, string>) => {
+    if (!configuring) return;
+    setLLMProvider(configuring, values);
+  };
+
+  const getValues = (key: string): Record<string, string> => {
+    const cfg = llmProviders[key] || {};
+    const result: Record<string, string> = {};
+    for (const [k, v] of Object.entries(cfg)) {
+      if (typeof v === "string") result[k] = v;
+    }
+    return result;
+  };
 
   return (
     <div className="space-y-4 py-2">
@@ -70,68 +118,65 @@ export function LLMProviderTab() {
         <AlertDescription>{t("llm.securityNote")}</AlertDescription>
       </Alert>
 
-      {LLM_PROVIDERS.map((provider) => (
-        <div
-          key={provider.key}
-          className="space-y-3 rounded-lg border border-border p-4"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="font-medium">{t(`llm.${provider.key}`)}</span>
-              <Badge
-                variant={provider.type === "local" ? "secondary" : "outline"}
-                className="gap-1 text-[10px]"
-              >
-                {provider.type === "local" ? (
-                  <Server className="h-3 w-3" />
-                ) : (
-                  <Cloud className="h-3 w-3" />
-                )}
-                {t(`llm.${provider.type}`)}
-              </Badge>
-            </div>
-            <Switch aria-label={t(`llm.${provider.key}`)} />
+      {configured.length > 0 && (
+        <div className="space-y-2">
+          <h4 className="text-sm font-medium text-muted-foreground">
+            {t("llm.configured")}
+          </h4>
+          <div className="grid gap-2">
+            {configured.map((provider) => (
+              <ProviderCard
+                key={provider.key}
+                logoSrc={provider.logoSrc}
+                brandColor={provider.brandColor}
+                name={t(`llm.${provider.key}`)}
+                description={t(`llm.${provider.key}Desc`)}
+                type={provider.type}
+                isConfigured
+                isEnabled={llmProviders[provider.key]?.enabled}
+                onToggleEnabled={(val) =>
+                  setLLMProvider(provider.key, { enabled: val })
+                }
+                onClick={() => setConfiguring(provider.key)}
+              />
+            ))}
           </div>
-          <p className="text-xs text-muted-foreground">
-            {t(`llm.${provider.key}Desc`)}
-          </p>
-
-          {provider.fields.includes("host") && (
-            <div className="space-y-1">
-              <label htmlFor={`${provider.key}-host`} className="text-sm font-medium">
-                {t("llm.ollamaHost")}
-              </label>
-              <Input
-                id={`${provider.key}-host`}
-                defaultValue={provider.hostPlaceholder}
-                placeholder={provider.hostPlaceholder}
-              />
-            </div>
-          )}
-
-          {provider.fields.includes("model") && (
-            <div className="space-y-1">
-              <label htmlFor={`${provider.key}-model`} className="text-sm font-medium">
-                {t("llm.ollamaModel")}
-              </label>
-              <Input
-                id={`${provider.key}-model`}
-                defaultValue={provider.modelPlaceholder}
-                placeholder={provider.modelPlaceholder}
-              />
-            </div>
-          )}
-
-          {provider.fields.includes("apiKey") && (
-            <div className="space-y-1">
-              <label htmlFor={`${provider.key}-apikey`} className="text-sm font-medium">
-                {t("llm.apiKey")}
-              </label>
-              <PasswordInput id={`${provider.key}-apikey`} placeholder={provider.apiKeyPlaceholder} />
-            </div>
-          )}
         </div>
-      ))}
+      )}
+
+      {notConfigured.length > 0 && (
+        <div className="space-y-2">
+          <h4 className="text-sm font-medium text-muted-foreground">
+            {t("llm.notConfigured")}
+          </h4>
+          <div className="grid gap-2">
+            {notConfigured.map((provider) => (
+              <ProviderCard
+                key={provider.key}
+                logoSrc={provider.logoSrc}
+                brandColor={provider.brandColor}
+                name={t(`llm.${provider.key}`)}
+                description={t(`llm.${provider.key}Desc`)}
+                type={provider.type}
+                isConfigured={false}
+                onClick={() => setConfiguring(provider.key)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {configuringDef && (
+        <ProviderConfigModal
+          open={Boolean(configuring)}
+          onClose={() => setConfiguring(null)}
+          logoSrc={configuringDef.logoSrc}
+          providerName={t(`llm.${configuringDef.key}`)}
+          fields={configuringDef.fields}
+          values={getValues(configuringDef.key)}
+          onSave={handleSave}
+        />
+      )}
     </div>
   );
 }

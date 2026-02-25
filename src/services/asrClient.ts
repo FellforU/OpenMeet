@@ -91,3 +91,32 @@ export interface EngineInfo {
 export async function listEngines(): Promise<EngineInfo[]> {
   return fetchJson(`${ASR_BASE_URL}/engines`);
 }
+
+export async function loadEngineModel(
+  engineName: string,
+  modelSize: string
+): Promise<EngineInfo> {
+  return fetchJson(
+    `${ASR_BASE_URL}/engines/${engineName}/load?model_size=${encodeURIComponent(modelSize)}`,
+    { method: "POST" }
+  );
+}
+
+export async function unloadEngineModel(
+  engineName: string
+): Promise<EngineInfo> {
+  return fetchJson(`${ASR_BASE_URL}/engines/${engineName}/unload`, {
+    method: "POST",
+  });
+}
+
+export async function configureEngine(
+  engineName: string,
+  credentials: Record<string, string>
+): Promise<{ status: string }> {
+  return fetchJson(`${ASR_BASE_URL}/engines/${engineName}/configure`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ credentials }),
+  });
+}

@@ -1,13 +1,18 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Download, Trash2, Shield, Cloud } from "lucide-react";
+import { Download, Trash2, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
-import { Alert, AlertDescription } from "../ui/alert";
-import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
 import { useEngineStore } from "../../stores/engineStore";
-import { PasswordInput } from "./PasswordInput";
+import { useSettingsStore } from "../../stores/settingsStore";
+import { ProviderCard } from "./ProviderCard";
+import { ProviderConfigModal } from "./ProviderConfigModal";
+import * as api from "../../services/asrClient";
+
+import openaiSvg from "@lobehub/icons-static-svg/icons/openai.svg";
+import alibabaSvg from "@lobehub/icons-static-svg/icons/alibabacloud-color.svg";
 
 interface ModelInfo {
   engine: string;
@@ -57,30 +62,49 @@ const VENDOR_GROUPS: VendorGroup[] = [
   },
 ];
 
-interface CloudASRProvider {
-  key: string;
-  fields: { label: string; placeholder: string; isPassword: boolean }[];
+interface CloudAsrDef {
+  providerKey: "openaiWhisper" | "alibabaAsr";
+  engineName: string;
+  logoSrc: string;
+  brandColor: string;
+  fields: { key: string; labelKey: string; placeholder: string; isPassword: boolean }[];
+  isConfigured: (vals: Record<string, string>) => boolean;
+  toCredentials: (vals: Record<string, string>) => Record<string, string>;
 }
 
-const CLOUD_ASR_PROVIDERS: CloudASRProvider[] = [
+const CLOUD_ASR_DEFS: CloudAsrDef[] = [
   {
-    key: "openaiWhisper",
+    providerKey: "openaiWhisper",
+    engineName: "openai-whisper",
+    logoSrc: openaiSvg,
+    brandColor: "#10A37F",
     fields: [
-      { label: "llm.apiKey", placeholder: "sk-proj-...", isPassword: true },
+      { key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "sk-proj-...", isPassword: true },
     ],
+    isConfigured: (v) => Boolean(v.apiKey),
+    toCredentials: (v) => ({ api_key: v.apiKey }),
   },
   {
-    key: "alibabaAsr",
+    providerKey: "alibabaAsr",
+    engineName: "alibaba-asr",
+    logoSrc: alibabaSvg,
+    brandColor: "#FF6A00",
     fields: [
-      { label: "asr.alibabaId", placeholder: "LTAI5t...", isPassword: false },
-      { label: "asr.alibabaSecret", placeholder: "...", isPassword: true },
+      { key: "keyId", labelKey: "settings:asr.alibabaId", placeholder: "LTAI5t...", isPassword: false },
+      { key: "secret", labelKey: "settings:asr.alibabaSecret", placeholder: "...", isPassword: true },
     ],
+    isConfigured: (v) => Boolean(v.keyId && v.secret),
+    toCredentials: (v) => ({ access_key_id: v.keyId, access_key_secret: v.secret }),
   },
 ];
 
 export function ModelManager() {
   const { t } = useTranslation("settings");
   const { engines, fetchEngines } = useEngineStore();
+  const { cloudAsr, setCloudAsr, autoDegradation, setAutoDegradation } =
+    useSettingsStore();
+  const [loadingKey, setLoadingKey] = useState<string | null>(null);
+  const [configuringAsr, setConfiguringAsr] = useState<string | null>(null);
 
   useEffect(() => {
     fetchEngines();
@@ -96,20 +120,75 @@ export function ModelManager() {
     [engines]
   );
 
+  const handleLoad = async (engine: string, size: string) => {
+    const key = `${engine}:${size}`;
+    setLoadingKey(key);
+    try {
+      await api.loadEngineModel(engine, size);
+      await fetchEngines();
+    } catch (err) {
+      toast.error(String(err));
+    } finally {
+      setLoadingKey(null);
+    }
+  };
+
+  const handleUnload = async (engine: string) => {
+    setLoadingKey(`${engine}:unload`);
+    try {
+      await api.unloadEngineModel(engine);
+      await fetchEngines();
+    } catch (err) {
+      toast.error(String(err));
+    } finally {
+      setLoadingKey(null);
+    }
+  };
+
+  const configuringDef = configuringAsr
+    ? CLOUD_ASR_DEFS.find((d) => d.providerKey === configuringAsr)
+    : null;
+
+  const getCloudValues = (key: "openaiWhisper" | "alibabaAsr"): Record<string, string> => {
+    const cfg = cloudAsr[key];
+    const result: Record<string, string> = {};
+    for (const [k, v] of Object.entries(cfg)) {
+      if (typeof v === "string") result[k] = v;
+    }
+    return result;
+  };
+
+  const handleCloudSave = async (values: Record<string, string>) => {
+    if (!configuringDef) return;
+    setCloudAsr(configuringDef.providerKey, values);
+    try {
+      await api.configureEngine(
+        configuringDef.engineName,
+        configuringDef.toCredentials(values)
+      );
+      toast.success(t("llm.credentialsSaved"));
+    } catch {
+      // Credentials saved locally even if push fails
+    }
+  };
+
   return (
     <div className="space-y-6 py-2">
-      {/* Header */}
       <div>
         <h3 className="text-lg font-semibold">{t("asr.title")}</h3>
         <p className="text-sm text-muted-foreground">{t("asr.subtitle")}</p>
       </div>
 
-      {/* Vendor groups */}
+      {/* Local ASR vendor groups */}
       {VENDOR_GROUPS.map((group) => (
         <div key={group.engine} className="space-y-2">
           <div className="flex items-center gap-2">
-            <Badge variant={group.variant}>{t(`common:engine.${group.engine}`)}</Badge>
-            <span className="text-sm font-medium">{t(`asr.${group.groupKey}`)}</span>
+            <Badge variant={group.variant}>
+              {t(`common:engine.${group.engine}`)}
+            </Badge>
+            <span className="text-sm font-medium">
+              {t(`asr.${group.groupKey}`)}
+            </span>
           </div>
           <p className="text-xs text-muted-foreground">
             {t(`asr.${group.groupKey}Desc`)}
@@ -119,6 +198,7 @@ export function ModelManager() {
             {group.models.map((model) => {
               const key = `${model.engine}:${model.size}`;
               const isLoaded = loadedModels.has(key);
+              const isOperating = loadingKey === key || loadingKey === `${model.engine}:unload`;
 
               return (
                 <div
@@ -129,7 +209,10 @@ export function ModelManager() {
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{model.size}</span>
                       {isLoaded && (
-                        <Badge variant="outline" className="text-green-600 border-green-300">
+                        <Badge
+                          variant="outline"
+                          className="border-green-300 text-green-600"
+                        >
                           {t("common:status.loaded")}
                         </Badge>
                       )}
@@ -142,14 +225,32 @@ export function ModelManager() {
                     </div>
                   </div>
                   {isLoaded ? (
-                    <Button variant="destructive" size="sm">
-                      <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      disabled={isOperating}
+                      onClick={() => handleUnload(model.engine)}
+                    >
+                      {isOperating ? (
+                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                      )}
                       {t("common:action.unload")}
                     </Button>
                   ) : (
-                    <Button variant="outline" size="sm">
-                      <Download className="mr-1.5 h-3.5 w-3.5" />
-                      {t("common:action.download")}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={isOperating}
+                      onClick={() => handleLoad(model.engine, model.size)}
+                    >
+                      {isOperating ? (
+                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Download className="mr-1.5 h-3.5 w-3.5" />
+                      )}
+                      {t("common:action.load")}
                     </Button>
                   )}
                 </div>
@@ -159,55 +260,60 @@ export function ModelManager() {
         </div>
       ))}
 
-      {/* Cloud ASR API Keys */}
+      {/* Cloud ASR — Dify-style cards */}
       <div className="space-y-3 border-t pt-4">
         <div>
           <h4 className="text-base font-semibold">{t("asr.cloudTitle")}</h4>
-          <p className="text-sm text-muted-foreground">{t("asr.cloudSubtitle")}</p>
+          <p className="text-sm text-muted-foreground">
+            {t("asr.cloudSubtitle")}
+          </p>
         </div>
 
-        <Alert>
-          <Shield className="h-4 w-4" />
-          <AlertDescription>{t("asr.securityNote")}</AlertDescription>
-        </Alert>
-
-        {CLOUD_ASR_PROVIDERS.map((provider) => (
-          <div
-            key={provider.key}
-            className="space-y-3 rounded-lg border border-border p-4"
-          >
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="gap-1">
-                <Cloud className="h-3 w-3" />
-                {t(`asr.${provider.key}`)}
-              </Badge>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {t(`asr.${provider.key}Desc`)}
-            </p>
-            {provider.fields.map((field, idx) => (
-              <div key={`${provider.key}-${idx}`} className="space-y-1">
-                <label htmlFor={`${provider.key}-${idx}`} className="text-sm font-medium">
-                  {t(field.label)}
-                </label>
-                {field.isPassword ? (
-                  <PasswordInput placeholder={field.placeholder} />
-                ) : (
-                  <Input placeholder={field.placeholder} />
-                )}
-              </div>
-            ))}
-          </div>
-        ))}
+        <div className="grid gap-2">
+          {CLOUD_ASR_DEFS.map((def) => {
+            const vals = getCloudValues(def.providerKey);
+            return (
+              <ProviderCard
+                key={def.providerKey}
+                logoSrc={def.logoSrc}
+                brandColor={def.brandColor}
+                name={t(`asr.${def.providerKey}`)}
+                description={t(`asr.${def.providerKey}Desc`)}
+                type="cloud"
+                isConfigured={def.isConfigured(vals)}
+                onClick={() => setConfiguringAsr(def.providerKey)}
+              />
+            );
+          })}
+        </div>
 
         <div className="flex items-center justify-between">
           <div>
-            <label className="text-sm font-medium">{t("asr.autoDegradation")}</label>
-            <p className="text-xs text-muted-foreground">{t("asr.autoDegradationDesc")}</p>
+            <label className="text-sm font-medium">
+              {t("asr.autoDegradation")}
+            </label>
+            <p className="text-xs text-muted-foreground">
+              {t("asr.autoDegradationDesc")}
+            </p>
           </div>
-          <Switch defaultChecked />
+          <Switch
+            checked={autoDegradation}
+            onCheckedChange={setAutoDegradation}
+          />
         </div>
       </div>
+
+      {configuringDef && (
+        <ProviderConfigModal
+          open={Boolean(configuringAsr)}
+          onClose={() => setConfiguringAsr(null)}
+          logoSrc={configuringDef.logoSrc}
+          providerName={t(`asr.${configuringDef.providerKey}`)}
+          fields={configuringDef.fields}
+          values={getCloudValues(configuringDef.providerKey)}
+          onSave={handleCloudSave}
+        />
+      )}
     </div>
   );
 }
