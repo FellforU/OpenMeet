@@ -33,9 +33,6 @@ export function EngineSelector() {
                   </Badge>
                 )}
               </div>
-              <p className="text-[11px] text-muted-foreground">
-                {t(`engine.${key}Desc`)}
-              </p>
             </SelectItem>
           );
         })}

@@ -38,17 +38,10 @@ function GeneralSettings() {
       <div className="space-y-2">
         <label className="text-sm font-medium">{t("general.ollamaModel")}</label>
         <p className="text-xs text-muted-foreground">{t("general.ollamaModelDesc")}</p>
-        <Select defaultValue="qwen2.5:7b">
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="qwen2.5:7b">Qwen 2.5 7B</SelectItem>
-            <SelectItem value="qwen2.5:14b">Qwen 2.5 14B</SelectItem>
-            <SelectItem value="mistral:7b">Mistral 7B</SelectItem>
-            <SelectItem value="llama3.2:3b">Llama 3.2 3B</SelectItem>
-          </SelectContent>
-        </Select>
+        <Input
+          defaultValue="qwen2.5:7b"
+          placeholder="例如: qwen2.5:7b, mistral:7b"
+        />
       </div>
       <div className="flex items-center justify-between">
         <div>
@@ -127,16 +120,16 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
               {t("tabs.about")}
             </TabsTrigger>
           </TabsList>
-          <TabsContent value="general">
+          <TabsContent value="general" className="max-h-[400px] overflow-y-auto">
             <GeneralSettings />
           </TabsContent>
-          <TabsContent value="models">
+          <TabsContent value="models" className="max-h-[400px] overflow-y-auto">
             <ModelManager />
           </TabsContent>
-          <TabsContent value="api">
+          <TabsContent value="api" className="max-h-[400px] overflow-y-auto">
             <APIKeyTab />
           </TabsContent>
-          <TabsContent value="about">
+          <TabsContent value="about" className="max-h-[400px] overflow-y-auto">
             <AboutSection />
           </TabsContent>
         </Tabs>
