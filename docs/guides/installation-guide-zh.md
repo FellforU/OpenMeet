@@ -248,21 +248,227 @@ pip install -r asr_service/requirements.txt
 
 #### GPU 加速（可选但推荐）
 
-如果你有 NVIDIA GPU 并希望加速转录：
+如果你有 NVIDIA GPU 并希望加速转录，需要安装 CUDA Toolkit。
+
+##### 检查当前状态
 
 ```bash
-# 安装 CUDA Toolkit（推荐 11.8 或 12.x）
-# 下载: https://developer.nvidia.com/cuda-toolkit
-
-# 安装 cuDNN
-# 下载: https://developer.nvidia.com/cudnn
-
-# 验证 CUDA 安装
+# 检查 GPU 驱动和支持的 CUDA 版本
 nvidia-smi
+
+# 检查 CUDA Toolkit 是否已安装
 nvcc --version
 ```
 
-faster-whisper 会自动检测 CUDA 并使用 GPU 加速，无需额外配置。
+如果 `nvidia-smi` 显示 CUDA Version（如 13.0），但 `nvcc` 命令不存在，说明只安装了驱动，需要安装 CUDA Toolkit。
+
+##### Windows 安装 CUDA Toolkit
+
+**1. 选择 CUDA 版本**
+
+根据你的 GPU 驱动支持的 CUDA 版本选择：
+- 驱动支持 CUDA 13.0+ → 推荐安装 CUDA 12.6（兼容性好）
+- 驱动支持 CUDA 12.x → 安装 CUDA 12.1 或 12.6
+- 驱动支持 CUDA 11.x → 安装 CUDA 11.8
+
+**2. 下载 CUDA Toolkit**
+
+访问 [NVIDIA CUDA Toolkit 下载页](https://developer.nvidia.com/cuda-downloads)
+
+选择：
+- Operating System: Windows
+- Architecture: x86_64
+- Version: 10/11
+- Installer Type: exe (local) 推荐
+
+或直接下载 CUDA 12.6:
+```
+https://developer.download.nvidia.com/compute/cuda/12.6.0/local_installers/cuda_12.6.0_560.76_windows.exe
+```
+
+**3. 安装 CUDA Toolkit**
+
+```powershell
+# 运行下载的安装程序
+# 安装选项：
+# - 选择「自定义安装」
+# - 必选组件：
+#   ✓ CUDA Toolkit
+#   ✓ CUDA Runtime
+#   ✓ CUDA Development
+#   ✓ CUDA Documentation (可选)
+# - 安装路径默认：C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6
+```
+
+**4. 配置环境变量**
+
+安装程序通常会自动配置，手动验证：
+
+```powershell
+# 检查环境变量（PowerShell）
+$env:CUDA_PATH
+# 应输出: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6
+
+# 检查 PATH 是否包含 CUDA bin 目录
+$env:PATH -split ';' | Select-String cuda
+# 应包含: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6\bin
+```
+
+如果未自动配置，手动添加：
+
+```powershell
+# 临时添加（当前会话）
+$env:CUDA_PATH = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6"
+$env:PATH += ";$env:CUDA_PATH\bin"
+
+# 永久添加：
+# 1. 右键「此电脑」→「属性」→「高级系统设置」→「环境变量」
+# 2. 系统变量中新建：
+#    变量名: CUDA_PATH
+#    变量值: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6
+# 3. 编辑 Path 变量，添加：
+#    %CUDA_PATH%\bin
+#    %CUDA_PATH%\libnvvp
+```
+
+**5. 验证安装**
+
+```powershell
+# 重启 PowerShell 后验证
+nvcc --version
+# 应输出: Cuda compilation tools, release 12.6, V12.6.xxx
+
+# 检查 CUDA 示例编译（可选）
+cd "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6\extras\demo_suite"
+.\deviceQuery.exe
+# 应显示 GPU 信息和 "Result = PASS"
+```
+
+##### Linux 安装 CUDA Toolkit
+
+**Ubuntu/Debian**:
+
+```bash
+# 1. 添加 NVIDIA 官方源
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+sudo dpkg -i cuda-keyring_1.1-1_all.deb
+sudo apt update
+
+# 2. 安装 CUDA Toolkit（推荐 12.6）
+sudo apt install cuda-toolkit-12-6
+
+# 3. 配置环境变量
+echo 'export PATH=/usr/local/cuda-12.6/bin:$PATH' >> ~/.bashrc
+echo 'export LD_LIBRARY_PATH=/usr/local/cuda-12.6/lib64:$LD_LIBRARY_PATH' >> ~/.bashrc
+source ~/.bashrc
+
+# 4. 验证
+nvcc --version
+```
+
+##### macOS 注意事项
+
+macOS 不支持 NVIDIA GPU 和 CUDA。如果使用 Apple Silicon (M1/M2/M3)，PyTorch 会自动使用 Metal Performance Shaders (MPS) 加速，无需额外配置。
+
+##### 安装 cuDNN（可选，提升性能）
+
+cuDNN 是 CUDA 的深度学习加速库，可进一步提升性能：
+
+**Windows**:
+
+```powershell
+# 1. 下载 cuDNN（需要 NVIDIA 账号）
+# 访问: https://developer.nvidia.com/cudnn
+# 选择与 CUDA 版本匹配的 cuDNN（如 cuDNN 9.x for CUDA 12.x）
+
+# 2. 解压下载的 zip 文件
+
+# 3. 复制文件到 CUDA 目录
+# 将 cudnn-windows-x86_64-9.x.x\bin\*.dll 复制到:
+#   C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6\bin\
+# 将 cudnn-windows-x86_64-9.x.x\include\*.h 复制到:
+#   C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6\include\
+# 将 cudnn-windows-x86_64-9.x.x\lib\*.lib 复制到:
+#   C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6\lib\x64\
+```
+
+**Linux**:
+
+```bash
+# 使用 apt 安装（推荐）
+sudo apt install libcudnn9-cuda-12
+
+# 或手动下载安装
+# 下载: https://developer.nvidia.com/cudnn
+tar -xvf cudnn-linux-x86_64-9.x.x.tgz
+sudo cp cuda/include/cudnn*.h /usr/local/cuda/include
+sudo cp cuda/lib64/libcudnn* /usr/local/cuda/lib64
+sudo chmod a+r /usr/local/cuda/include/cudnn*.h /usr/local/cuda/lib64/libcudnn*
+```
+
+##### 验证 GPU 加速
+
+```bash
+# 激活虚拟环境
+source .venv/bin/activate
+
+# Python 中验证 CUDA
+python3 -c "
+import torch
+print(f'CUDA available: {torch.cuda.is_available()}')
+print(f'CUDA version: {torch.version.cuda}')
+print(f'GPU count: {torch.cuda.device_count()}')
+if torch.cuda.is_available():
+    print(f'GPU name: {torch.cuda.get_device_name(0)}')
+"
+
+# 测试 faster-whisper GPU 加速
+python3 -c "
+from faster_whisper import WhisperModel
+model = WhisperModel('tiny', device='cuda', compute_type='float16')
+print('GPU 加速可用！')
+"
+```
+
+如果输出 `CUDA available: True` 和 GPU 名称，说明安装成功。
+
+##### 常见问题
+
+**问题 1**: `nvcc --version` 显示版本，但 PyTorch 检测不到 CUDA
+
+```bash
+# 检查 PyTorch 安装的 CUDA 版本
+python3 -c "import torch; print(torch.version.cuda)"
+
+# 如果版本不匹配，重新安装 PyTorch
+pip uninstall torch
+# 访问 https://pytorch.org/get-started/locally/ 选择对应 CUDA 版本
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+```
+
+**问题 2**: `CUDA out of memory` 错误
+
+```
+解决方案：
+1. 选择更小的模型（Whisper: large → medium → small）
+2. 减小 batch_size（在 config.py 中调整）
+3. 关闭其他占用 GPU 的程序
+4. 使用 CPU 模式（device='cpu'）
+```
+
+**问题 3**: Windows 上 `nvcc` 命令找不到
+
+```powershell
+# 检查安装路径
+dir "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA"
+
+# 手动添加到 PATH
+$env:PATH += ";C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6\bin"
+
+# 重启 PowerShell
+```
+
+faster-whisper 和其他 ASR 引擎会自动检测 CUDA 并使用 GPU 加速，无需额外配置。
 
 #### 验证 ASR 服务安装
 

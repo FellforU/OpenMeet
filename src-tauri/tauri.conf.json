@@ -33,7 +33,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "createUpdaterArtifacts": "v2Compatible",
+
     "windows": {
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256",
