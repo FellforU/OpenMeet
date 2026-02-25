@@ -1,94 +1,110 @@
-import { Form, Input, Typography, Space, Tag, Alert, Switch } from "antd";
-import { KeyOutlined, CloudOutlined } from "@ant-design/icons";
-import { useEngineStore } from "../../stores/engineStore";
-
-const { Paragraph } = Typography;
+import { useTranslation } from "react-i18next";
+import { Shield, Cloud, Eye, EyeOff } from "lucide-react";
+import { useState } from "react";
+import { Alert, AlertDescription } from "../ui/alert";
+import { Input } from "../ui/input";
+import { Switch } from "../ui/switch";
+import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
 
 interface APIProvider {
   key: string;
   name: string;
-  envKey: string;
   description: string;
   placeholder: string;
-  color: string;
 }
 
 const API_PROVIDERS: APIProvider[] = [
   {
     key: "openai",
     name: "OpenAI Whisper",
-    envKey: "OPENAI_API_KEY",
     description: "Cloud transcription via OpenAI Whisper API. Supports 50+ languages.",
     placeholder: "sk-proj-...",
-    color: "green",
   },
   {
     key: "alibaba",
     name: "Alibaba Cloud ASR",
-    envKey: "ALIBABA_ACCESS_KEY_ID / SECRET",
     description: "Chinese-optimized cloud ASR via DashScope Paraformer API.",
     placeholder: "LTAI5t...",
-    color: "orange",
   },
 ];
 
+function PasswordInput({ placeholder }: { placeholder: string }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="relative">
+      <Input
+        type={show ? "text" : "password"}
+        placeholder={placeholder}
+        className="pr-10"
+      />
+      <Button
+        variant="ghost"
+        size="sm"
+        className="absolute right-0 top-0 h-full px-3"
+        onClick={() => setShow(!show)}
+        type="button"
+      >
+        {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+      </Button>
+    </div>
+  );
+}
+
 export function APIKeyTab() {
-  const selectedEngine = useEngineStore((s) => s.selectedEngine);
+  const { t } = useTranslation("settings");
 
   return (
-    <div style={{ padding: "8px 0" }}>
-      <Alert
-        message="API keys are stored locally and never sent to our servers."
-        type="info"
-        showIcon
-        style={{ marginBottom: 16 }}
-      />
+    <div className="space-y-4 py-2">
+      <Alert>
+        <Shield className="h-4 w-4" />
+        <AlertDescription>
+          {t("apiKeys.securityNote")}
+        </AlertDescription>
+      </Alert>
 
-      <Form layout="vertical">
-        {API_PROVIDERS.map((provider) => (
-          <div
-            key={provider.key}
-            style={{
-              marginBottom: 20,
-              padding: 16,
-              border: "1px solid #f0f0f0",
-              borderRadius: 8,
-              backgroundColor: selectedEngine === `${provider.key === "openai" ? "openai-whisper" : "alibaba-asr"}` ? "#f6ffed" : "transparent",
-            }}
-          >
-            <Space style={{ marginBottom: 8 }}>
-              <Tag color={provider.color} icon={<CloudOutlined />}>
-                {provider.name}
-              </Tag>
-            </Space>
-            <Paragraph type="secondary" style={{ fontSize: 12, margin: "4px 0 12px" }}>
-              {provider.description}
-            </Paragraph>
-
-            {provider.key === "openai" ? (
-              <Form.Item label="API Key" style={{ marginBottom: 0 }}>
-                <Input.Password
-                  prefix={<KeyOutlined />}
-                  placeholder={provider.placeholder}
-                />
-              </Form.Item>
-            ) : (
-              <>
-                <Form.Item label="Access Key ID" style={{ marginBottom: 8 }}>
-                  <Input prefix={<KeyOutlined />} placeholder="LTAI5t..." />
-                </Form.Item>
-                <Form.Item label="Access Key Secret" style={{ marginBottom: 0 }}>
-                  <Input.Password prefix={<KeyOutlined />} placeholder="..." />
-                </Form.Item>
-              </>
-            )}
+      {API_PROVIDERS.map((provider) => (
+        <div
+          key={provider.key}
+          className="space-y-3 rounded-lg border border-border p-4"
+        >
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="gap-1">
+              <Cloud className="h-3 w-3" />
+              {provider.name}
+            </Badge>
           </div>
-        ))}
+          <p className="text-xs text-muted-foreground">
+            {provider.description}
+          </p>
 
-        <Form.Item label="Enable auto-degradation" tooltip="Automatically fall back to cloud API when local GPU is insufficient">
-          <Switch defaultChecked />
-        </Form.Item>
-      </Form>
+          {provider.key === "openai" ? (
+            <div className="space-y-1">
+              <label className="text-sm font-medium">{t("apiKeys.openai")}</label>
+              <PasswordInput placeholder={provider.placeholder} />
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-sm font-medium">{t("apiKeys.alibabaId")}</label>
+                <Input placeholder="LTAI5t..." />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">{t("apiKeys.alibabaSecret")}</label>
+                <PasswordInput placeholder="..." />
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+
+      <div className="flex items-center justify-between">
+        <div>
+          <label className="text-sm font-medium">{t("apiKeys.autoDegradation")}</label>
+          <p className="text-xs text-muted-foreground">{t("apiKeys.autoDegradationDesc")}</p>
+        </div>
+        <Switch defaultChecked />
+      </div>
     </div>
   );
 }
