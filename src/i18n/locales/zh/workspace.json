@@ -1,0 +1,36 @@
+{
+  "tabs": {
+    "transcript": "转录",
+    "summary": "摘要",
+    "edit": "编辑"
+  },
+  "transcript": {
+    "empty": "上传音频或开始录音以进行转录",
+    "transcribing": "转录中..."
+  },
+  "summary": {
+    "topic": "主题",
+    "conclusions": "结论",
+    "actionItems": "待办事项",
+    "discussion": "讨论要点",
+    "empty": "转录完成后将显示摘要",
+    "generating": "正在生成摘要...",
+    "editSummary": "编辑摘要",
+    "assignee": "负责人",
+    "deadline": "截止日期"
+  },
+  "export": {
+    "title": "导出",
+    "markdown": "Markdown (.md)",
+    "plainText": "纯文本 (.txt)",
+    "json": "JSON (.json)"
+  },
+  "recording": {
+    "start": "开始录制",
+    "recording": "录制中",
+    "paused": "已暂停"
+  },
+  "player": {
+    "speed": "倍速"
+  }
+}

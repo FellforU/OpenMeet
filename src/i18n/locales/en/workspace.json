@@ -1,0 +1,36 @@
+{
+  "tabs": {
+    "transcript": "Transcript",
+    "summary": "Summary",
+    "edit": "Edit"
+  },
+  "transcript": {
+    "empty": "Upload audio or start recording to begin transcription",
+    "transcribing": "Transcribing..."
+  },
+  "summary": {
+    "topic": "Topic",
+    "conclusions": "Conclusions",
+    "actionItems": "Action Items",
+    "discussion": "Discussion Summary",
+    "empty": "Summary will appear after transcription completes",
+    "generating": "Generating summary...",
+    "editSummary": "Edit Summary",
+    "assignee": "Assignee",
+    "deadline": "Deadline"
+  },
+  "export": {
+    "title": "Export",
+    "markdown": "Markdown (.md)",
+    "plainText": "Plain Text (.txt)",
+    "json": "JSON (.json)"
+  },
+  "recording": {
+    "start": "Start Recording",
+    "recording": "Recording",
+    "paused": "Paused"
+  },
+  "player": {
+    "speed": "Speed"
+  }
+}

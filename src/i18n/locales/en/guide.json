@@ -1,0 +1,24 @@
+{
+  "welcome": {
+    "title": "Welcome to OpenMeet",
+    "description": "Local-first AI meeting transcription tool. Let's set up your environment."
+  },
+  "microphone": {
+    "title": "Microphone Access",
+    "description": "Click 'Allow' when your browser asks for microphone permission."
+  },
+  "model": {
+    "title": "ASR Model Setup",
+    "description": "Choose a speech recognition model that works best for you."
+  },
+  "ollama": {
+    "title": "AI Summary (Optional)",
+    "description": "Install Ollama to enable smart meeting summaries.",
+    "instruction": "Install Ollama from https://ollama.com then run: ollama pull qwen2.5:7b"
+  },
+  "done": {
+    "title": "Setup Complete!",
+    "description": "You're ready to start transcribing meetings.",
+    "getStarted": "Get Started"
+  }
+}

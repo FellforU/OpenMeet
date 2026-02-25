@@ -1,0 +1,37 @@
+{
+  "title": "Settings",
+  "tabs": {
+    "general": "General",
+    "models": "Models",
+    "apiKeys": "API Keys",
+    "about": "About"
+  },
+  "general": {
+    "ollamaHost": "Ollama Host",
+    "ollamaHostDesc": "Address of the Ollama server for LLM summaries",
+    "ollamaModel": "Ollama Model",
+    "ollamaModelDesc": "Model to use for meeting summary generation",
+    "autoSummary": "Auto-generate summary",
+    "autoSummaryDesc": "Automatically generate meeting summary after transcription completes",
+    "exportFormat": "Default export format"
+  },
+  "models": {
+    "title": "Model Manager",
+    "downloaded": "Downloaded",
+    "available": "Available",
+    "downloading": "Downloading"
+  },
+  "apiKeys": {
+    "title": "API Key Management",
+    "openai": "OpenAI API Key",
+    "alibabaId": "Access Key ID",
+    "alibabaSecret": "Access Key Secret",
+    "autoDegradation": "Enable auto-degradation",
+    "autoDegradationDesc": "Automatically fall back to cloud API when local GPU is insufficient",
+    "securityNote": "API keys are stored locally and never sent to our servers."
+  },
+  "about": {
+    "description": "Local-first AI meeting transcription tool. Built with Tauri 2.x, React 19, FastAPI, Ollama.",
+    "techStack": "Tech Stack"
+  }
+}

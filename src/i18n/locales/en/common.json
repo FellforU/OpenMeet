@@ -1,0 +1,94 @@
+{
+  "app": {
+    "name": "OpenMeet",
+    "version": "v0.1.0",
+    "description": "Local-first AI meeting transcription tool"
+  },
+  "action": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "delete": "Delete",
+    "export": "Export",
+    "upload": "Upload",
+    "download": "Download",
+    "edit": "Edit",
+    "search": "Search",
+    "record": "Record",
+    "pause": "Pause",
+    "resume": "Resume",
+    "stop": "Stop",
+    "skip": "Skip",
+    "previous": "Previous",
+    "next": "Next",
+    "retry": "Retry",
+    "reload": "Reload",
+    "close": "Close",
+    "new": "New",
+    "unload": "Unload"
+  },
+  "status": {
+    "idle": "Idle",
+    "transcribing": "Transcribing",
+    "paused": "Paused",
+    "completed": "Completed",
+    "processing": "Processing",
+    "ready": "Ready",
+    "cancelled": "Cancelled",
+    "running": "Running",
+    "loaded": "Loaded",
+    "notLoaded": "Not Loaded"
+  },
+  "language": {
+    "auto": "Auto Detect",
+    "zh": "Chinese",
+    "en": "English",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "de": "German",
+    "fr": "French",
+    "es": "Spanish",
+    "yue": "Cantonese",
+    "wuu": "Wu (Shanghai)"
+  },
+  "engine": {
+    "whisper": "Whisper",
+    "qwen3": "Qwen3-ASR",
+    "paraformer": "Paraformer",
+    "whisperDesc": "Best for English & multilingual",
+    "qwen3Desc": "Best for Chinese & dialects",
+    "paraformerDesc": "Fastest for Chinese"
+  },
+  "model": {
+    "selectSize": "Model Size",
+    "tiny": "Fastest, lowest quality",
+    "base": "Good balance for quick tasks",
+    "small": "Better accuracy",
+    "medium": "High accuracy",
+    "large": "Best accuracy",
+    "qwen06b": "Lightweight, 22 dialects",
+    "qwen17b": "Higher accuracy, 22 dialects",
+    "paraStandard": "Fast Chinese ASR",
+    "paraVadPunc": "Chinese with VAD + punctuation",
+    "paraVadPuncSpk": "Chinese with diarization"
+  },
+  "sidebar": {
+    "newProject": "New Project",
+    "noProjects": "No projects yet",
+    "deleteConfirm": "Are you sure you want to delete this project?",
+    "searchPlaceholder": "Search transcripts...",
+    "noResults": "No results"
+  },
+  "error": {
+    "title": "Something went wrong",
+    "tryAgain": "Try Again",
+    "reloadApp": "Reload App"
+  },
+  "toast": {
+    "fileLoaded": "Loaded: {{name}}",
+    "exportSuccess": "Exported as {{format}}",
+    "exportFailed": "Export failed: network error",
+    "summarySaved": "Summary saved",
+    "copySuccess": "Copied to clipboard"
+  }
+}
