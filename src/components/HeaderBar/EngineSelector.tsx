@@ -1,51 +1,45 @@
-import { Select, Tag } from "antd";
+import { useTranslation } from "react-i18next";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
+import { Badge } from "../ui/badge";
 import { useEngineStore } from "../../stores/engineStore";
 
-const ENGINE_LABELS: Record<string, string> = {
-  whisper: "Whisper",
-  qwen3: "Qwen3-ASR",
-  paraformer: "Paraformer",
-};
-
-const ENGINE_DESCRIPTIONS: Record<string, string> = {
-  whisper: "Best for English & multilingual",
-  qwen3: "Best for Chinese & dialects",
-  paraformer: "Fastest for Chinese",
-};
+const ENGINE_KEYS = ["whisper", "qwen3", "paraformer"] as const;
 
 export function EngineSelector() {
+  const { t } = useTranslation();
   const { engines, selectedEngine, setSelectedEngine } = useEngineStore();
 
-  const options = engines.map((e) => ({
-    value: e.name,
-    label: (
-      <span>
-        {ENGINE_LABELS[e.name] || e.name}
-        {e.is_loaded && (
-          <Tag color="green" style={{ marginLeft: 8, fontSize: 10 }}>
-            Loaded
-          </Tag>
-        )}
-      </span>
-    ),
-    description: ENGINE_DESCRIPTIONS[e.name],
-  }));
-
   return (
-    <Select
-      value={selectedEngine}
-      onChange={setSelectedEngine}
-      options={options}
-      style={{ width: 180 }}
-      placeholder="Select engine"
-      optionRender={(option) => (
-        <div>
-          <div>{option.label}</div>
-          <div style={{ fontSize: 11, color: "#999" }}>
-            {(option.data as { description?: string }).description}
-          </div>
-        </div>
-      )}
-    />
+    <Select value={selectedEngine} onValueChange={setSelectedEngine}>
+      <SelectTrigger className="h-8 w-[180px] text-sm">
+        <SelectValue placeholder="Select engine" />
+      </SelectTrigger>
+      <SelectContent>
+        {ENGINE_KEYS.map((key) => {
+          const engine = engines.find((e) => e.name === key);
+          return (
+            <SelectItem key={key} value={key}>
+              <div className="flex items-center gap-2">
+                <span>{t(`engine.${key}`)}</span>
+                {engine?.is_loaded && (
+                  <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                    {t("status.loaded")}
+                  </Badge>
+                )}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                {t(`engine.${key}Desc`)}
+              </p>
+            </SelectItem>
+          );
+        })}
+      </SelectContent>
+    </Select>
   );
 }

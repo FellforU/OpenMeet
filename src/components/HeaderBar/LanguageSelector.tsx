@@ -1,38 +1,39 @@
-import { Select } from "antd";
+import { useTranslation } from "react-i18next";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
 import { useEngineStore } from "../../stores/engineStore";
 
-const LANGUAGES = [
-  { value: "auto", label: "Auto Detect" },
-  { value: "zh", label: "Chinese" },
-  { value: "en", label: "English" },
-  { value: "ja", label: "Japanese" },
-  { value: "ko", label: "Korean" },
-  { value: "de", label: "German" },
-  { value: "fr", label: "French" },
-  { value: "es", label: "Spanish" },
-  { value: "yue", label: "Cantonese" },
-  { value: "wuu", label: "Wu (Shanghai)" },
-];
+const LANGUAGE_KEYS = ["auto", "zh", "en", "ja", "ko", "de", "fr", "es", "yue", "wuu"] as const;
 
 export function LanguageSelector() {
+  const { t } = useTranslation();
   const { selectedLanguage, setSelectedLanguage, engines, selectedEngine } =
     useEngineStore();
 
   const engine = engines.find((e) => e.name === selectedEngine);
   const supported = new Set(engine?.supported_languages || []);
 
-  const options = LANGUAGES.map((lang) => ({
-    ...lang,
-    disabled: supported.size > 0 && !supported.has(lang.value) && lang.value !== "auto",
-  }));
-
   return (
-    <Select
-      value={selectedLanguage}
-      onChange={setSelectedLanguage}
-      options={options}
-      style={{ width: 140 }}
-      placeholder="Language"
-    />
+    <Select value={selectedLanguage} onValueChange={setSelectedLanguage}>
+      <SelectTrigger className="h-8 w-[140px] text-sm">
+        <SelectValue placeholder={t("language.auto")} />
+      </SelectTrigger>
+      <SelectContent>
+        {LANGUAGE_KEYS.map((key) => (
+          <SelectItem
+            key={key}
+            value={key}
+            disabled={supported.size > 0 && !supported.has(key) && key !== "auto"}
+          >
+            {t(`language.${key}`)}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
