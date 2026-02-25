@@ -1,14 +1,9 @@
 import { useRef, useEffect } from "react";
-import { Button, Slider, Space, Typography } from "antd";
-import {
-  PlayCircleOutlined,
-  PauseCircleOutlined,
-  StepBackwardOutlined,
-  StepForwardOutlined,
-} from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
+import { Play, Pause, SkipBack, SkipForward } from "lucide-react";
+import { Button } from "../ui/button";
+import { Slider } from "../ui/slider";
 import { useTranscriptionStore } from "../../stores/transcriptionStore";
-
-const { Text } = Typography;
 
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -17,6 +12,7 @@ function formatTime(seconds: number): string {
 }
 
 export function AudioPlayer() {
+  const { t } = useTranslation();
   const audioRef = useRef<HTMLAudioElement>(null);
   const {
     audio,
@@ -35,13 +31,11 @@ export function AudioPlayer() {
     audioRef.current.playbackRate = audio.playbackSpeed;
   }, [audio.playbackSpeed]);
 
-  // Sync external seekTo calls (e.g. clicking timestamps)
   useEffect(() => {
     if (!audioRef.current) return;
     const diff = Math.abs(audioRef.current.currentTime - audio.currentTime);
     if (diff > 1) {
       audioRef.current.currentTime = audio.currentTime;
-      // Only resume if already playing but paused due to seek
       if (audio.isPlaying && audioRef.current.paused) {
         audioRef.current.play();
       }
@@ -65,7 +59,7 @@ export function AudioPlayer() {
   };
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1 }}>
+    <div className="flex flex-1 items-center gap-3">
       <audio
         ref={audioRef}
         onTimeUpdate={() => {
@@ -76,45 +70,54 @@ export function AudioPlayer() {
         }}
         onEnded={() => setIsPlaying(false)}
       />
-      <Space size={4}>
+      <div className="flex items-center gap-1">
         <Button
-          type="text"
-          size="small"
-          icon={<StepBackwardOutlined />}
+          variant="ghost"
+          size="sm"
+          className="h-7 w-7 p-0"
           onClick={() => skip(-5)}
           disabled={!audio.objectUrl}
-        />
+        >
+          <SkipBack className="h-4 w-4" />
+        </Button>
         <Button
-          type="text"
-          icon={audio.isPlaying ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0"
           onClick={togglePlay}
           disabled={!audio.objectUrl}
-          style={{ fontSize: 20 }}
-        />
+        >
+          {audio.isPlaying ? (
+            <Pause className="h-5 w-5" />
+          ) : (
+            <Play className="h-5 w-5" />
+          )}
+        </Button>
         <Button
-          type="text"
-          size="small"
-          icon={<StepForwardOutlined />}
+          variant="ghost"
+          size="sm"
+          className="h-7 w-7 p-0"
           onClick={() => skip(5)}
           disabled={!audio.objectUrl}
-        />
-      </Space>
+        >
+          <SkipForward className="h-4 w-4" />
+        </Button>
+      </div>
       <Slider
-        style={{ flex: 1, margin: "0 8px" }}
+        className="flex-1"
         min={0}
         max={audio.duration || 100}
         step={0.1}
-        value={audio.currentTime}
-        onChange={(val) => {
-          if (audioRef.current) audioRef.current.currentTime = val;
-          setCurrentTime(val);
+        value={[audio.currentTime]}
+        onValueChange={(val: number[]) => {
+          if (audioRef.current) audioRef.current.currentTime = val[0];
+          setCurrentTime(val[0]);
         }}
-        tooltip={{ formatter: (val) => formatTime(val || 0) }}
         disabled={!audio.objectUrl}
       />
-      <Text style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+      <span className="whitespace-nowrap text-xs text-muted-foreground">
         {formatTime(audio.currentTime)} / {formatTime(audio.duration)}
-      </Text>
+      </span>
     </div>
   );
 }

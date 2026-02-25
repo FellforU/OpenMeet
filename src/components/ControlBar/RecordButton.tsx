@@ -1,9 +1,8 @@
-import { Button, Space, Typography } from "antd";
-import { AudioOutlined, PauseOutlined, BorderOutlined } from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
+import { Mic, Pause, Square } from "lucide-react";
+import { Button } from "../ui/button";
 import { useRecordingStore } from "../../stores/recordingStore";
 import { useEngineStore } from "../../stores/engineStore";
-
-const { Text } = Typography;
 
 function formatElapsed(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -12,6 +11,7 @@ function formatElapsed(seconds: number): string {
 }
 
 export function RecordButton() {
+  const { t } = useTranslation();
   const { status, elapsed, startRecording, pauseRecording, resumeRecording, stopRecording } =
     useRecordingStore();
   const { selectedEngine, selectedModelSize, selectedLanguage } =
@@ -24,37 +24,36 @@ export function RecordButton() {
 
   if (status === "idle") {
     return (
-      <Button icon={<AudioOutlined />} onClick={handleStart}>
-        Record
+      <Button variant="outline" size="sm" onClick={handleStart}>
+        <Mic className="mr-1.5 h-4 w-4" />
+        {t("action.record")}
       </Button>
     );
   }
 
   return (
-    <Space size={4}>
+    <div className="flex items-center gap-1">
       {status === "recording" ? (
-        <Button icon={<PauseOutlined />} onClick={pauseRecording}>
-          Pause
+        <Button variant="outline" size="sm" onClick={pauseRecording}>
+          <Pause className="mr-1.5 h-4 w-4" />
+          {t("action.pause")}
         </Button>
       ) : (
-        <Button icon={<AudioOutlined />} onClick={resumeRecording}>
-          Resume
+        <Button variant="outline" size="sm" onClick={resumeRecording}>
+          <Mic className="mr-1.5 h-4 w-4" />
+          {t("action.resume")}
         </Button>
       )}
-      <Button
-        icon={<BorderOutlined />}
-        danger
-        onClick={stopRecording}
-      >
-        Stop
+      <Button variant="destructive" size="sm" onClick={stopRecording}>
+        <Square className="mr-1.5 h-4 w-4" />
+        {t("action.stop")}
       </Button>
-      <Text
-        type={status === "recording" ? "danger" : "secondary"}
-        style={{ fontSize: 12, fontVariantNumeric: "tabular-nums" }}
+      <span
+        className={`text-xs tabular-nums ${status === "recording" ? "text-destructive" : "text-muted-foreground"}`}
       >
         {status === "recording" ? "● " : "⏸ "}
         {formatElapsed(elapsed)}
-      </Text>
-    </Space>
+      </span>
+    </div>
   );
 }
