@@ -1,5 +1,4 @@
 import { useRef, useEffect } from "react";
-import { useTranslation } from "react-i18next";
 import { Play, Pause, SkipBack, SkipForward } from "lucide-react";
 import { Button } from "../ui/button";
 import { Slider } from "../ui/slider";
@@ -12,7 +11,6 @@ function formatTime(seconds: number): string {
 }
 
 export function AudioPlayer() {
-  const { t } = useTranslation();
   const audioRef = useRef<HTMLAudioElement>(null);
   const {
     audio,
