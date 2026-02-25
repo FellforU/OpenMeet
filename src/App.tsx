@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ConfigProvider, Layout, theme } from "antd";
+import { Toaster } from "sonner";
 import { Sidebar } from "./components/Sidebar";
 import { HeaderBar } from "./components/HeaderBar";
 import { Workspace } from "./components/Workspace";
@@ -7,8 +7,7 @@ import { ControlBar } from "./components/ControlBar";
 import { StatusBar } from "./components/StatusBar";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FirstRunGuide } from "./components/Guide/FirstRunGuide";
-
-const { Content } = Layout;
+import { TooltipProvider } from "./components/ui/tooltip";
 
 const FIRST_RUN_KEY = "openmeet_first_run_done";
 
@@ -30,27 +29,21 @@ function App() {
 
   return (
     <ErrorBoundary>
-      <ConfigProvider theme={{ algorithm: theme.defaultAlgorithm }}>
-        <Layout style={{ minHeight: "100vh" }}>
+      <TooltipProvider>
+        <div className="flex h-screen overflow-hidden bg-background text-foreground">
           <Sidebar collapsed={collapsed} onCollapse={setCollapsed} />
-          <Layout style={{ display: "flex", flexDirection: "column" }}>
+          <div className="flex flex-1 flex-col overflow-hidden">
             <HeaderBar />
-            <Content
-              style={{
-                flex: 1,
-                display: "flex",
-                flexDirection: "column",
-                overflow: "hidden",
-              }}
-            >
+            <main className="flex-1 overflow-hidden">
               <Workspace />
-            </Content>
+            </main>
             <ControlBar />
             <StatusBar />
-          </Layout>
-        </Layout>
+          </div>
+        </div>
+        <Toaster position="top-right" richColors />
         <FirstRunGuide open={showGuide} onClose={handleCloseGuide} />
-      </ConfigProvider>
+      </TooltipProvider>
     </ErrorBoundary>
   );
 }
