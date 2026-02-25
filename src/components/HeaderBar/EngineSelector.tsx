@@ -18,7 +18,9 @@ export function EngineSelector() {
   return (
     <Select value={selectedEngine} onValueChange={setSelectedEngine}>
       <SelectTrigger className="h-8 w-[180px] text-sm">
-        <SelectValue placeholder="Select engine" />
+        <SelectValue placeholder="Select engine">
+          {selectedEngine ? t(`engine.${selectedEngine}`) : "Select engine"}
+        </SelectValue>
       </SelectTrigger>
       <SelectContent>
         {ENGINE_KEYS.map((key) => {
