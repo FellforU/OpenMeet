@@ -1,35 +1,21 @@
-import { Progress, Space, Typography } from "antd";
+import { useTranslation } from "react-i18next";
+import { Progress } from "../ui/progress";
 import { useTranscriptionStore } from "../../stores/transcriptionStore";
 import { PipelineStatus } from "./PipelineStatus";
 
-const { Text } = Typography;
-
 export function StatusBar() {
+  const { t } = useTranslation();
   const { job } = useTranscriptionStore();
 
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        padding: "4px 16px",
-        borderTop: "1px solid #f0f0f0",
-        background: "#fafafa",
-        fontSize: 12,
-      }}
-    >
+    <div className="flex items-center gap-3 border-t border-border bg-muted/50 px-4 py-1 text-xs">
       <PipelineStatus />
       {job.status === "running" && (
-        <Progress
-          percent={Math.round(job.progress)}
-          size="small"
-          style={{ width: 200, margin: 0 }}
-        />
+        <Progress value={Math.round(job.progress)} className="h-1.5 w-48" />
       )}
-      <Space style={{ marginLeft: "auto" }}>
-        <Text type="secondary">OpenMeet v0.1.0</Text>
-      </Space>
+      <span className="ml-auto text-muted-foreground">
+        {t("app.name")} {t("app.version")}
+      </span>
     </div>
   );
 }

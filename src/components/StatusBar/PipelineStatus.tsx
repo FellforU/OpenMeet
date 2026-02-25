@@ -1,107 +1,105 @@
-import { Steps, Tag } from "antd";
-import {
-  AudioOutlined,
-  FontSizeOutlined,
-  MessageOutlined,
-  TeamOutlined,
-  FileTextOutlined,
-  CheckCircleOutlined,
-} from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
+import { Mic, Type, MessageSquare, Users, FileText, CheckCircle } from "lucide-react";
+import { Badge } from "../ui/badge";
+import { cn } from "@/lib/utils";
 import { useTranscriptionStore } from "../../stores/transcriptionStore";
 import type { PipelineStep, JobStatus } from "../../types";
 
 const PIPELINE_STEPS = [
-  { key: "transcribing", label: "Transcribe", icon: <AudioOutlined /> },
-  { key: "itn", label: "ITN", icon: <FontSizeOutlined /> },
-  { key: "punctuation", label: "Punctuation", icon: <MessageOutlined /> },
-  { key: "diarizing", label: "Diarize", icon: <TeamOutlined /> },
-  { key: "summarizing", label: "Summary", icon: <FileTextOutlined /> },
-] as const;
+  { key: "transcribing" as const, icon: Mic },
+  { key: "itn" as const, icon: Type },
+  { key: "punctuation" as const, icon: MessageSquare },
+  { key: "diarizing" as const, icon: Users },
+  { key: "summarizing" as const, icon: FileText },
+];
 
-function getStepStatus(
+const STATUS_LABEL_MAP: Record<string, string> = {
+  idle: "status.idle",
+  running: "status.transcribing",
+  paused: "status.paused",
+  cancelled: "status.cancelled",
+  completed: "status.completed",
+  post_processing: "status.processing",
+  ready: "status.ready",
+};
+
+const STATUS_VARIANT_MAP: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+  idle: "secondary",
+  running: "default",
+  paused: "outline",
+  cancelled: "destructive",
+  completed: "secondary",
+  post_processing: "default",
+  ready: "default",
+};
+
+function getStepState(
   stepKey: string,
   currentStep: PipelineStep,
   jobStatus: JobStatus,
-): "wait" | "process" | "finish" {
-  if (jobStatus === "ready") return "finish";
-  if (!currentStep) return "wait";
+): "done" | "active" | "pending" {
+  if (jobStatus === "ready") return "done";
+  if (!currentStep) return "pending";
 
-  const currentIndex = PIPELINE_STEPS.findIndex(
-    (s) => s.key === currentStep,
-  );
+  const currentIndex = PIPELINE_STEPS.findIndex((s) => s.key === currentStep);
   const stepIndex = PIPELINE_STEPS.findIndex((s) => s.key === stepKey);
 
-  if (stepIndex < currentIndex) return "finish";
-  if (stepIndex === currentIndex) return "process";
-  return "wait";
-}
-
-function getStatusTag(status: JobStatus): React.ReactNode {
-  const colorMap: Record<string, string> = {
-    idle: "default",
-    running: "processing",
-    paused: "warning",
-    cancelled: "error",
-    completed: "blue",
-    post_processing: "processing",
-    ready: "success",
-  };
-
-  const labelMap: Record<string, string> = {
-    idle: "Idle",
-    running: "Transcribing",
-    paused: "Paused",
-    cancelled: "Cancelled",
-    completed: "Completed",
-    post_processing: "Processing",
-    ready: "Ready",
-  };
-
-  return (
-    <Tag
-      color={colorMap[status] || "default"}
-      icon={status === "ready" ? <CheckCircleOutlined /> : undefined}
-    >
-      {labelMap[status] || status}
-    </Tag>
-  );
+  if (stepIndex < currentIndex) return "done";
+  if (stepIndex === currentIndex) return "active";
+  return "pending";
 }
 
 export function PipelineStatus() {
+  const { t } = useTranslation();
   const status = useTranscriptionStore((s) => s.job.status);
   const pipelineStep = useTranscriptionStore((s) => s.job.pipelineStep);
   const progress = useTranscriptionStore((s) => s.job.progress);
 
-  // Only show pipeline when actively processing
   const showPipeline =
     status === "running" ||
     status === "post_processing" ||
     status === "ready";
 
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-      }}
-    >
-      {getStatusTag(status)}
+    <div className="flex items-center gap-3">
+      <Badge variant={STATUS_VARIANT_MAP[status] || "secondary"}>
+        {status === "ready" && <CheckCircle className="mr-1 h-3 w-3" />}
+        {t(STATUS_LABEL_MAP[status] || "status.idle")}
+      </Badge>
 
       {showPipeline && (
-        <Steps
-          size="small"
-          style={{ flex: 1 }}
-          items={PIPELINE_STEPS.map((step) => ({
-            title: step.label,
-            icon: step.icon,
-            status: getStepStatus(step.key, pipelineStep, status),
-          }))}
-        />
+        <div className="flex items-center gap-1">
+          {PIPELINE_STEPS.map((step, i) => {
+            const state = getStepState(step.key, pipelineStep, status);
+            const Icon = step.icon;
+            return (
+              <div key={step.key} className="flex items-center">
+                {i > 0 && (
+                  <div
+                    className={cn(
+                      "mx-0.5 h-px w-3",
+                      state === "pending" ? "bg-border" : "bg-primary"
+                    )}
+                  />
+                )}
+                <div
+                  className={cn(
+                    "flex h-5 w-5 items-center justify-center rounded-full",
+                    state === "done" && "bg-primary text-primary-foreground",
+                    state === "active" && "bg-primary/20 text-primary ring-1 ring-primary",
+                    state === "pending" && "bg-muted text-muted-foreground"
+                  )}
+                >
+                  <Icon className="h-2.5 w-2.5" />
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
 
       {status === "running" && (
-        <span style={{ fontSize: 12, color: "#999" }}>
+        <span className="text-muted-foreground">
           {Math.round(progress)}%
         </span>
       )}
