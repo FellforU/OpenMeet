@@ -1,10 +1,9 @@
-import { Button, Layout } from "antd";
-import { PlusOutlined } from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
+import { Plus } from "lucide-react";
+import { Button } from "../ui/button";
 import { ProjectList } from "./ProjectList";
 import { SearchBar } from "./SearchBar";
 import { useProjectStore } from "../../stores/projectStore";
-
-const { Sider } = Layout;
 
 interface SidebarProps {
   collapsed: boolean;
@@ -12,6 +11,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ collapsed, onCollapse }: SidebarProps) {
+  const { t } = useTranslation();
   const addProject = useProjectStore((s) => s.addProject);
 
   const handleNewProject = () => {
@@ -21,37 +21,28 @@ export function Sidebar({ collapsed, onCollapse }: SidebarProps) {
   };
 
   return (
-    <Sider
-      collapsible
-      collapsed={collapsed}
-      onCollapse={onCollapse}
-      width={240}
-      style={{ background: "#fff", borderRight: "1px solid #f0f0f0" }}
+    <aside
+      className={`flex flex-col border-r border-border bg-card transition-all duration-300 ${collapsed ? "w-16" : "w-60"}`}
     >
       {!collapsed && (
         <>
-          <div
-            style={{
-              padding: "16px 12px 8px",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}
-          >
-            <span style={{ fontWeight: 600, fontSize: 15 }}>OpenMeet</span>
-            <Button
-              type="primary"
-              size="small"
-              icon={<PlusOutlined />}
-              onClick={handleNewProject}
-            >
-              New
+          <div className="flex items-center justify-between px-3 pt-4 pb-2">
+            <span className="text-[15px] font-semibold">OpenMeet</span>
+            <Button size="sm" onClick={handleNewProject}>
+              <Plus className="mr-1 h-4 w-4" />
+              {t("action.new")}
             </Button>
           </div>
           <SearchBar />
           <ProjectList />
         </>
       )}
-    </Sider>
+      <button
+        className="mt-auto border-t border-border p-2 text-xs text-muted-foreground hover:bg-accent"
+        onClick={() => onCollapse(!collapsed)}
+      >
+        {collapsed ? "→" : "←"}
+      </button>
+    </aside>
   );
 }

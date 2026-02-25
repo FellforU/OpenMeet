@@ -1,9 +1,8 @@
 import { useState, useCallback } from "react";
-import { Input, List, Typography, Empty, Tag } from "antd";
-import { SearchOutlined, ClockCircleOutlined } from "@ant-design/icons";
-
-const { Text } = Typography;
-const { Search } = Input;
+import { useTranslation } from "react-i18next";
+import { Search, Clock, Loader2 } from "lucide-react";
+import { Input } from "../ui/input";
+import { Badge } from "../ui/badge";
 
 const ASR_BASE_URL = "http://127.0.0.1:18090";
 
@@ -17,6 +16,8 @@ interface SearchResult {
 }
 
 export function SearchBar() {
+  const { t } = useTranslation();
+  const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
@@ -55,53 +56,44 @@ export function SearchBar() {
   };
 
   return (
-    <div style={{ padding: "8px 12px" }}>
-      <Search
-        placeholder="Search transcripts..."
-        prefix={<SearchOutlined />}
-        onSearch={handleSearch}
-        loading={loading}
-        allowClear
-        size="small"
-      />
-      {searched && results.length === 0 && !loading && (
-        <Empty
-          description="No results"
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          style={{ marginTop: 12 }}
+    <div className="px-3 py-2">
+      <div className="relative">
+        <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          className="h-8 pl-7 text-sm"
+          placeholder={t("sidebar.searchPlaceholder")}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleSearch(query);
+          }}
         />
+        {loading && (
+          <Loader2 className="absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-muted-foreground" />
+        )}
+      </div>
+      {searched && results.length === 0 && !loading && (
+        <p className="mt-3 text-center text-xs text-muted-foreground">
+          {t("sidebar.noResults")}
+        </p>
       )}
       {results.length > 0 && (
-        <List
-          size="small"
-          style={{ marginTop: 8, maxHeight: 300, overflowY: "auto" }}
-          dataSource={results}
-          renderItem={(item) => (
-            <List.Item style={{ padding: "4px 0" }}>
-              <div style={{ width: "100%" }}>
-                <div style={{ display: "flex", gap: 4, marginBottom: 2 }}>
-                  <Tag
-                    icon={<ClockCircleOutlined />}
-                    style={{ fontSize: 10 }}
-                  >
-                    {formatTime(item.start)}
-                  </Tag>
-                  {item.speaker && (
-                    <Tag color="blue" style={{ fontSize: 10 }}>
-                      {item.speaker}
-                    </Tag>
-                  )}
-                </div>
-                <Text
-                  ellipsis={{ tooltip: item.text }}
-                  style={{ fontSize: 12 }}
-                >
-                  {item.text}
-                </Text>
+        <div className="mt-2 max-h-[300px] space-y-1 overflow-y-auto">
+          {results.map((item, i) => (
+            <div key={i} className="rounded-md p-1.5 hover:bg-accent">
+              <div className="mb-0.5 flex gap-1">
+                <Badge variant="outline" className="gap-1 text-[10px]">
+                  <Clock className="h-2.5 w-2.5" />
+                  {formatTime(item.start)}
+                </Badge>
+                {item.speaker && (
+                  <Badge className="text-[10px]">{item.speaker}</Badge>
+                )}
               </div>
-            </List.Item>
-          )}
-        />
+              <p className="truncate text-xs">{item.text}</p>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
