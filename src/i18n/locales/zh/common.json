@@ -77,6 +77,12 @@
   },
   "sidebar": {
     "newProject": "新建项目",
+    "newFolder": "新建文件夹",
+    "rename": "重命名",
+    "projectNamePlaceholder": "请输入名称",
+    "newProjectTitle": "新建项目",
+    "newFolderTitle": "新建文件夹",
+    "renameTitle": "重命名",
     "noProjects": "暂无项目",
     "deleteConfirm": "确定要删除这个项目吗？",
     "searchPlaceholder": "搜索转录内容...",

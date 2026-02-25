@@ -16,6 +16,9 @@
     "empty": "转录完成后将显示摘要",
     "generating": "正在生成摘要...",
     "editSummary": "编辑摘要",
+    "jumpToTranscript": "跳转到原文",
+    "editMode": "编辑模式",
+    "viewMode": "查看模式",
     "assignee": "负责人",
     "deadline": "截止日期"
   },

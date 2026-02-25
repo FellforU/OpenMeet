@@ -46,6 +46,7 @@ interface TranscriptionStore {
   updateSegmentText: (id: string, text: string) => void;
   updateSegmentSpeaker: (oldName: string, newName: string) => void;
   setSummary: (summary: Summary | null) => void;
+  toggleActionItem: (index: number) => void;
   setPipelineStep: (step: PipelineStep) => void;
   reset: () => void;
 }
@@ -185,6 +186,15 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
   },
 
   setSummary: (summary) => set({ summary }),
+
+  toggleActionItem: (index) => {
+    const { summary } = get();
+    if (!summary) return;
+    const items = summary.actionItems.map((item, i) =>
+      i === index ? { ...item, done: !item.done } : item
+    );
+    set({ summary: { ...summary, actionItems: items } });
+  },
 
   setPipelineStep: (step) => set({ job: { ...get().job, pipelineStep: step } }),
 

@@ -1,6 +1,8 @@
 export interface Project {
   id: string;
   title: string;
+  parentId: string | null;
+  isFolder: boolean;
   audioPath: string | null;
   durationMs: number | null;
   createdAt: string;
@@ -19,7 +21,7 @@ export interface Segment {
 export interface Summary {
   topic: string;
   conclusions: string[];
-  actionItems: Array<{ assignee: string; task: string; deadline: string | null }>;
+  actionItems: Array<{ assignee: string; task: string; deadline: string | null; done?: boolean }>;
   discussion: Array<{ topic: string; summary: string }>;
   rawMarkdown: string;
   editedMarkdown: string | null;

@@ -16,6 +16,9 @@
     "empty": "Summary will appear after transcription completes",
     "generating": "Generating summary...",
     "editSummary": "Edit Summary",
+    "jumpToTranscript": "Jump to transcript",
+    "editMode": "Edit mode",
+    "viewMode": "View mode",
     "assignee": "Assignee",
     "deadline": "Deadline"
   },

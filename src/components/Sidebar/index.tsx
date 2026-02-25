@@ -1,7 +1,15 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Plus } from "lucide-react";
+import { Plus, FileText, FolderPlus } from "lucide-react";
 import { Button } from "../ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 import { ProjectList } from "./ProjectList";
+import { ProjectNameDialog } from "./ProjectNameDialog";
 import { SearchBar } from "./SearchBar";
 import { useProjectStore } from "../../stores/projectStore";
 
@@ -10,15 +18,27 @@ interface SidebarProps {
   onCollapse: (collapsed: boolean) => void;
 }
 
+type DialogMode = "project" | "folder" | null;
+
 export function Sidebar({ collapsed, onCollapse }: SidebarProps) {
   const { t } = useTranslation();
   const addProject = useProjectStore((s) => s.addProject);
+  const addFolder = useProjectStore((s) => s.addFolder);
+  const [dialogMode, setDialogMode] = useState<DialogMode>(null);
 
-  const handleNewProject = () => {
-    const now = new Date();
-    const title = `Meeting ${now.getMonth() + 1}/${now.getDate()} ${now.getHours()}:${String(now.getMinutes()).padStart(2, "0")}`;
-    addProject(title);
+  const handleConfirm = (name: string) => {
+    if (dialogMode === "project") {
+      addProject(name);
+    } else if (dialogMode === "folder") {
+      addFolder(name);
+    }
+    setDialogMode(null);
   };
+
+  const dialogTitle =
+    dialogMode === "project"
+      ? t("sidebar.newProjectTitle")
+      : t("sidebar.newFolderTitle");
 
   return (
     <aside
@@ -28,10 +48,24 @@ export function Sidebar({ collapsed, onCollapse }: SidebarProps) {
         <>
           <div className="flex items-center justify-between px-3 pt-4 pb-2">
             <span className="text-[15px] font-semibold">OpenMeet</span>
-            <Button size="sm" onClick={handleNewProject}>
-              <Plus className="mr-1 h-4 w-4" />
-              {t("action.new")}
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm">
+                  <Plus className="mr-1 h-4 w-4" />
+                  {t("action.new")}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setDialogMode("project")}>
+                  <FileText className="mr-2 h-4 w-4" />
+                  {t("sidebar.newProject")}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setDialogMode("folder")}>
+                  <FolderPlus className="mr-2 h-4 w-4" />
+                  {t("sidebar.newFolder")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
           <SearchBar />
           <ProjectList />
@@ -41,8 +75,15 @@ export function Sidebar({ collapsed, onCollapse }: SidebarProps) {
         className="mt-auto border-t border-border p-2 text-xs text-muted-foreground hover:bg-accent"
         onClick={() => onCollapse(!collapsed)}
       >
-        {collapsed ? "→" : "←"}
+        {collapsed ? "\u2192" : "\u2190"}
       </button>
+
+      <ProjectNameDialog
+        open={dialogMode !== null}
+        onClose={() => setDialogMode(null)}
+        onConfirm={handleConfirm}
+        title={dialogTitle}
+      />
     </aside>
   );
 }

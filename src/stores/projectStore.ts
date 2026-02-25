@@ -6,7 +6,8 @@ interface ProjectStore {
   projects: Project[];
   activeProjectId: string | null;
 
-  addProject: (title: string) => Project;
+  addProject: (title: string, parentId?: string | null) => Project;
+  addFolder: (title: string, parentId?: string | null) => Project;
   setActiveProject: (id: string) => void;
   updateProject: (id: string, updates: Partial<Project>) => void;
   deleteProject: (id: string) => void;
@@ -22,10 +23,12 @@ export const useProjectStore = create<ProjectStore>()(
       projects: [],
       activeProjectId: null,
 
-      addProject: (title: string) => {
+      addProject: (title: string, parentId: string | null = null) => {
         const project: Project = {
           id: generateId(),
           title,
+          parentId,
+          isFolder: false,
           audioPath: null,
           durationMs: null,
           createdAt: new Date().toISOString(),
@@ -36,6 +39,23 @@ export const useProjectStore = create<ProjectStore>()(
           activeProjectId: project.id,
         }));
         return project;
+      },
+
+      addFolder: (title: string, parentId: string | null = null) => {
+        const folder: Project = {
+          id: generateId(),
+          title,
+          parentId,
+          isFolder: true,
+          audioPath: null,
+          durationMs: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        set((state) => ({
+          projects: [folder, ...state.projects],
+        }));
+        return folder;
       },
 
       setActiveProject: (id: string) => {

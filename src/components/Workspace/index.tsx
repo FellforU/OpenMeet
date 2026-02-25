@@ -1,17 +1,23 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FileText, Lightbulb, Pencil } from "lucide-react";
+import { FileText, Lightbulb } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { TranscriptPanel } from "./TranscriptPanel";
 import { SummaryPanel } from "./SummaryPanel";
-import { SummaryEditor } from "./SummaryEditor";
 import { useTranscriptionStore } from "../../stores/transcriptionStore";
 
 export function Workspace() {
   const { t } = useTranslation("workspace");
-  const summary = useTranscriptionStore((s) => s.summary);
+  const seekTo = useTranscriptionStore((s) => s.seekTo);
+  const [activeTab, setActiveTab] = useState("transcript");
+
+  const handleJumpToTranscript = (time: number) => {
+    seekTo(time);
+    setActiveTab("transcript");
+  };
 
   return (
-    <Tabs defaultValue="transcript" className="flex h-full flex-col">
+    <Tabs value={activeTab} onValueChange={setActiveTab} className="flex h-full flex-col">
       <TabsList className="mx-4 mt-1 w-fit">
         <TabsTrigger value="transcript" className="gap-1.5">
           <FileText className="h-3.5 w-3.5" />
@@ -21,24 +27,13 @@ export function Workspace() {
           <Lightbulb className="h-3.5 w-3.5" />
           {t("tabs.summary")}
         </TabsTrigger>
-        {summary && (
-          <TabsTrigger value="editor" className="gap-1.5">
-            <Pencil className="h-3.5 w-3.5" />
-            {t("tabs.edit")}
-          </TabsTrigger>
-        )}
       </TabsList>
       <TabsContent value="transcript" className="flex-1 overflow-hidden">
         <TranscriptPanel />
       </TabsContent>
       <TabsContent value="summary" className="flex-1 overflow-hidden">
-        <SummaryPanel />
+        <SummaryPanel onJumpToTranscript={handleJumpToTranscript} />
       </TabsContent>
-      {summary && (
-        <TabsContent value="editor" className="flex-1 overflow-hidden">
-          <SummaryEditor />
-        </TabsContent>
-      )}
     </Tabs>
   );
 }
