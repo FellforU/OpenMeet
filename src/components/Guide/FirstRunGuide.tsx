@@ -1,13 +1,17 @@
 import { useState } from "react";
-import { Modal, Steps, Button, Typography, Space, Tag, Alert, Result } from "antd";
+import { useTranslation } from "react-i18next";
+import { Mic, Download, Bot, CheckCircle } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
-  AudioOutlined,
-  CloudDownloadOutlined,
-  RobotOutlined,
-  CheckCircleOutlined,
-} from "@ant-design/icons";
-
-const { Title, Paragraph, Text } = Typography;
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../ui/dialog";
+import { Button } from "../ui/button";
+import { Badge } from "../ui/badge";
+import { Alert, AlertDescription } from "../ui/alert";
 
 interface FirstRunGuideProps {
   open: boolean;
@@ -15,117 +19,113 @@ interface FirstRunGuideProps {
 }
 
 function WelcomeStep() {
+  const { t } = useTranslation("guide");
   return (
-    <div style={{ textAlign: "center", padding: "20px 0" }}>
-      <Title level={3}>Welcome to OpenMeet</Title>
-      <Paragraph type="secondary">
-        Local-first AI meeting transcription tool. Let's set up your environment.
-      </Paragraph>
-      <Space wrap style={{ marginTop: 16 }}>
-        <Tag color="blue">Offline transcription</Tag>
-        <Tag color="green">Multi-engine support</Tag>
-        <Tag color="orange">AI-powered summaries</Tag>
-      </Space>
+    <div className="py-5 text-center">
+      <h3 className="text-xl font-semibold">{t("welcome.title")}</h3>
+      <p className="mt-2 text-sm text-muted-foreground">
+        {t("welcome.description")}
+      </p>
+      <div className="mt-4 flex flex-wrap justify-center gap-2">
+        <Badge variant="secondary">Offline transcription</Badge>
+        <Badge variant="secondary">Multi-engine support</Badge>
+        <Badge variant="secondary">AI-powered summaries</Badge>
+      </div>
     </div>
   );
 }
 
 function MicrophoneStep() {
+  const { t } = useTranslation("guide");
   return (
-    <div style={{ padding: "16px 0" }}>
-      <Title level={4}>
-        <AudioOutlined style={{ marginRight: 8 }} />
-        Microphone Access
-      </Title>
-      <Paragraph>
+    <div className="py-4">
+      <h4 className="flex items-center gap-2 text-lg font-semibold">
+        <Mic className="h-5 w-5" />
+        {t("microphone.title")}
+      </h4>
+      <p className="mt-2 text-sm text-muted-foreground">
         OpenMeet needs microphone access for real-time transcription.
         You can also transcribe uploaded audio files without a microphone.
-      </Paragraph>
-      <Alert
-        message="Click 'Allow' when your browser asks for microphone permission."
-        type="info"
-        showIcon
-      />
+      </p>
+      <Alert className="mt-3">
+        <AlertDescription>{t("microphone.description")}</AlertDescription>
+      </Alert>
     </div>
   );
 }
 
 function ModelStep() {
+  const { t } = useTranslation("guide");
   return (
-    <div style={{ padding: "16px 0" }}>
-      <Title level={4}>
-        <CloudDownloadOutlined style={{ marginRight: 8 }} />
-        ASR Model Setup
-      </Title>
-      <Paragraph>
-        Download an ASR model for offline transcription. You can change this later in Settings.
-      </Paragraph>
-      <Space direction="vertical" style={{ width: "100%" }} size="middle">
-        <div style={{ padding: 12, border: "1px solid #d9f7be", borderRadius: 8, backgroundColor: "#f6ffed" }}>
-          <Text strong>Recommended: Whisper Base</Text>
-          <br />
-          <Text type="secondary">1.5 GB VRAM - Good balance of speed and accuracy</Text>
+    <div className="py-4">
+      <h4 className="flex items-center gap-2 text-lg font-semibold">
+        <Download className="h-5 w-5" />
+        {t("model.title")}
+      </h4>
+      <p className="mt-2 text-sm text-muted-foreground">
+        {t("model.description")}
+      </p>
+      <div className="mt-3 space-y-2">
+        <div className="rounded-md border-2 border-green-200 bg-green-50 p-3">
+          <p className="font-medium">Recommended: Whisper Base</p>
+          <p className="text-sm text-muted-foreground">1.5 GB VRAM - Good balance of speed and accuracy</p>
         </div>
-        <div style={{ padding: 12, border: "1px solid #f0f0f0", borderRadius: 8 }}>
-          <Text strong>Whisper Tiny</Text>
-          <br />
-          <Text type="secondary">1 GB VRAM - Fastest, for low-end hardware</Text>
+        <div className="rounded-md border border-border p-3">
+          <p className="font-medium">Whisper Tiny</p>
+          <p className="text-sm text-muted-foreground">1 GB VRAM - Fastest, for low-end hardware</p>
         </div>
-        <div style={{ padding: 12, border: "1px solid #f0f0f0", borderRadius: 8 }}>
-          <Text strong>Qwen3-ASR 0.6B (Chinese)</Text>
-          <br />
-          <Text type="secondary">3 GB VRAM - Best for Chinese and dialects</Text>
+        <div className="rounded-md border border-border p-3">
+          <p className="font-medium">Qwen3-ASR 0.6B (Chinese)</p>
+          <p className="text-sm text-muted-foreground">3 GB VRAM - Best for Chinese and dialects</p>
         </div>
-      </Space>
+      </div>
     </div>
   );
 }
 
 function OllamaStep() {
+  const { t } = useTranslation("guide");
   return (
-    <div style={{ padding: "16px 0" }}>
-      <Title level={4}>
-        <RobotOutlined style={{ marginRight: 8 }} />
-        AI Summary (Optional)
-      </Title>
-      <Paragraph>
-        Install Ollama for AI-powered meeting summaries. This is optional — you can skip and add it later.
-      </Paragraph>
-      <Alert
-        message={
-          <span>
-            Install Ollama from{" "}
-            <Text code>https://ollama.com</Text>
-            {" "}then run:{" "}
-            <Text code>ollama pull qwen2.5:7b</Text>
-          </span>
-        }
-        type="info"
-        showIcon
-      />
+    <div className="py-4">
+      <h4 className="flex items-center gap-2 text-lg font-semibold">
+        <Bot className="h-5 w-5" />
+        {t("ollama.title")}
+      </h4>
+      <p className="mt-2 text-sm text-muted-foreground">
+        {t("ollama.description")}
+      </p>
+      <Alert className="mt-3">
+        <AlertDescription>
+          {t("ollama.instruction")}
+        </AlertDescription>
+      </Alert>
     </div>
   );
 }
 
 function DoneStep() {
+  const { t } = useTranslation("guide");
   return (
-    <Result
-      icon={<CheckCircleOutlined style={{ color: "#52c41a" }} />}
-      title="Setup Complete!"
-      subTitle="You're ready to start transcribing meetings. Upload an audio file or start recording."
-    />
+    <div className="flex flex-col items-center gap-3 py-8">
+      <CheckCircle className="h-12 w-12 text-green-500" />
+      <h3 className="text-xl font-semibold">{t("done.title")}</h3>
+      <p className="text-sm text-muted-foreground">
+        {t("done.description")}
+      </p>
+    </div>
   );
 }
 
 const STEPS = [
-  { title: "Welcome", content: <WelcomeStep /> },
-  { title: "Microphone", content: <MicrophoneStep /> },
-  { title: "Model", content: <ModelStep /> },
-  { title: "Ollama", content: <OllamaStep /> },
-  { title: "Done", content: <DoneStep /> },
+  { key: "welcome", content: <WelcomeStep /> },
+  { key: "microphone", content: <MicrophoneStep /> },
+  { key: "model", content: <ModelStep /> },
+  { key: "ollama", content: <OllamaStep /> },
+  { key: "done", content: <DoneStep /> },
 ];
 
 export function FirstRunGuide({ open, onClose }: FirstRunGuideProps) {
+  const { t } = useTranslation("guide");
   const [current, setCurrent] = useState(0);
 
   const isLast = current === STEPS.length - 1;
@@ -144,32 +144,56 @@ export function FirstRunGuide({ open, onClose }: FirstRunGuideProps) {
   };
 
   return (
-    <Modal
-      title="Getting Started"
-      open={open}
-      onCancel={onClose}
-      width={600}
-      footer={
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <Button onClick={onClose}>Skip</Button>
-          <Space>
-            {current > 0 && (
-              <Button onClick={handlePrev}>Previous</Button>
-            )}
-            <Button type="primary" onClick={handleNext}>
-              {isLast ? "Get Started" : "Next"}
-            </Button>
-          </Space>
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Getting Started</DialogTitle>
+        </DialogHeader>
+
+        {/* Step indicator */}
+        <div className="flex items-center justify-center gap-2">
+          {STEPS.map((step, i) => (
+            <div key={step.key} className="flex items-center">
+              {i > 0 && (
+                <div
+                  className={cn(
+                    "mx-1 h-px w-6",
+                    i <= current ? "bg-primary" : "bg-border"
+                  )}
+                />
+              )}
+              <div
+                className={cn(
+                  "flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium",
+                  i < current && "bg-primary text-primary-foreground",
+                  i === current && "bg-primary text-primary-foreground ring-2 ring-primary/30",
+                  i > current && "bg-muted text-muted-foreground"
+                )}
+              >
+                {i + 1}
+              </div>
+            </div>
+          ))}
         </div>
-      }
-    >
-      <Steps
-        current={current}
-        size="small"
-        items={STEPS.map((s) => ({ title: s.title }))}
-        style={{ marginBottom: 24 }}
-      />
-      {STEPS[current].content}
-    </Modal>
+
+        {STEPS[current].content}
+
+        <DialogFooter className="flex justify-between sm:justify-between">
+          <Button variant="ghost" onClick={onClose}>
+            {t("common:action.skip")}
+          </Button>
+          <div className="flex gap-2">
+            {current > 0 && (
+              <Button variant="outline" onClick={handlePrev}>
+                {t("common:action.previous")}
+              </Button>
+            )}
+            <Button onClick={handleNext}>
+              {isLast ? t("done.getStarted") : t("common:action.next")}
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
