@@ -142,7 +142,7 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
     closeWebSocket();
 
     const { segments, jobId } = get();
-    set({ status: "idle" });
+    set({ status: "idle", jobId: null, elapsed: 0, segments: [] });
 
     // Sync segments to transcription store before cleanup
     if (segments.length > 0) {
@@ -151,8 +151,24 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
       setJobStatus("completed");
     }
 
-    // Auto-generate AI title for the active meeting
+    // Stop audio capture in Rust and get saved WAV path
+    let audioPath: string | null = null;
+    try {
+      const result = await invoke<string>("stop_recording");
+      if (result && result.length > 0) {
+        audioPath = result;
+      }
+    } catch {
+      // Ignore if not in Tauri
+    }
+
+    // Update project with audio path
     const activeProjectId = useProjectStore.getState().activeProjectId;
+    if (activeProjectId && audioPath) {
+      useProjectStore.getState().updateProject(activeProjectId, { audioPath });
+    }
+
+    // Auto-generate AI title for the active meeting
     if (activeProjectId && segments.length > 0) {
       const activeProject = useProjectStore.getState().projects.find(
         (p) => p.id === activeProjectId
@@ -169,12 +185,7 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
       }
     }
 
-    try {
-      await invoke<string>("stop_recording");
-    } catch {
-      // Ignore if not in Tauri
-    }
-
+    // Cancel the ASR job
     if (jobId) {
       try {
         await api.cancelJob(jobId);

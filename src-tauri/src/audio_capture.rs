@@ -1,6 +1,8 @@
+use std::io::Write;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use tauri::State;
+use tauri::{Manager, State};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
@@ -17,6 +19,10 @@ pub struct AudioCaptureState {
     is_recording: Arc<AtomicBool>,
     is_paused: Arc<AtomicBool>,
     stream_handle: Mutex<Option<StreamWrapper>>,
+    // Full recording buffer for WAV export
+    all_samples: Arc<Mutex<Vec<i16>>>,
+    rec_sample_rate: Mutex<u32>,
+    rec_channels: Mutex<u16>,
 }
 
 impl AudioCaptureState {
@@ -25,6 +31,9 @@ impl AudioCaptureState {
             is_recording: Arc::new(AtomicBool::new(false)),
             is_paused: Arc::new(AtomicBool::new(false)),
             stream_handle: Mutex::new(None),
+            all_samples: Arc::new(Mutex::new(Vec::new())),
+            rec_sample_rate: Mutex::new(16000),
+            rec_channels: Mutex::new(1),
         }
     }
 }
@@ -34,6 +43,44 @@ pub struct AudioDeviceInfo {
     pub name: String,
     pub sample_rate: u32,
     pub channels: u16,
+}
+
+/// Write PCM i16 samples as a WAV file
+fn write_wav(path: &PathBuf, samples: &[i16], sample_rate: u32, channels: u16) -> Result<(), String> {
+    let data_len = (samples.len() * 2) as u32;
+    let file_len = 36 + data_len;
+    let byte_rate = sample_rate * (channels as u32) * 2;
+    let block_align = channels * 2;
+
+    let mut file = std::fs::File::create(path)
+        .map_err(|e| format!("Failed to create WAV file: {}", e))?;
+
+    // RIFF header
+    file.write_all(b"RIFF").map_err(|e| e.to_string())?;
+    file.write_all(&file_len.to_le_bytes()).map_err(|e| e.to_string())?;
+    file.write_all(b"WAVE").map_err(|e| e.to_string())?;
+
+    // fmt chunk
+    file.write_all(b"fmt ").map_err(|e| e.to_string())?;
+    file.write_all(&16u32.to_le_bytes()).map_err(|e| e.to_string())?; // chunk size
+    file.write_all(&1u16.to_le_bytes()).map_err(|e| e.to_string())?; // PCM format
+    file.write_all(&channels.to_le_bytes()).map_err(|e| e.to_string())?;
+    file.write_all(&sample_rate.to_le_bytes()).map_err(|e| e.to_string())?;
+    file.write_all(&byte_rate.to_le_bytes()).map_err(|e| e.to_string())?;
+    file.write_all(&block_align.to_le_bytes()).map_err(|e| e.to_string())?;
+    file.write_all(&16u16.to_le_bytes()).map_err(|e| e.to_string())?; // bits per sample
+
+    // data chunk
+    file.write_all(b"data").map_err(|e| e.to_string())?;
+    file.write_all(&data_len.to_le_bytes()).map_err(|e| e.to_string())?;
+
+    // PCM samples as little-endian i16
+    for sample in samples {
+        file.write_all(&sample.to_le_bytes()).map_err(|e| e.to_string())?;
+    }
+
+    file.flush().map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -78,11 +125,25 @@ pub async fn start_recording(
     let sample_rate = config.sample_rate().0;
     let channels = config.channels();
 
-    // PCM buffer for accumulation
+    // Store recording parameters
+    if let Ok(mut sr) = state.rec_sample_rate.lock() {
+        *sr = sample_rate;
+    }
+    if let Ok(mut ch) = state.rec_channels.lock() {
+        *ch = channels;
+    }
+
+    // Clear the full recording buffer
+    if let Ok(mut all) = state.all_samples.lock() {
+        all.clear();
+    }
+
+    // PCM buffer for WebSocket streaming
     let pcm_buffer: Arc<Mutex<Vec<i16>>> = Arc::new(Mutex::new(Vec::new()));
     let pcm_buffer_clone = pcm_buffer.clone();
 
     let is_paused = state.is_paused.clone();
+    let all_samples = state.all_samples.clone();
 
     // Build input stream that accumulates PCM samples
     let stream = device
@@ -94,8 +155,13 @@ pub async fn start_recording(
                 }
                 // Convert f32 samples to i16 PCM
                 let samples: Vec<i16> = data.iter().map(|&s| (s * 32767.0) as i16).collect();
+                // Accumulate for WebSocket streaming
                 if let Ok(mut buf) = pcm_buffer_clone.lock() {
                     buf.extend_from_slice(&samples);
+                }
+                // Accumulate for full recording WAV export
+                if let Ok(mut all) = all_samples.lock() {
+                    all.extend_from_slice(&samples);
                 }
             },
             move |err| {
@@ -180,7 +246,10 @@ pub async fn start_recording(
 }
 
 #[tauri::command]
-pub async fn stop_recording(state: State<'_, AudioCaptureState>) -> Result<String, String> {
+pub async fn stop_recording(
+    app: tauri::AppHandle,
+    state: State<'_, AudioCaptureState>,
+) -> Result<String, String> {
     if !state.is_recording.load(Ordering::SeqCst) {
         return Ok("Not recording".to_string());
     }
@@ -193,7 +262,40 @@ pub async fn stop_recording(state: State<'_, AudioCaptureState>) -> Result<Strin
         *guard = None;
     }
 
-    Ok("Recording stopped".to_string())
+    // Get recording parameters
+    let sample_rate = state.rec_sample_rate.lock().map(|sr| *sr).unwrap_or(16000);
+    let channels = state.rec_channels.lock().map(|ch| *ch).unwrap_or(1);
+
+    // Extract all recorded samples
+    let samples: Vec<i16> = if let Ok(mut all) = state.all_samples.lock() {
+        std::mem::take(&mut *all)
+    } else {
+        Vec::new()
+    };
+
+    if samples.is_empty() {
+        return Ok(String::new());
+    }
+
+    // Create recordings directory under app data dir
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+    let recordings_dir = data_dir.join("recordings");
+    std::fs::create_dir_all(&recordings_dir)
+        .map_err(|e| format!("Failed to create recordings dir: {}", e))?;
+
+    // Generate filename with timestamp
+    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+    let filename = format!("{}.wav", timestamp);
+    let wav_path = recordings_dir.join(&filename);
+
+    // Write WAV file
+    write_wav(&wav_path, &samples, sample_rate, channels)?;
+
+    let path_str = wav_path.to_string_lossy().to_string();
+    Ok(path_str)
 }
 
 #[tauri::command]

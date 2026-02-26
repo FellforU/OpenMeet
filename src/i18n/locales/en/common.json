@@ -98,6 +98,11 @@
     "generateTitleFailed": "Failed to generate title",
     "noTranscriptForTitle": "No transcript available for title generation"
   },
+  "upload": {
+    "title": "Upload Audio File",
+    "dragHint": "Drag & drop a file here, or click to browse",
+    "browse": "Choose File"
+  },
   "error": {
     "title": "Something went wrong",
     "tryAgain": "Try Again",

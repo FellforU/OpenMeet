@@ -98,6 +98,11 @@
     "generateTitleFailed": "标题生成失败",
     "noTranscriptForTitle": "没有转录内容，无法生成标题"
   },
+  "upload": {
+    "title": "上传音频文件",
+    "dragHint": "拖拽文件到此处，或点击浏览",
+    "browse": "选择文件"
+  },
   "error": {
     "title": "出了点问题",
     "tryAgain": "重试",

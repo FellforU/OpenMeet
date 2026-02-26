@@ -39,7 +39,10 @@ const LLM_PROVIDERS: LLMProviderDef[] = [
     type: "cloud",
     logoSrc: deepseekSvg,
     brandColor: "#4D6BFE",
-    fields: [{ key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "sk-...", isPassword: true }],
+    fields: [
+      { key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "sk-...", isPassword: true },
+      { key: "model", labelKey: "settings:llm.model", placeholder: "deepseek-chat", isPassword: false },
+    ],
     isConfigured: (c) => Boolean(c.apiKey),
   },
   {
@@ -47,7 +50,10 @@ const LLM_PROVIDERS: LLMProviderDef[] = [
     type: "cloud",
     logoSrc: qwenSvg,
     brandColor: "#5B43D4",
-    fields: [{ key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "sk-...", isPassword: true }],
+    fields: [
+      { key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "sk-...", isPassword: true },
+      { key: "model", labelKey: "settings:llm.model", placeholder: "qwen-plus", isPassword: false },
+    ],
     isConfigured: (c) => Boolean(c.apiKey),
   },
   {
@@ -55,7 +61,10 @@ const LLM_PROVIDERS: LLMProviderDef[] = [
     type: "cloud",
     logoSrc: zhipuSvg,
     brandColor: "#3859FF",
-    fields: [{ key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "...", isPassword: true }],
+    fields: [
+      { key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "...", isPassword: true },
+      { key: "model", labelKey: "settings:llm.model", placeholder: "glm-4-flash", isPassword: false },
+    ],
     isConfigured: (c) => Boolean(c.apiKey),
   },
   {
@@ -63,7 +72,10 @@ const LLM_PROVIDERS: LLMProviderDef[] = [
     type: "cloud",
     logoSrc: openaiSvg,
     brandColor: "#10A37F",
-    fields: [{ key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "sk-proj-...", isPassword: true }],
+    fields: [
+      { key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "sk-proj-...", isPassword: true },
+      { key: "model", labelKey: "settings:llm.model", placeholder: "gpt-4o-mini", isPassword: false },
+    ],
     isConfigured: (c) => Boolean(c.apiKey),
   },
   {
@@ -71,7 +83,10 @@ const LLM_PROVIDERS: LLMProviderDef[] = [
     type: "cloud",
     logoSrc: geminiSvg,
     brandColor: "#8E75B6",
-    fields: [{ key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "AIza...", isPassword: true }],
+    fields: [
+      { key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "AIza...", isPassword: true },
+      { key: "model", labelKey: "settings:llm.model", placeholder: "gemini-2.0-flash", isPassword: false },
+    ],
     isConfigured: (c) => Boolean(c.apiKey),
   },
 ];

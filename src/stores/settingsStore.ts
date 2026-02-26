@@ -41,11 +41,11 @@ export const useSettingsStore = create<SettingsStore>()(
       },
       llmProviders: {
         ollama: { enabled: true, host: "http://localhost:11434", model: "qwen2.5:7b" },
-        deepseek: { enabled: false },
-        qwen: { enabled: false },
-        zhipu: { enabled: false },
-        openai: { enabled: false },
-        gemini: { enabled: false },
+        deepseek: { enabled: false, model: "deepseek-chat" },
+        qwen: { enabled: false, model: "qwen-plus" },
+        zhipu: { enabled: false, model: "glm-4-flash" },
+        openai: { enabled: false, model: "gpt-4o-mini" },
+        gemini: { enabled: false, model: "gemini-2.0-flash" },
       },
       cloudAsr: {
         openaiWhisper: { apiKey: "" },

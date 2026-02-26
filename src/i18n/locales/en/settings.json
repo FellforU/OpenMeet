@@ -20,6 +20,7 @@
     "cloud": "Cloud",
     "apiKey": "API Key",
     "securityNote": "API keys are stored locally and never sent to our servers.",
+    "model": "Model Name",
     "ollamaHost": "Ollama Host",
     "ollamaModel": "Ollama Model",
     "ollama": "Ollama",

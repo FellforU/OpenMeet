@@ -20,6 +20,7 @@
     "cloud": "云端",
     "apiKey": "API 密钥",
     "securityNote": "API 密钥仅存储在本地，不会发送到我们的服务器。",
+    "model": "模型名称",
     "ollamaHost": "Ollama 地址",
     "ollamaModel": "Ollama 模型",
     "ollama": "Ollama",

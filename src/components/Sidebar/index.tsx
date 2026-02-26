@@ -47,7 +47,7 @@ export function Sidebar({ collapsed, onCollapse }: SidebarProps) {
     >
       {!collapsed && (
         <>
-          <div className="flex justify-center px-3 pt-3 pb-2">
+          <div className="flex justify-center px-3 pt-5 pb-4">
             <img
               src={logoHorizontal}
               alt="OpenMeet"
