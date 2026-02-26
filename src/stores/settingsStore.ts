@@ -10,13 +10,15 @@ interface LLMProviderConfig {
 
 interface GeneralConfig {
   defaultLLMProvider: string;
+  defaultEmbeddingProvider: string;
+  defaultRerankProvider: string;
   autoSummary: boolean;
   exportFormat: "markdown" | "txt" | "json";
 }
 
 interface CloudAsrConfig {
-  openaiWhisper: { apiKey: string };
-  alibabaAsr: { keyId: string; secret: string };
+  openaiWhisper: { apiKey: string; model?: string };
+  alibabaAsr: { keyId: string; secret: string; model?: string };
 }
 
 interface SettingsStore {
@@ -35,6 +37,8 @@ interface SettingsStore {
 const defaultState = {
   general: {
     defaultLLMProvider: "ollama",
+    defaultEmbeddingProvider: "ollama",
+    defaultRerankProvider: "qwen",
     autoSummary: true,
     exportFormat: "markdown" as const,
   },
@@ -53,15 +57,64 @@ const defaultState = {
   autoDegradation: true,
 };
 
+// Encrypt a secret string via Rust RSA-OAEP
+async function encryptSecret(plaintext: string): Promise<string> {
+  if (!plaintext) return "";
+  try {
+    return await invoke<string>("encrypt_secret", { plaintext });
+  } catch {
+    return plaintext; // Fallback to plaintext if encryption unavailable
+  }
+}
+
+// Decrypt a secret string via Rust RSA-OAEP
+async function decryptSecret(ciphertext: string): Promise<string> {
+  if (!ciphertext) return "";
+  try {
+    return await invoke<string>("decrypt_secret", { ciphertext });
+  } catch {
+    return ciphertext; // Fallback: might already be plaintext
+  }
+}
+
+// Encrypt sensitive fields before persisting
+async function encryptProviders(
+  providers: Record<string, LLMProviderConfig>
+): Promise<Record<string, LLMProviderConfig>> {
+  const result: Record<string, LLMProviderConfig> = {};
+  for (const [key, config] of Object.entries(providers)) {
+    result[key] = { ...config };
+    if (config.apiKey) {
+      result[key].apiKey = await encryptSecret(config.apiKey);
+    }
+  }
+  return result;
+}
+
+// Decrypt sensitive fields after loading
+async function decryptProviders(
+  providers: Record<string, LLMProviderConfig>
+): Promise<Record<string, LLMProviderConfig>> {
+  const result: Record<string, LLMProviderConfig> = {};
+  for (const [key, config] of Object.entries(providers)) {
+    result[key] = { ...config };
+    if (config.apiKey) {
+      result[key].apiKey = await decryptSecret(config.apiKey);
+    }
+  }
+  return result;
+}
+
 async function persistSettings(state: {
   general: GeneralConfig;
   llmProviders: Record<string, LLMProviderConfig>;
   cloudAsr: CloudAsrConfig;
   autoDegradation: boolean;
 }) {
+  const encryptedProviders = await encryptProviders(state.llmProviders);
   const data = {
     general: state.general,
-    llmProviders: state.llmProviders,
+    llmProviders: encryptedProviders,
     cloudAsr: state.cloudAsr,
     autoDegradation: state.autoDegradation,
   };
@@ -81,9 +134,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     if (raw) {
       try {
         const data = JSON.parse(raw);
+        const mergedProviders = { ...defaultState.llmProviders, ...data.llmProviders };
+        const decrypted = await decryptProviders(mergedProviders);
         set({
           general: { ...defaultState.general, ...data.general },
-          llmProviders: { ...defaultState.llmProviders, ...data.llmProviders },
+          llmProviders: decrypted,
           cloudAsr: { ...defaultState.cloudAsr, ...data.cloudAsr },
           autoDegradation: data.autoDegradation ?? defaultState.autoDegradation,
         });

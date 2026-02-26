@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Shield, ChevronsUpDown, Check, Loader2, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
+import { Shield, ChevronsUpDown, Check, Loader2, CheckCircle2, XCircle, RefreshCw, ExternalLink } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
 import {
   Dialog,
   DialogContent,
@@ -11,6 +12,13 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
 import { cn } from "../../lib/utils";
 import { PasswordInput } from "./PasswordInput";
 import { testLLMConnection, fetchModelList } from "../../services/llmClient";
@@ -30,6 +38,9 @@ interface ProviderConfigModalProps {
   providerName: string;
   fields: FieldDef[];
   presetModels: string[];
+  presetModelsByType?: Record<string, string[]>;
+  supportedTypes?: string[];
+  apiKeyUrl?: string;
   values: Record<string, string>;
   onSave: (values: Record<string, string>) => void;
 }
@@ -182,6 +193,9 @@ export function ProviderConfigModal({
   providerName,
   fields,
   presetModels,
+  presetModelsByType,
+  supportedTypes,
+  apiKeyUrl,
   values,
   onSave,
 }: ProviderConfigModalProps) {
@@ -189,14 +203,19 @@ export function ProviderConfigModal({
   const [localValues, setLocalValues] = useState<Record<string, string>>({});
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [testMessage, setTestMessage] = useState("");
+  const [selectedModelType, setSelectedModelType] = useState("LLM");
 
   useEffect(() => {
     if (open) {
       setLocalValues({ ...values });
       setTestStatus("idle");
       setTestMessage("");
+      setSelectedModelType("LLM");
     }
   }, [open, values]);
+
+  // Get preset models based on selected model type
+  const activePresetModels = presetModelsByType?.[selectedModelType] ?? presetModels;
 
   const handleChange = (key: string, value: string) => {
     setLocalValues((prev) => ({ ...prev, [key]: value }));
@@ -238,6 +257,25 @@ export function ProviderConfigModal({
         </Alert>
 
         <div className="mt-4 space-y-4">
+          {/* Model type selector */}
+          {supportedTypes && supportedTypes.length > 1 && (
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">{t("llm.modelType")}</label>
+              <Select value={selectedModelType} onValueChange={setSelectedModelType}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {supportedTypes.map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {type}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           {fields.map((field) => (
             <div key={field.key} className="space-y-1.5">
               <label className="text-sm font-medium">{t(field.labelKey)}</label>
@@ -252,7 +290,7 @@ export function ProviderConfigModal({
                   value={localValues[field.key] || ""}
                   onChange={(val) => handleChange(field.key, val)}
                   providerKey={providerKey}
-                  presetModels={presetModels}
+                  presetModels={activePresetModels}
                   placeholder={field.placeholder}
                   config={{
                     apiKey: localValues.apiKey,
@@ -302,11 +340,28 @@ export function ProviderConfigModal({
           )}
         </div>
 
-        <div className="mt-6 flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose}>
-            {t("common:action.cancel")}
-          </Button>
-          <Button onClick={handleSave}>{t("llm.saveBtn")}</Button>
+        <div className="mt-6 flex items-center justify-between">
+          {apiKeyUrl ? (
+            <button
+              className="flex items-center gap-1 text-xs text-primary hover:underline"
+              onClick={() => {
+                invoke("open_url", { url: apiKeyUrl }).catch(() => {
+                  window.open(apiKeyUrl, "_blank");
+                });
+              }}
+            >
+              <ExternalLink className="h-3 w-3" />
+              {t("llm.getApiKey")}
+            </button>
+          ) : (
+            <span />
+          )}
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose}>
+              {t("common:action.cancel")}
+            </Button>
+            <Button onClick={handleSave}>{t("llm.saveBtn")}</Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

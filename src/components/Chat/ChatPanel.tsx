@@ -44,7 +44,7 @@ export function ChatPanel() {
   );
 
   return (
-    <div className="fixed bottom-20 right-4 z-50 flex h-[500px] w-[400px] flex-col rounded-lg border bg-background shadow-xl">
+    <div className="flex h-[500px] w-[400px] flex-col rounded-l-lg border bg-background shadow-xl">
       {/* Header */}
       <div className="flex items-center justify-between border-b px-3 py-2">
         <div className="flex items-center gap-2">

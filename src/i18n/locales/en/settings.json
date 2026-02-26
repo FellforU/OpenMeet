@@ -11,7 +11,11 @@
     "autoSummaryDesc": "Automatically generate meeting summary after transcription completes",
     "exportFormat": "Default export format",
     "defaultLLMProvider": "Default LLM Provider",
-    "defaultLLMProviderDesc": "Choose the LLM service for meeting summary generation"
+    "defaultLLMProviderDesc": "Choose the LLM service for meeting summary generation",
+    "defaultEmbeddingProvider": "Default Embedding Provider",
+    "defaultEmbeddingProviderDesc": "Choose the embedding service for text vectorization",
+    "defaultRerankProvider": "Default Rerank Provider",
+    "defaultRerankProviderDesc": "Choose the rerank service for search result reranking"
   },
   "llm": {
     "title": "LLM Provider Configuration",
@@ -19,8 +23,9 @@
     "local": "Local",
     "cloud": "Cloud",
     "apiKey": "API Key",
-    "securityNote": "API keys are stored locally and never sent to our servers.",
+    "securityNote": "API keys are encrypted with RSA-OAEP and stored locally. Never sent to our servers.",
     "model": "Model Name",
+    "modelType": "Model Type",
     "ollamaHost": "Ollama Host",
     "ollamaModel": "Ollama Model",
     "ollama": "Ollama",
@@ -48,7 +53,8 @@
     "searchModel": "Search or enter model name...",
     "useCustomModel": "Use custom model: \"{{model}}\"",
     "noModelsFound": "No matching models found",
-    "fetchModels": "Fetch Models"
+    "fetchModels": "Fetch Models",
+    "getApiKey": "Get API Key"
   },
   "asr": {
     "title": "ASR Model Manager",

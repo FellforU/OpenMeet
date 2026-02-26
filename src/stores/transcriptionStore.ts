@@ -38,6 +38,7 @@ interface TranscriptionStore {
   startTranscription: (engine: string, modelSize: string, language: string | null) => Promise<void>;
   pollJobStatus: (jobId: string) => Promise<void>;
   setSegments: (segments: Segment[]) => void;
+  appendSegments: (newSegments: Segment[]) => void;
   setJobStatus: (status: JobStatus) => void;
   setProgress: (progress: number) => void;
   seekTo: (time: number) => void;
@@ -214,6 +215,16 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
   },
 
   setSegments: (segments) => set({ segments }),
+  appendSegments: (newSegments) => {
+    const existing = get().segments;
+    // Re-index IDs to avoid collision
+    const offset = existing.length;
+    const reindexed = newSegments.map((s, i) => ({
+      ...s,
+      id: `seg-${offset + i}`,
+    }));
+    set({ segments: [...existing, ...reindexed] });
+  },
   setJobStatus: (status) => set({ job: { ...get().job, status } }),
   setProgress: (progress) => set({ job: { ...get().job, progress } }),
   seekTo: (time) => set({ audio: { ...get().audio, currentTime: time } }),

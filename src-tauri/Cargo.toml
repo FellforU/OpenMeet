@@ -26,3 +26,6 @@ chrono = "0.4"
 rusqlite = { version = "0.32", features = ["bundled"] }
 open = "5"
 uuid = { version = "1", features = ["v4"] }
+rsa = "0.9"
+rand = "0.8"
+sha2 = "0.10"

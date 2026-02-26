@@ -27,7 +27,8 @@
     "new": "New",
     "unload": "Unload",
     "load": "Load",
-    "configure": "Configure"
+    "configure": "Configure",
+    "starting": "Starting..."
   },
   "status": {
     "idle": "Idle",
@@ -106,7 +107,8 @@
   "error": {
     "title": "Something went wrong",
     "tryAgain": "Try Again",
-    "reloadApp": "Reload App"
+    "reloadApp": "Reload App",
+    "recordingFailed": "Recording failed: {{message}}"
   },
   "toast": {
     "fileLoaded": "Loaded: {{name}}",

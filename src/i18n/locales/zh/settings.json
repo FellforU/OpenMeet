@@ -11,7 +11,11 @@
     "autoSummaryDesc": "转录完成后自动生成会议摘要",
     "exportFormat": "默认导出格式",
     "defaultLLMProvider": "默认 LLM 提供商",
-    "defaultLLMProviderDesc": "选择用于生成会议摘要的 LLM 服务"
+    "defaultLLMProviderDesc": "选择用于生成会议摘要的 LLM 服务",
+    "defaultEmbeddingProvider": "默认 Embedding 提供商",
+    "defaultEmbeddingProviderDesc": "选择用于文本向量化的 Embedding 服务",
+    "defaultRerankProvider": "默认 Rerank 提供商",
+    "defaultRerankProviderDesc": "选择用于搜索结果重排序的 Rerank 服务"
   },
   "llm": {
     "title": "LLM 提供商配置",
@@ -19,8 +23,9 @@
     "local": "本地",
     "cloud": "云端",
     "apiKey": "API 密钥",
-    "securityNote": "API 密钥仅存储在本地，不会发送到我们的服务器。",
+    "securityNote": "API 密钥已通过 RSA-OAEP 加密存储在本地，不会发送到我们的服务器。",
     "model": "模型名称",
+    "modelType": "模型类型",
     "ollamaHost": "Ollama 地址",
     "ollamaModel": "Ollama 模型",
     "ollama": "Ollama",
@@ -48,7 +53,8 @@
     "searchModel": "搜索或输入模型名称...",
     "useCustomModel": "使用自定义模型: \"{{model}}\"",
     "noModelsFound": "未找到匹配的模型",
-    "fetchModels": "获取模型列表"
+    "fetchModels": "获取模型列表",
+    "getApiKey": "获取 API Key"
   },
   "asr": {
     "title": "ASR 模型管理",

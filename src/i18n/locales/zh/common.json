@@ -27,7 +27,8 @@
     "new": "新建",
     "unload": "卸载",
     "load": "加载",
-    "configure": "配置"
+    "configure": "配置",
+    "starting": "启动中..."
   },
   "status": {
     "idle": "空闲",
@@ -106,7 +107,8 @@
   "error": {
     "title": "出了点问题",
     "tryAgain": "重试",
-    "reloadApp": "重新加载应用"
+    "reloadApp": "重新加载应用",
+    "recordingFailed": "录制启动失败：{{message}}"
   },
   "toast": {
     "fileLoaded": "已加载: {{name}}",

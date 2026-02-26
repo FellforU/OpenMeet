@@ -15,6 +15,13 @@ interface EngineStore {
   setSelectedLanguage: (lang: string) => void;
 }
 
+// Fallback model sizes when ASR service is unavailable
+export const FALLBACK_MODEL_SIZES: Record<string, string[]> = {
+  whisper: ["tiny", "base", "small", "medium", "large-v3"],
+  qwen3: ["qwen3-asr-0.6B", "qwen3-asr-1.7B"],
+  paraformer: ["paraformer-large", "paraformer-large-vad-punc", "paraformer-large-vad-punc-spk"],
+};
+
 // Auto-recommendation logic based on language
 function recommendEngine(language: string, engines: EngineInfo[]): string {
   const engineMap = Object.fromEntries(engines.map((e) => [e.name, e]));

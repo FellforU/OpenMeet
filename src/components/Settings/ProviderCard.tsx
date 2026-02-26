@@ -10,11 +10,18 @@ interface ProviderCardProps {
   name: string;
   description: string;
   type: "local" | "cloud";
+  supportedTypes?: string[];
   isConfigured: boolean;
   isEnabled?: boolean;
   onToggleEnabled?: (enabled: boolean) => void;
   onClick: () => void;
 }
+
+const TYPE_COLORS: Record<string, string> = {
+  LLM: "border-blue-300 text-blue-600",
+  EMBEDDING: "border-purple-300 text-purple-600",
+  RERANK: "border-amber-300 text-amber-600",
+};
 
 export function ProviderCard({
   logoSrc,
@@ -22,6 +29,7 @@ export function ProviderCard({
   name,
   description,
   type,
+  supportedTypes,
   isConfigured,
   isEnabled,
   onToggleEnabled,
@@ -62,9 +70,24 @@ export function ProviderCard({
             </Badge>
           )}
         </div>
-        <p className="mt-0.5 truncate text-xs text-muted-foreground">
-          {description}
-        </p>
+        <div className="mt-0.5 flex items-center gap-1">
+          <p className="truncate text-xs text-muted-foreground">
+            {description}
+          </p>
+          {supportedTypes && supportedTypes.length > 0 && (
+            <div className="flex shrink-0 gap-0.5">
+              {supportedTypes.map((st) => (
+                <Badge
+                  key={st}
+                  variant="outline"
+                  className={`text-[9px] px-1 py-0 ${TYPE_COLORS[st] || ""}`}
+                >
+                  {st}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {isConfigured && onToggleEnabled ? (

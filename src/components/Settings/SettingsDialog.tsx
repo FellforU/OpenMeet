@@ -17,7 +17,7 @@ import {
 } from "../ui/select";
 import { Badge } from "../ui/badge";
 import { ModelManager } from "./ModelManager";
-import { LLMProviderTab } from "./LLMProviderTab";
+import { LLMProviderTab, LLM_PROVIDERS } from "./LLMProviderTab";
 import { useSettingsStore } from "../../stores/settingsStore";
 import logoWithText from "../../../ico/OpenMeet_1.png";
 
@@ -34,6 +34,14 @@ const LLM_PROVIDER_OPTIONS = [
   "openai",
   "gemini",
 ] as const;
+
+const EMBEDDING_PROVIDER_OPTIONS = LLM_PROVIDERS
+  .filter((p) => p.supportedTypes.includes("EMBEDDING"))
+  .map((p) => p.key);
+
+const RERANK_PROVIDER_OPTIONS = LLM_PROVIDERS
+  .filter((p) => p.supportedTypes.includes("RERANK"))
+  .map((p) => p.key);
 
 function GeneralSettings() {
   const { t } = useTranslation("settings");
@@ -64,6 +72,54 @@ function GeneralSettings() {
           </SelectContent>
         </Select>
       </div>
+      <div className="space-y-2">
+        <label className="text-sm font-medium">
+          {t("general.defaultEmbeddingProvider")}
+        </label>
+        <p className="text-xs text-muted-foreground">
+          {t("general.defaultEmbeddingProviderDesc")}
+        </p>
+        <Select
+          value={general.defaultEmbeddingProvider}
+          onValueChange={(v) => setGeneral({ defaultEmbeddingProvider: v })}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {EMBEDDING_PROVIDER_OPTIONS.map((key) => (
+              <SelectItem key={key} value={key}>
+                {t(`llm.${key}`)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      {RERANK_PROVIDER_OPTIONS.length > 0 && (
+        <div className="space-y-2">
+          <label className="text-sm font-medium">
+            {t("general.defaultRerankProvider")}
+          </label>
+          <p className="text-xs text-muted-foreground">
+            {t("general.defaultRerankProviderDesc")}
+          </p>
+          <Select
+            value={general.defaultRerankProvider}
+            onValueChange={(v) => setGeneral({ defaultRerankProvider: v })}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {RERANK_PROVIDER_OPTIONS.map((key) => (
+                <SelectItem key={key} value={key}>
+                  {t(`llm.${key}`)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div>
           <label className="text-sm font-medium">

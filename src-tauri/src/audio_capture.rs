@@ -315,3 +315,49 @@ pub async fn resume_recording(state: State<'_, AudioCaptureState>) -> Result<Str
     state.is_paused.store(false, Ordering::SeqCst);
     Ok("Recording resumed".to_string())
 }
+
+/// Read PCM i16 samples from a WAV file (skipping the 44-byte header)
+fn read_wav_samples(path: &PathBuf) -> Result<(Vec<i16>, u32, u16), String> {
+    let data = std::fs::read(path)
+        .map_err(|e| format!("Failed to read WAV file: {}", e))?;
+    if data.len() < 44 {
+        return Err("Invalid WAV file: too short".to_string());
+    }
+    let channels = u16::from_le_bytes([data[22], data[23]]);
+    let sample_rate = u32::from_le_bytes([data[24], data[25], data[26], data[27]]);
+    let pcm_data = &data[44..];
+    let samples: Vec<i16> = pcm_data
+        .chunks_exact(2)
+        .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+        .collect();
+    Ok((samples, sample_rate, channels))
+}
+
+#[tauri::command]
+pub async fn merge_wav_files(paths: Vec<String>) -> Result<String, String> {
+    if paths.is_empty() {
+        return Err("No files to merge".to_string());
+    }
+    if paths.len() == 1 {
+        return Ok(paths[0].clone());
+    }
+
+    let first_path = PathBuf::from(&paths[0]);
+    let (mut all_samples, sample_rate, channels) = read_wav_samples(&first_path)?;
+
+    for p in &paths[1..] {
+        let path = PathBuf::from(p);
+        let (samples, _, _) = read_wav_samples(&path)?;
+        all_samples.extend_from_slice(&samples);
+    }
+
+    // Write merged WAV to the first file's location (overwrite)
+    write_wav(&first_path, &all_samples, sample_rate, channels)?;
+
+    // Remove subsequent files
+    for p in &paths[1..] {
+        std::fs::remove_file(p).ok();
+    }
+
+    Ok(first_path.to_string_lossy().to_string())
+}

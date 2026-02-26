@@ -164,16 +164,22 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
     const { segments, jobId } = get();
     set({ status: "idle", jobId: null, elapsed: 0, segments: [] });
 
-    // Sync segments to transcription store before cleanup
+    const activeProjectId = useProjectStore.getState().activeProjectId;
+    const transcriptionStore = useTranscriptionStore.getState();
+    const existingSegments = transcriptionStore.segments;
+
+    // Sync segments to transcription store — append if segments already exist
     if (segments.length > 0) {
-      const { setSegments, setJobStatus, persistSegments } = useTranscriptionStore.getState();
-      setSegments(segments);
-      setJobStatus("completed");
+      if (existingSegments.length > 0) {
+        transcriptionStore.appendSegments(segments);
+      } else {
+        transcriptionStore.setSegments(segments);
+      }
+      transcriptionStore.setJobStatus("completed");
 
       // Persist segments to SQLite
-      const pid = useProjectStore.getState().activeProjectId;
-      if (pid) {
-        persistSegments(pid).catch(() => {});
+      if (activeProjectId) {
+        useTranscriptionStore.getState().persistSegments(activeProjectId).catch(() => {});
       }
     }
 
@@ -188,14 +194,26 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
       // Ignore if not in Tauri
     }
 
-    // Update project with audio path
-    const activeProjectId = useProjectStore.getState().activeProjectId;
+    // Merge audio files if project already has an audio path
     if (activeProjectId && audioPath) {
+      const activeProject = useProjectStore.getState().projects.find(
+        (p) => p.id === activeProjectId
+      );
+      if (activeProject?.audioPath) {
+        try {
+          const merged = await invoke<string>("merge_wav_files", {
+            paths: [activeProject.audioPath, audioPath],
+          });
+          audioPath = merged;
+        } catch {
+          // Use new file if merge fails
+        }
+      }
       await useProjectStore.getState().updateProject(activeProjectId, { audioPath });
     }
 
-    // Auto-generate AI title for the active meeting
-    if (activeProjectId && segments.length > 0) {
+    // Auto-generate AI title for the active meeting (only first recording)
+    if (activeProjectId && segments.length > 0 && existingSegments.length === 0) {
       const activeProject = useProjectStore.getState().projects.find(
         (p) => p.id === activeProjectId
       );

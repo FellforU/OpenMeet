@@ -6,7 +6,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../ui/select";
-import { useEngineStore } from "../../stores/engineStore";
+import { useEngineStore, FALLBACK_MODEL_SIZES } from "../../stores/engineStore";
 
 export function ModelSizeSelector() {
   const { t } = useTranslation();
@@ -14,13 +14,16 @@ export function ModelSizeSelector() {
     useEngineStore();
 
   const engine = engines.find((e) => e.name === selectedEngine);
-  const sizes = engine?.model_sizes || [];
+  const sizes = engine?.model_sizes?.length
+    ? engine.model_sizes
+    : FALLBACK_MODEL_SIZES[selectedEngine] || [];
 
   return (
     <Select
       value={selectedModelSize}
       onValueChange={setSelectedModelSize}
       disabled={sizes.length === 0}
+
     >
       <SelectTrigger className="h-8 w-[160px] text-sm">
         <SelectValue placeholder={t("model.selectSize")} />

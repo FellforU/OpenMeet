@@ -1,10 +1,17 @@
 mod audio_capture;
+mod crypto;
 mod database;
 mod sidecar;
 
 use audio_capture::AudioCaptureState;
+use crypto::CryptoState;
 use sidecar::SidecarState;
 use tauri::Manager;
+
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    open::that(&url).map_err(|e| e.to_string())
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -23,10 +30,16 @@ pub fn run() {
                 .map_err(|e| Box::<dyn std::error::Error>::from(e))?;
             app.manage(db);
 
+            // Initialize crypto state with app data directory
+            let crypto_state = app.state::<CryptoState>();
+            let app_data = app.path().app_data_dir()?;
+            crypto_state.init(&app_data);
+
             Ok(())
         })
         .manage(SidecarState::new())
         .manage(AudioCaptureState::new())
+        .manage(CryptoState::new())
         .invoke_handler(tauri::generate_handler![
             sidecar::start_asr_service,
             sidecar::stop_asr_service,
@@ -36,6 +49,7 @@ pub fn run() {
             audio_capture::stop_recording,
             audio_capture::pause_recording,
             audio_capture::resume_recording,
+            audio_capture::merge_wav_files,
             // Database commands
             database::db_get_all_projects,
             database::db_add_project,
@@ -55,6 +69,9 @@ pub fn run() {
             database::db_get_setting,
             database::db_set_setting,
             database::get_app_data_dir,
+            open_url,
+            crypto::encrypt_secret,
+            crypto::decrypt_secret,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

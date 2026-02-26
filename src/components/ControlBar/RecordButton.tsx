@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Mic, Pause, Square } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "../ui/button";
 import { useRecordingStore } from "../../stores/recordingStore";
 import { useEngineStore } from "../../stores/engineStore";
@@ -16,17 +18,26 @@ export function RecordButton() {
     useRecordingStore();
   const { selectedEngine, selectedModelSize, selectedLanguage } =
     useEngineStore();
+  const [starting, setStarting] = useState(false);
 
-  const handleStart = () => {
+  const handleStart = async () => {
     const lang = selectedLanguage === "auto" ? null : selectedLanguage;
-    startRecording(selectedEngine, selectedModelSize, lang);
+    setStarting(true);
+    try {
+      await startRecording(selectedEngine, selectedModelSize, lang);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(t("error.recordingFailed", { message: msg }));
+    } finally {
+      setStarting(false);
+    }
   };
 
   if (status === "idle") {
     return (
-      <Button variant="outline" size="sm" onClick={handleStart}>
+      <Button variant="outline" size="sm" onClick={handleStart} disabled={starting}>
         <Mic className="mr-1.5 h-4 w-4" />
-        {t("action.record")}
+        {starting ? t("action.starting") : t("action.record")}
       </Button>
     );
   }
