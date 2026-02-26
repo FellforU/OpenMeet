@@ -198,11 +198,18 @@ export function ProjectList() {
       if (targetItem.isFolder && targetItem.id !== draggedItem.parentId) {
         // Check depth constraints
         if (draggedItem.isFolder) {
-          const targetDepth = getItemDepth(targetId);
-          if (targetDepth + 1 > 2) return; // Max 2 levels for folders
-          // Check that moving this folder with its children won't exceed depth
           const descendantIds = getDescendantIds(draggedId);
           if (descendantIds.includes(targetId)) return; // Can't move into descendant
+          const targetDepth = getItemDepth(targetId);
+          // Calculate subtree height of the dragged folder
+          const draggedDepth = getItemDepth(draggedId);
+          let maxDescDepth = draggedDepth;
+          for (const descId of descendantIds) {
+            const d = getItemDepth(descId);
+            if (d > maxDescDepth) maxDescDepth = d;
+          }
+          const subtreeHeight = maxDescDepth - draggedDepth;
+          if (targetDepth + 1 + subtreeHeight > 2) return; // Max 2 levels for folders
         }
         moveItem(draggedId, targetId);
         // Auto-expand target folder

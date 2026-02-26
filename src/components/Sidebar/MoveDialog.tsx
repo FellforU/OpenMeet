@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Folder, FolderOpen, ChevronRight, ChevronDown } from "lucide-react";
 import {
@@ -22,8 +22,16 @@ export function MoveDialog({ open, onClose, itemId }: MoveDialogProps) {
   const { t } = useTranslation();
   const { projects, moveItem, getItemDepth, getDescendantIds } =
     useProjectStore();
-  const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
+  const [selectedTarget, setSelectedTarget] = useState<string | null | undefined>(undefined);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  // Reset state when dialog opens or itemId changes
+  useEffect(() => {
+    if (open) {
+      setSelectedTarget(undefined);
+      setExpanded(new Set());
+    }
+  }, [open, itemId]);
 
   const item = projects.find((p) => p.id === itemId);
   if (!item) return null;
@@ -49,11 +57,18 @@ export function MoveDialog({ open, onClose, itemId }: MoveDialogProps) {
     if (targetId === itemId) return false;
     // Cannot move to descendant
     if (targetId !== null && descendantIds.has(targetId)) return false;
-    // Check depth constraint for folders
+    // Check depth constraint for folders (including subtree depth)
     if (item.isFolder && targetId !== null) {
       const targetDepth = getItemDepth(targetId);
-      // Folder at targetDepth + 1, max folder depth is 2
-      if (targetDepth + 1 > 2) return false;
+      // Calculate subtree height of the moved folder
+      const itemDepth = getItemDepth(itemId);
+      let maxDescDepth = itemDepth;
+      for (const descId of descendantIds) {
+        const d = getItemDepth(descId);
+        if (d > maxDescDepth) maxDescDepth = d;
+      }
+      const subtreeHeight = maxDescDepth - itemDepth;
+      if (targetDepth + 1 + subtreeHeight > 2) return false;
     }
     return true;
   };
