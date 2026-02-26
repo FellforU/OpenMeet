@@ -12,7 +12,6 @@ import { ProjectList } from "./ProjectList";
 import { ProjectNameDialog } from "./ProjectNameDialog";
 import { SearchBar } from "./SearchBar";
 import { useProjectStore } from "../../stores/projectStore";
-import logoHorizontal from "../../../ico/OpenMeet_logo5.png";
 
 interface SidebarProps {
   collapsed: boolean;
@@ -47,8 +46,7 @@ export function Sidebar({ collapsed, onCollapse }: SidebarProps) {
     >
       {!collapsed && (
         <>
-          <div className="flex items-center justify-between px-3 pt-4 pb-2">
-            <img src={logoHorizontal} alt="OpenMeet" className="h-12 object-contain" />
+          <div className="flex items-center justify-end px-3 pt-3 pb-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button size="sm">

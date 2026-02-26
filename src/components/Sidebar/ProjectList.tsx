@@ -10,6 +10,7 @@ import {
   DragStartEvent,
   DragEndEvent,
   DragOverEvent,
+  useDroppable,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -91,6 +92,27 @@ function SortableProjectItem({
         onCreateMeeting={onCreateMeeting}
         onCreateSubfolder={onCreateSubfolder}
       />
+    </div>
+  );
+}
+
+const ROOT_DROP_ID = "__root__";
+
+function RootDropZone({ isOver }: { isOver: boolean }) {
+  const { t } = useTranslation();
+  const { setNodeRef } = useDroppable({ id: ROOT_DROP_ID });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "mx-2 mt-1 rounded-md border-2 border-dashed px-3 py-2 text-center text-xs text-muted-foreground transition-colors",
+        isOver
+          ? "border-primary bg-primary/10 text-primary"
+          : "border-transparent"
+      )}
+    >
+      {isOver ? t("sidebar.rootLevel") : ""}
     </div>
   );
 }
@@ -190,9 +212,19 @@ export function ProjectList() {
       const draggedId = active.id as string;
       const targetId = over.id as string;
       const draggedItem = projects.find((p) => p.id === draggedId);
-      const targetItem = projects.find((p) => p.id === targetId);
 
-      if (!draggedItem || !targetItem) return;
+      if (!draggedItem) return;
+
+      // Dropping onto root drop zone → move to root level
+      if (targetId === ROOT_DROP_ID) {
+        if (draggedItem.parentId !== null) {
+          moveItem(draggedId, null);
+        }
+        return;
+      }
+
+      const targetItem = projects.find((p) => p.id === targetId);
+      if (!targetItem) return;
 
       // If dropping onto a folder, move into that folder
       if (targetItem.isFolder && targetItem.id !== draggedItem.parentId) {
@@ -328,6 +360,7 @@ export function ProjectList() {
       >
         <div className="flex-1 overflow-y-auto px-2 py-1">
           {renderTree(null, 0)}
+          {activeId && <RootDropZone isOver={overId === ROOT_DROP_ID} />}
         </div>
 
         <DragOverlay>
