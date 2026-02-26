@@ -19,6 +19,7 @@ import { Badge } from "../ui/badge";
 import { ModelManager } from "./ModelManager";
 import { LLMProviderTab } from "./LLMProviderTab";
 import { useSettingsStore } from "../../stores/settingsStore";
+import logoWithText from "../../../ico/OpenMeet_1.png";
 
 interface SettingsDialogProps {
   open: boolean;
@@ -105,19 +106,21 @@ function AboutSection() {
   const { t } = useTranslation("settings");
 
   return (
-    <div className="space-y-4 py-2">
-      <div className="flex items-center gap-2">
-        <span className="text-base font-semibold">OpenMeet</span>
-        <Badge variant="secondary">v0.1.0</Badge>
-      </div>
-      <p className="text-sm text-muted-foreground">
+    <div className="flex flex-col items-center space-y-4 py-6">
+      <img
+        src={logoWithText}
+        alt="OpenMeet"
+        className="h-32 w-32 object-contain"
+      />
+      <Badge variant="secondary">v0.1.0</Badge>
+      <p className="text-center text-sm text-muted-foreground">
         {t("about.description")}
       </p>
-      <div>
+      <div className="text-center">
         <span className="text-sm text-muted-foreground">
-          {t("about.techStack")}:{" "}
+          {t("about.techStack")}
         </span>
-        <div className="mt-1 flex flex-wrap gap-1">
+        <div className="mt-1 flex flex-wrap justify-center gap-1">
           <Badge variant="outline">Tauri 2.x</Badge>
           <Badge variant="outline">React 19</Badge>
           <Badge variant="outline">FastAPI</Badge>
