@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
+import { indexProject } from "../../services/knowledgeClient";
 import {
   Paperclip,
   Trash2,
@@ -77,6 +78,8 @@ export function AttachmentsPanel({ projectId }: { projectId: string }) {
       }
       // Reset input so same file can be selected again
       e.target.value = "";
+      // Trigger knowledge indexing in background
+      indexProject(projectId).catch(() => {});
     },
     [projectId]
   );

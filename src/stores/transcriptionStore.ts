@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import type { Segment, JobStatus, PipelineStep, Summary } from "../types";
 import * as api from "../services/asrClient";
+import { indexProject } from "../services/knowledgeClient";
 
 // Polling timer reference for cleanup
 let pollTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -292,6 +293,8 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
       projectId,
       segments: segments.map(segmentToRust),
     });
+    // Trigger knowledge indexing in background
+    indexProject(projectId).catch(() => {});
   },
 
   persistSummary: async (projectId: string) => {

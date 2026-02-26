@@ -749,3 +749,9 @@ pub fn db_set_setting(
     .map_err(|e| e.to_string())?;
     Ok(())
 }
+
+#[tauri::command]
+pub fn get_app_data_dir(app: AppHandle) -> Result<String, String> {
+    let path = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().to_string())
+}

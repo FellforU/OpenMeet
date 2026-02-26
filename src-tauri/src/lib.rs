@@ -54,6 +54,7 @@ pub fn run() {
             database::db_save_note,
             database::db_get_setting,
             database::db_set_setting,
+            database::get_app_data_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

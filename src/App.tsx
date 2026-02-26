@@ -10,9 +10,11 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FirstRunGuide } from "./components/Guide/FirstRunGuide";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { startAsrService, checkAsrHealth, configureEngine } from "./services/asrClient";
+import { configureKnowledge } from "./services/knowledgeClient";
 import { migrateFromLocalStorage } from "./services/dataMigration";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useProjectStore } from "./stores/projectStore";
+import { ChatButton } from "./components/Chat/ChatButton";
 
 function App() {
   const [collapsed, setCollapsed] = useState(false);
@@ -62,12 +64,22 @@ function App() {
           if (!cancelled) {
             setAsrReady(true);
             pushCredentials();
+            pushKnowledgeConfig();
           }
         } catch {
           if (!cancelled) setTimeout(check, 2000);
         }
       };
       check();
+    }
+
+    async function pushKnowledgeConfig() {
+      try {
+        const appDataDir = await invoke<string>("get_app_data_dir");
+        await configureKnowledge(appDataDir);
+      } catch {
+        // Knowledge features unavailable without config
+      }
     }
 
     function pushCredentials() {
@@ -118,6 +130,7 @@ function App() {
             <StatusBar asrReady={asrReady} />
           </div>
         </div>
+        <ChatButton />
         <Toaster position="top-right" richColors />
         <FirstRunGuide open={showGuide} onClose={handleCloseGuide} />
       </TooltipProvider>

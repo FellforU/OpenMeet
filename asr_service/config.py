@@ -12,3 +12,30 @@ PORT = 18090
 # Supported engines
 AVAILABLE_ENGINES = ["whisper", "qwen3", "paraformer", "openai-whisper", "alibaba-asr"]
 DEFAULT_ENGINE = "whisper"
+
+# Knowledge platform config
+LANCE_DB_DIR = "lance"
+EMBEDDING_MODEL = "BAAI/bge-small-zh-v1.5"
+CHUNK_SIZE = 500
+CHUNK_OVERLAP = 50
+
+# Runtime config (set by frontend on startup)
+_runtime_config = {
+    "app_data_dir": None,
+    "sqlite_db_path": None,
+    "lance_db_path": None,
+}
+
+
+def set_app_data_dir(path: str):
+    _runtime_config["app_data_dir"] = path
+    _runtime_config["sqlite_db_path"] = f"{path}/openmeet.db"
+    _runtime_config["lance_db_path"] = f"{path}/lance"
+
+
+def get_sqlite_path() -> str | None:
+    return _runtime_config["sqlite_db_path"]
+
+
+def get_lance_path() -> str | None:
+    return _runtime_config["lance_db_path"]

@@ -49,5 +49,14 @@
     "placeholder": "Take meeting notes here...",
     "saved": "Saved",
     "saving": "Saving..."
+  },
+  "chat": {
+    "title": "AI Assistant",
+    "currentProject": "Current Meeting",
+    "allKnowledge": "All Knowledge",
+    "clear": "Clear Chat",
+    "placeholder": "Ask AI about your meetings...",
+    "inputPlaceholder": "Type your question...",
+    "sources": "Sources"
   }
 }

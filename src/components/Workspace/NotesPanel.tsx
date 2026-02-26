@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
+import { indexProject } from "../../services/knowledgeClient";
 
 interface Note {
   id: string;
@@ -50,6 +51,8 @@ export function NotesPanel({ projectId }: { projectId: string }) {
             content: value,
           });
           setSaveStatus("saved");
+          // Trigger knowledge indexing in background
+          indexProject(projectIdRef.current).catch(() => {});
         } catch {
           // Retry silently
         }
