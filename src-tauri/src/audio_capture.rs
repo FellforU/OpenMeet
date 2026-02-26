@@ -316,6 +316,14 @@ pub async fn resume_recording(state: State<'_, AudioCaptureState>) -> Result<Str
     Ok("Recording resumed".to_string())
 }
 
+#[tauri::command]
+pub async fn read_audio_file(path: String) -> Result<String, String> {
+    use base64::Engine as _;
+    let data = std::fs::read(&path)
+        .map_err(|e| format!("Failed to read audio file: {}", e))?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(&data))
+}
+
 /// Read PCM i16 samples from a WAV file (skipping the 44-byte header)
 fn read_wav_samples(path: &PathBuf) -> Result<(Vec<i16>, u32, u16), String> {
     let data = std::fs::read(path)

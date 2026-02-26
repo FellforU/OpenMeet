@@ -50,6 +50,7 @@ pub fn run() {
             audio_capture::pause_recording,
             audio_capture::resume_recording,
             audio_capture::merge_wav_files,
+            audio_capture::read_audio_file,
             // Database commands
             database::db_get_all_projects,
             database::db_add_project,

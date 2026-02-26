@@ -212,6 +212,23 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
       await useProjectStore.getState().updateProject(activeProjectId, { audioPath });
     }
 
+    // Load audio file for playback
+    if (audioPath) {
+      try {
+        const base64 = await invoke<string>("read_audio_file", { path: audioPath });
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        const blob = new Blob([bytes], { type: "audio/wav" });
+        const objectUrl = URL.createObjectURL(blob);
+        useTranscriptionStore.getState().setAudioFile(audioPath, objectUrl);
+      } catch {
+        // Ignore if not in Tauri environment
+      }
+    }
+
     // Auto-generate AI title for the active meeting (only first recording)
     if (activeProjectId && segments.length > 0 && existingSegments.length === 0) {
       const activeProject = useProjectStore.getState().projects.find(

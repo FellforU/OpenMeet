@@ -69,13 +69,8 @@ export function ProviderCard({
               {t("llm.configured")}
             </Badge>
           )}
-        </div>
-        <div className="mt-0.5 flex items-center gap-1">
-          <p className="truncate text-xs text-muted-foreground">
-            {description}
-          </p>
           {supportedTypes && supportedTypes.length > 0 && (
-            <div className="flex shrink-0 gap-0.5">
+            <>
               {supportedTypes.map((st) => (
                 <Badge
                   key={st}
@@ -85,9 +80,12 @@ export function ProviderCard({
                   {st}
                 </Badge>
               ))}
-            </div>
+            </>
           )}
         </div>
+        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+          {description}
+        </p>
       </div>
 
       {isConfigured && onToggleEnabled ? (

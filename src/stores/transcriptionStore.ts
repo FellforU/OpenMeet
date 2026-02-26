@@ -296,6 +296,29 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
     const summary = rawSummary ? summaryFromRust(rawSummary) : null;
 
     set({ segments, summary });
+
+    // Load audio file for playback if project has an audio path
+    const { useProjectStore } = await import("./projectStore");
+    const project = useProjectStore.getState().projects.find(
+      (p) => p.id === projectId
+    );
+    if (project?.audioPath) {
+      try {
+        const base64 = await invoke<string>("read_audio_file", {
+          path: project.audioPath,
+        });
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        const blob = new Blob([bytes], { type: "audio/wav" });
+        const objectUrl = URL.createObjectURL(blob);
+        get().setAudioFile(project.audioPath, objectUrl);
+      } catch {
+        // Not in Tauri environment or file not found
+      }
+    }
   },
 
   persistSegments: async (projectId: string) => {
