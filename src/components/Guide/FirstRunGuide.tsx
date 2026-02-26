@@ -12,6 +12,7 @@ import {
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Alert, AlertDescription } from "../ui/alert";
+import logoHorizontal from "../../../ico/OpenMeet_logo3.png";
 
 interface FirstRunGuideProps {
   open: boolean;
@@ -22,6 +23,7 @@ function WelcomeStep() {
   const { t } = useTranslation("guide");
   return (
     <div className="py-5 text-center">
+      <img src={logoHorizontal} alt="OpenMeet" className="mx-auto mb-4 h-10 object-contain" />
       <h3 className="text-xl font-semibold">{t("welcome.title")}</h3>
       <p className="mt-2 text-sm text-muted-foreground">
         {t("welcome.description")}
