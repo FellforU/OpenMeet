@@ -12,7 +12,7 @@ import {
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Alert, AlertDescription } from "../ui/alert";
-import logoHorizontal from "../../../ico/OpenMeet_logo3.png";
+import logoHorizontal from "../../../ico/OpenMeet_logo5.png";
 
 interface FirstRunGuideProps {
   open: boolean;
