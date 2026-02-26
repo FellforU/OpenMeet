@@ -2,6 +2,8 @@ import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import * as api from "../services/asrClient";
 import { useTranscriptionStore } from "./transcriptionStore";
+import { useProjectStore } from "./projectStore";
+import { generateMeetingTitle } from "../services/llmClient";
 import type { Segment } from "../types";
 
 type RecordingStatus = "idle" | "recording" | "paused";
@@ -147,6 +149,24 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
       const { setSegments, setJobStatus } = useTranscriptionStore.getState();
       setSegments(segments);
       setJobStatus("completed");
+    }
+
+    // Auto-generate AI title for the active meeting
+    const activeProjectId = useProjectStore.getState().activeProjectId;
+    if (activeProjectId && segments.length > 0) {
+      const activeProject = useProjectStore.getState().projects.find(
+        (p) => p.id === activeProjectId
+      );
+      if (activeProject && !activeProject.isFolder) {
+        const transcriptText = segments.map((s) => s.text).join(" ");
+        generateMeetingTitle(activeProject.createdAt, transcriptText)
+          .then((title) => {
+            useProjectStore.getState().updateProject(activeProjectId, { title });
+          })
+          .catch(() => {
+            // Silently fail - user can manually generate later
+          });
+      }
     }
 
     try {
