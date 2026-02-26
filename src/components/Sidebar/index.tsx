@@ -27,11 +27,11 @@ export function Sidebar({ collapsed, onCollapse }: SidebarProps) {
   const addFolder = useProjectStore((s) => s.addFolder);
   const [dialogMode, setDialogMode] = useState<DialogMode>(null);
 
-  const handleConfirm = (name: string) => {
+  const handleConfirm = async (name: string) => {
     if (dialogMode === "project") {
-      addProject(name);
+      await addProject(name);
     } else if (dialogMode === "folder") {
-      addFolder(name);
+      await addFolder(name);
     }
     setDialogMode(null);
   };

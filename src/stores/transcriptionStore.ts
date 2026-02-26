@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { invoke } from "@tauri-apps/api/core";
 import type { Segment, JobStatus, PipelineStep, Summary } from "../types";
 import * as api from "../services/asrClient";
 
@@ -48,6 +49,9 @@ interface TranscriptionStore {
   setSummary: (summary: Summary | null) => void;
   toggleActionItem: (index: number) => void;
   setPipelineStep: (step: PipelineStep) => void;
+  loadProjectData: (projectId: string) => Promise<void>;
+  persistSegments: (projectId: string) => Promise<void>;
+  persistSummary: (projectId: string) => Promise<void>;
   reset: () => void;
 }
 
@@ -71,6 +75,54 @@ const initialState = {
     playbackSpeed: 1,
   },
 };
+
+// Map segment to Rust format for persistence
+function segmentToRust(s: Segment) {
+  return {
+    id: s.id,
+    start: s.start,
+    end: s.end,
+    text: s.text,
+    speaker: s.speaker,
+    confidence: s.confidence,
+  };
+}
+
+// Map summary to Rust format for persistence
+function summaryToRust(s: Summary) {
+  return {
+    topic: s.topic,
+    conclusions: s.conclusions,
+    action_items: s.actionItems.map((item) => ({
+      assignee: item.assignee,
+      task: item.task,
+      deadline: item.deadline,
+      done: item.done,
+    })),
+    discussion: s.discussion,
+    raw_markdown: s.rawMarkdown,
+    edited_markdown: s.editedMarkdown,
+  };
+}
+
+// Map summary from Rust format
+function summaryFromRust(r: {
+  topic: string;
+  conclusions: string[];
+  action_items: Array<{ assignee: string; task: string; deadline: string | null; done?: boolean }>;
+  discussion: Array<{ topic: string; summary: string }>;
+  raw_markdown: string;
+  edited_markdown: string | null;
+}): Summary {
+  return {
+    topic: r.topic,
+    conclusions: r.conclusions,
+    actionItems: r.action_items,
+    discussion: r.discussion,
+    rawMarkdown: r.raw_markdown,
+    editedMarkdown: r.edited_markdown,
+  };
+}
 
 export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
   ...initialState,
@@ -197,6 +249,59 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
   },
 
   setPipelineStep: (step) => set({ job: { ...get().job, pipelineStep: step } }),
+
+  loadProjectData: async (projectId: string) => {
+    // Load segments from SQLite
+    const rawSegments = await invoke<
+      Array<{
+        id: string;
+        start: number;
+        end: number;
+        text: string;
+        speaker: string | null;
+        confidence: number | null;
+      }>
+    >("db_get_segments", { projectId });
+    const segments: Segment[] = rawSegments.map((s) => ({
+      id: s.id,
+      start: s.start,
+      end: s.end,
+      text: s.text,
+      speaker: s.speaker,
+      confidence: s.confidence,
+    }));
+
+    // Load summary from SQLite
+    const rawSummary = await invoke<{
+      topic: string;
+      conclusions: string[];
+      action_items: Array<{ assignee: string; task: string; deadline: string | null; done?: boolean }>;
+      discussion: Array<{ topic: string; summary: string }>;
+      raw_markdown: string;
+      edited_markdown: string | null;
+    } | null>("db_get_summary", { projectId });
+
+    const summary = rawSummary ? summaryFromRust(rawSummary) : null;
+
+    set({ segments, summary });
+  },
+
+  persistSegments: async (projectId: string) => {
+    const { segments } = get();
+    await invoke("db_save_segments", {
+      projectId,
+      segments: segments.map(segmentToRust),
+    });
+  },
+
+  persistSummary: async (projectId: string) => {
+    const { summary } = get();
+    if (!summary) return;
+    await invoke("db_save_summary", {
+      projectId,
+      summary: summaryToRust(summary),
+    });
+  },
 
   reset: () => {
     cancelPolling();

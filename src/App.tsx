@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Toaster } from "sonner";
 import { Sidebar } from "./components/Sidebar";
 import { HeaderBar } from "./components/HeaderBar";
@@ -9,20 +10,39 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FirstRunGuide } from "./components/Guide/FirstRunGuide";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { startAsrService, checkAsrHealth, configureEngine } from "./services/asrClient";
+import { migrateFromLocalStorage } from "./services/dataMigration";
 import { useSettingsStore } from "./stores/settingsStore";
-
-const FIRST_RUN_KEY = "openmeet_first_run_done";
+import { useProjectStore } from "./stores/projectStore";
 
 function App() {
   const [collapsed, setCollapsed] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [asrReady, setAsrReady] = useState(false);
 
+  // Database initialization and data loading
   useEffect(() => {
-    const done = localStorage.getItem(FIRST_RUN_KEY);
-    if (!done) {
-      setShowGuide(true);
+    async function initDatabase() {
+      try {
+        await migrateFromLocalStorage();
+        await useProjectStore.getState().loadProjects();
+        await useSettingsStore.getState().loadSettings();
+
+        // Check first-run flag from SQLite
+        const done = await invoke<string | null>("db_get_setting", {
+          key: "first_run_done",
+        });
+        if (!done) {
+          setShowGuide(true);
+        }
+      } catch {
+        // Fallback: may be running in browser dev mode without Tauri
+        const done = localStorage.getItem("openmeet_first_run_done");
+        if (!done) {
+          setShowGuide(true);
+        }
+      }
     }
+    initDatabase();
   }, []);
 
   // ASR service lifecycle + credential push
@@ -71,9 +91,17 @@ function App() {
     };
   }, []);
 
-  const handleCloseGuide = () => {
+  const handleCloseGuide = async () => {
     setShowGuide(false);
-    localStorage.setItem(FIRST_RUN_KEY, "true");
+    try {
+      await invoke("db_set_setting", {
+        key: "first_run_done",
+        value: "true",
+      });
+    } catch {
+      // Fallback for browser dev mode
+      localStorage.setItem("openmeet_first_run_done", "true");
+    }
   };
 
   return (

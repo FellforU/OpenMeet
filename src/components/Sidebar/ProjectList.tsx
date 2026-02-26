@@ -163,8 +163,8 @@ export function ProjectList() {
   }, []);
 
   const handleRename = useCallback(
-    (id: string, newTitle: string) => {
-      updateProject(id, { title: newTitle });
+    async (id: string, newTitle: string) => {
+      await updateProject(id, { title: newTitle });
     },
     [updateProject]
   );
@@ -178,12 +178,12 @@ export function ProjectList() {
   }, []);
 
   const handleCreateConfirm = useCallback(
-    (name: string) => {
+    async (name: string) => {
       if (!createDialog) return;
       if (createDialog.mode === "meeting") {
-        addProject(name, createDialog.parentId);
+        await addProject(name, createDialog.parentId);
       } else {
-        addFolder(name, createDialog.parentId);
+        await addFolder(name, createDialog.parentId);
       }
       // Auto-expand parent folder
       setExpandedFolders((prev) => new Set(prev).add(createDialog.parentId));

@@ -51,7 +51,7 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
     if (!activeProjectId) {
       const now = new Date();
       const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-      const project = useProjectStore.getState().addProject(`新会议 ${timeStr}`);
+      const project = await useProjectStore.getState().addProject(`新会议 ${timeStr}`);
       activeProjectId = project.id;
     } else {
       // If the active item is a folder, also create a new meeting inside it
@@ -61,7 +61,7 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
       if (activeItem?.isFolder) {
         const now = new Date();
         const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-        const project = useProjectStore.getState().addProject(`新会议 ${timeStr}`, activeProjectId);
+        const project = await useProjectStore.getState().addProject(`新会议 ${timeStr}`, activeProjectId);
         activeProjectId = project.id;
       }
     }
@@ -166,9 +166,15 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
 
     // Sync segments to transcription store before cleanup
     if (segments.length > 0) {
-      const { setSegments, setJobStatus } = useTranscriptionStore.getState();
+      const { setSegments, setJobStatus, persistSegments } = useTranscriptionStore.getState();
       setSegments(segments);
       setJobStatus("completed");
+
+      // Persist segments to SQLite
+      const pid = useProjectStore.getState().activeProjectId;
+      if (pid) {
+        persistSegments(pid).catch(() => {});
+      }
     }
 
     // Stop audio capture in Rust and get saved WAV path
@@ -185,7 +191,7 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
     // Update project with audio path
     const activeProjectId = useProjectStore.getState().activeProjectId;
     if (activeProjectId && audioPath) {
-      useProjectStore.getState().updateProject(activeProjectId, { audioPath });
+      await useProjectStore.getState().updateProject(activeProjectId, { audioPath });
     }
 
     // Auto-generate AI title for the active meeting
@@ -196,8 +202,8 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
       if (activeProject && !activeProject.isFolder) {
         const transcriptText = segments.map((s) => s.text).join(" ");
         generateMeetingTitle(activeProject.createdAt, transcriptText)
-          .then((title) => {
-            useProjectStore.getState().updateProject(activeProjectId, { title });
+          .then(async (title) => {
+            await useProjectStore.getState().updateProject(activeProjectId, { title });
           })
           .catch(() => {
             // Silently fail - user can manually generate later
