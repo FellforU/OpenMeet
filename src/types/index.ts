@@ -3,6 +3,7 @@ export interface Project {
   title: string;
   parentId: string | null;
   isFolder: boolean;
+  sortOrder: number;
   audioPath: string | null;
   durationMs: number | null;
   createdAt: string;
