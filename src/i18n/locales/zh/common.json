@@ -76,17 +76,27 @@
     "paraVadPuncSpk": "中文 + 说话人分离"
   },
   "sidebar": {
-    "newProject": "新建项目",
+    "newProject": "新建会议",
     "newFolder": "新建文件夹",
+    "newSubfolder": "新建子文件夹",
     "rename": "重命名",
+    "moveTo": "移动到...",
+    "aiGenerateTitle": "AI 生成标题",
     "projectNamePlaceholder": "请输入名称",
-    "newProjectTitle": "新建项目",
+    "newProjectTitle": "新建会议",
     "newFolderTitle": "新建文件夹",
     "renameTitle": "重命名",
-    "noProjects": "暂无项目",
-    "deleteConfirm": "确定要删除这个项目吗？",
+    "moveTitle": "移动到",
+    "noProjects": "暂无会议",
+    "deleteConfirm": "确定要删除吗？子文件夹和会议也会被删除。",
+    "deleteConfirmMeeting": "确定要删除这个会议吗？",
     "searchPlaceholder": "搜索转录内容...",
-    "noResults": "无结果"
+    "noResults": "无结果",
+    "rootLevel": "根目录",
+    "maxDepthReached": "已达到最大文件夹层级",
+    "generatingTitle": "正在生成标题...",
+    "generateTitleFailed": "标题生成失败",
+    "noTranscriptForTitle": "没有转录内容，无法生成标题"
   },
   "error": {
     "title": "出了点问题",
