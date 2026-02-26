@@ -119,6 +119,51 @@ export async function testLLMConnection(
   }
 }
 
+// Model listing endpoints per provider
+const MODEL_LIST_ENDPOINTS: Record<string, { url: string; isOllama?: boolean; isGemini?: boolean }> = {
+  ollama: { url: "/api/tags", isOllama: true },
+  openai: { url: "https://api.openai.com/v1/models" },
+  deepseek: { url: "https://api.deepseek.com/v1/models" },
+  qwen: { url: "https://dashscope.aliyuncs.com/compatible-mode/v1/models" },
+  zhipu: { url: "https://open.bigmodel.cn/api/paas/v4/models" },
+  gemini: { url: "https://generativelanguage.googleapis.com/v1beta/models", isGemini: true },
+};
+
+export async function fetchModelList(
+  providerKey: string,
+  config: { apiKey?: string; host?: string }
+): Promise<string[]> {
+  const endpoint = MODEL_LIST_ENDPOINTS[providerKey];
+  if (!endpoint) return [];
+
+  if (endpoint.isOllama) {
+    const host = config.host || "http://localhost:11434";
+    const resp = await fetch(`${host}/api/tags`);
+    if (!resp.ok) throw new Error(`Ollama error: HTTP ${resp.status}`);
+    const data = await resp.json();
+    return (data.models || []).map((m: { name: string }) => m.name);
+  }
+
+  if (endpoint.isGemini) {
+    if (!config.apiKey) throw new Error("API key required");
+    const resp = await fetch(`${endpoint.url}?key=${config.apiKey}`);
+    if (!resp.ok) throw new Error(`Gemini error: HTTP ${resp.status}`);
+    const data = await resp.json();
+    return (data.models || [])
+      .map((m: { name: string }) => m.name.replace("models/", ""))
+      .filter((name: string) => name.includes("gemini"));
+  }
+
+  // OpenAI-compatible endpoints
+  if (!config.apiKey) throw new Error("API key required");
+  const resp = await fetch(endpoint.url, {
+    headers: { Authorization: `Bearer ${config.apiKey}` },
+  });
+  if (!resp.ok) throw new Error(`API error: HTTP ${resp.status}`);
+  const data = await resp.json();
+  return (data.data || []).map((m: { id: string }) => m.id).sort();
+}
+
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
 
 export async function generateMeetingTitle(

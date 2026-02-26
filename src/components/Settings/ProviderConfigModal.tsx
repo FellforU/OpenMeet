@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Shield, ChevronsUpDown, Check, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { Shield, ChevronsUpDown, Check, Loader2, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -11,17 +11,9 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
-import {
-  Command,
-  CommandInput,
-  CommandList,
-  CommandEmpty,
-  CommandGroup,
-  CommandItem,
-} from "../ui/command";
 import { cn } from "../../lib/utils";
 import { PasswordInput } from "./PasswordInput";
-import { testLLMConnection } from "../../services/llmClient";
+import { testLLMConnection, fetchModelList } from "../../services/llmClient";
 
 interface FieldDef {
   key: string;
@@ -42,23 +34,58 @@ interface ProviderConfigModalProps {
   onSave: (values: Record<string, string>) => void;
 }
 
-function ModelCombobox({
+function ModelSelector({
   value,
   onChange,
+  providerKey,
   presetModels,
   placeholder,
+  config,
 }: {
   value: string;
   onChange: (val: string) => void;
+  providerKey: string;
   presetModels: string[];
   placeholder: string;
+  config: { apiKey?: string; host?: string };
 }) {
   const { t } = useTranslation("settings");
   const [open, setOpen] = useState(false);
-  const [inputValue, setInputValue] = useState("");
+  const [filter, setFilter] = useState("");
+  const [remoteModels, setRemoteModels] = useState<string[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  const models = remoteModels ?? presetModels;
+
+  const filtered = filter
+    ? models.filter((m) => m.toLowerCase().includes(filter.toLowerCase()))
+    : models;
+
+  const loadModels = useCallback(async () => {
+    setLoading(true);
+    setFetchError(null);
+    try {
+      const list = await fetchModelList(providerKey, config);
+      setRemoteModels(list.length > 0 ? list : null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setFetchError(msg);
+      setRemoteModels(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [providerKey, config]);
+
+  const handleOpen = (isOpen: boolean) => {
+    setOpen(isOpen);
+    if (isOpen && remoteModels === null && !loading) {
+      loadModels();
+    }
+  };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpen}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -73,56 +100,75 @@ function ModelCombobox({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-        <Command shouldFilter={false}>
-          <CommandInput
-            placeholder={t("llm.searchModel", "搜索或输入模型名称...")}
-            value={inputValue}
-            onValueChange={setInputValue}
+        <div className="flex items-center border-b px-3">
+          <Input
+            className="h-9 border-0 px-0 shadow-none focus-visible:ring-0"
+            placeholder={t("llm.searchModel")}
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
           />
-          <CommandList>
-            <CommandEmpty>
-              {inputValue ? (
-                <button
-                  className="w-full px-2 py-1.5 text-sm text-left hover:bg-accent rounded-sm cursor-pointer"
-                  onClick={() => {
-                    onChange(inputValue);
-                    setOpen(false);
-                    setInputValue("");
-                  }}
-                >
-                  {t("llm.useCustomModel", '使用自定义模型: "{{model}}"', { model: inputValue })}
-                </button>
-              ) : (
-                t("llm.noModelsFound", "未找到匹配的模型")
-              )}
-            </CommandEmpty>
-            <CommandGroup>
-              {presetModels
-                .filter((m) =>
-                  !inputValue || m.toLowerCase().includes(inputValue.toLowerCase())
-                )
-                .map((model) => (
-                  <CommandItem
-                    key={model}
-                    value={model}
-                    onSelect={() => {
-                      onChange(model);
-                      setOpen(false);
-                      setInputValue("");
-                    }}
-                  >
-                    <Check
-                      className={cn(
-                        "mr-2 h-4 w-4",
-                        value === model ? "opacity-100" : "opacity-0"
-                      )}
-                    />
-                    {model}
-                  </CommandItem>
-                ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-7 shrink-0 p-0"
+            onClick={loadModels}
+            disabled={loading}
+            title={t("llm.fetchModels")}
+          >
+            {loading ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" />
+            )}
+          </Button>
+        </div>
+
+        <div className="max-h-[240px] overflow-y-auto p-1">
+          {fetchError && (
+            <p className="px-2 py-1.5 text-xs text-muted-foreground">
+              {fetchError}
+            </p>
+          )}
+
+          {filtered.length === 0 && filter && (
+            <button
+              className="flex w-full items-center rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+              onClick={() => {
+                onChange(filter);
+                setOpen(false);
+                setFilter("");
+              }}
+            >
+              {t("llm.useCustomModel", { model: filter })}
+            </button>
+          )}
+
+          {filtered.map((model) => (
+            <button
+              key={model}
+              className="flex w-full items-center rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+              onClick={() => {
+                onChange(model);
+                setOpen(false);
+                setFilter("");
+              }}
+            >
+              <Check
+                className={cn(
+                  "mr-2 h-4 w-4 shrink-0",
+                  value === model ? "opacity-100" : "opacity-0"
+                )}
+              />
+              {model}
+            </button>
+          ))}
+
+          {filtered.length === 0 && !filter && !loading && (
+            <p className="px-2 py-1.5 text-xs text-muted-foreground">
+              {t("llm.noModelsFound")}
+            </p>
+          )}
+        </div>
       </PopoverContent>
     </Popover>
   );
@@ -202,11 +248,16 @@ export function ProviderConfigModal({
                   placeholder={field.placeholder}
                 />
               ) : field.key === "model" ? (
-                <ModelCombobox
+                <ModelSelector
                   value={localValues[field.key] || ""}
                   onChange={(val) => handleChange(field.key, val)}
+                  providerKey={providerKey}
                   presetModels={presetModels}
                   placeholder={field.placeholder}
+                  config={{
+                    apiKey: localValues.apiKey,
+                    host: localValues.host,
+                  }}
                 />
               ) : (
                 <Input
@@ -231,22 +282,22 @@ export function ProviderConfigModal({
             {testStatus === "testing" ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {t("llm.testing", "测试中...")}
+                {t("llm.testing")}
               </>
             ) : (
-              t("llm.testConnection", "测试连接")
+              t("llm.testConnection")
             )}
           </Button>
           {testStatus === "success" && (
             <div className="mt-2 flex items-start gap-2 rounded-md bg-green-50 dark:bg-green-950 p-2 text-sm text-green-700 dark:text-green-300">
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{t("llm.testSuccess", "连接成功！")}{testMessage && ` — ${testMessage}`}</span>
+              <span>{t("llm.testSuccess")}{testMessage && ` — ${testMessage}`}</span>
             </div>
           )}
           {testStatus === "error" && (
             <div className="mt-2 flex items-start gap-2 rounded-md bg-red-50 dark:bg-red-950 p-2 text-sm text-red-700 dark:text-red-300">
               <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{t("llm.testFailed", "连接失败：")}{testMessage}</span>
+              <span>{t("llm.testFailed")}{testMessage}</span>
             </div>
           )}
         </div>

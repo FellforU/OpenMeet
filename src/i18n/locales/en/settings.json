@@ -47,7 +47,8 @@
     "testFailed": "Connection failed: ",
     "searchModel": "Search or enter model name...",
     "useCustomModel": "Use custom model: \"{{model}}\"",
-    "noModelsFound": "No matching models found"
+    "noModelsFound": "No matching models found",
+    "fetchModels": "Fetch Models"
   },
   "asr": {
     "title": "ASR Model Manager",

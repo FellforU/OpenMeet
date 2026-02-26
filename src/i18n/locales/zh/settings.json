@@ -47,7 +47,8 @@
     "testFailed": "连接失败：",
     "searchModel": "搜索或输入模型名称...",
     "useCustomModel": "使用自定义模型: \"{{model}}\"",
-    "noModelsFound": "未找到匹配的模型"
+    "noModelsFound": "未找到匹配的模型",
+    "fetchModels": "获取模型列表"
   },
   "asr": {
     "title": "ASR 模型管理",
