@@ -19,6 +19,7 @@ interface LLMProviderDef {
   logoSrc: string;
   brandColor: string;
   fields: { key: string; labelKey: string; placeholder: string; isPassword: boolean }[];
+  presetModels: string[];
   isConfigured: (config: { enabled: boolean; apiKey?: string; host?: string; model?: string }) => boolean;
 }
 
@@ -32,6 +33,7 @@ const LLM_PROVIDERS: LLMProviderDef[] = [
       { key: "host", labelKey: "settings:llm.ollamaHost", placeholder: "http://localhost:11434", isPassword: false },
       { key: "model", labelKey: "settings:llm.ollamaModel", placeholder: "qwen2.5:7b", isPassword: false },
     ],
+    presetModels: ["qwen2.5:7b", "qwen2.5:14b", "qwen2.5:32b", "llama3.2:8b", "mistral:7b", "gemma2:9b"],
     isConfigured: (c) => Boolean(c.host),
   },
   {
@@ -43,6 +45,7 @@ const LLM_PROVIDERS: LLMProviderDef[] = [
       { key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "sk-...", isPassword: true },
       { key: "model", labelKey: "settings:llm.model", placeholder: "deepseek-chat", isPassword: false },
     ],
+    presetModels: ["deepseek-chat", "deepseek-reasoner"],
     isConfigured: (c) => Boolean(c.apiKey),
   },
   {
@@ -54,6 +57,7 @@ const LLM_PROVIDERS: LLMProviderDef[] = [
       { key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "sk-...", isPassword: true },
       { key: "model", labelKey: "settings:llm.model", placeholder: "qwen-plus", isPassword: false },
     ],
+    presetModels: ["qwen-plus", "qwen-turbo", "qwen-max", "qwen-long"],
     isConfigured: (c) => Boolean(c.apiKey),
   },
   {
@@ -65,6 +69,7 @@ const LLM_PROVIDERS: LLMProviderDef[] = [
       { key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "...", isPassword: true },
       { key: "model", labelKey: "settings:llm.model", placeholder: "glm-4-flash", isPassword: false },
     ],
+    presetModels: ["glm-4-flash", "glm-4-plus", "glm-4", "glm-4-long"],
     isConfigured: (c) => Boolean(c.apiKey),
   },
   {
@@ -76,6 +81,7 @@ const LLM_PROVIDERS: LLMProviderDef[] = [
       { key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "sk-proj-...", isPassword: true },
       { key: "model", labelKey: "settings:llm.model", placeholder: "gpt-4o-mini", isPassword: false },
     ],
+    presetModels: ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "o1-mini", "o3-mini"],
     isConfigured: (c) => Boolean(c.apiKey),
   },
   {
@@ -87,6 +93,7 @@ const LLM_PROVIDERS: LLMProviderDef[] = [
       { key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "AIza...", isPassword: true },
       { key: "model", labelKey: "settings:llm.model", placeholder: "gemini-2.0-flash", isPassword: false },
     ],
+    presetModels: ["gemini-2.0-flash", "gemini-2.0-pro", "gemini-1.5-flash", "gemini-1.5-pro"],
     isConfigured: (c) => Boolean(c.apiKey),
   },
 ];
@@ -186,8 +193,10 @@ export function LLMProviderTab() {
           open={Boolean(configuring)}
           onClose={() => setConfiguring(null)}
           logoSrc={configuringDef.logoSrc}
+          providerKey={configuringDef.key}
           providerName={t(`llm.${configuringDef.key}`)}
           fields={configuringDef.fields}
+          presetModels={configuringDef.presetModels}
           values={getValues(configuringDef.key)}
           onSave={handleSave}
         />

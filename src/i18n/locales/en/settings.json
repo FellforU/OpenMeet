@@ -40,7 +40,14 @@
     "configureBtn": "Configure",
     "configureTitle": "Configure {{provider}}",
     "saveBtn": "Save",
-    "credentialsSaved": "Credentials saved"
+    "credentialsSaved": "Credentials saved",
+    "testConnection": "Test Connection",
+    "testing": "Testing...",
+    "testSuccess": "Connection successful!",
+    "testFailed": "Connection failed: ",
+    "searchModel": "Search or enter model name...",
+    "useCustomModel": "Use custom model: \"{{model}}\"",
+    "noModelsFound": "No matching models found"
   },
   "asr": {
     "title": "ASR Model Manager",

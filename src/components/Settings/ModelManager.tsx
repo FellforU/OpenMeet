@@ -308,8 +308,10 @@ export function ModelManager() {
           open={Boolean(configuringAsr)}
           onClose={() => setConfiguringAsr(null)}
           logoSrc={configuringDef.logoSrc}
+          providerKey={configuringDef.providerKey}
           providerName={t(`asr.${configuringDef.providerKey}`)}
           fields={configuringDef.fields}
+          presetModels={[]}
           values={getCloudValues(configuringDef.providerKey)}
           onSave={handleCloudSave}
         />

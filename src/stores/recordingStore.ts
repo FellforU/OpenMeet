@@ -46,6 +46,26 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
   segments: [],
 
   startRecording: async (engine, modelSize, language) => {
+    // Auto-create a meeting if none is selected
+    let activeProjectId = useProjectStore.getState().activeProjectId;
+    if (!activeProjectId) {
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      const project = useProjectStore.getState().addProject(`新会议 ${timeStr}`);
+      activeProjectId = project.id;
+    } else {
+      // If the active item is a folder, also create a new meeting inside it
+      const activeItem = useProjectStore.getState().projects.find(
+        (p) => p.id === activeProjectId
+      );
+      if (activeItem?.isFolder) {
+        const now = new Date();
+        const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+        const project = useProjectStore.getState().addProject(`新会议 ${timeStr}`, activeProjectId);
+        activeProjectId = project.id;
+      }
+    }
+
     // Create a job for streaming
     const job = await api.createJob({
       mode: "stream",

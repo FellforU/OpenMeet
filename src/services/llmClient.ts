@@ -89,6 +89,36 @@ export async function generateText(prompt: string): Promise<LLMResponse> {
   return { text: text.trim() };
 }
 
+export async function testLLMConnection(
+  providerKey: string,
+  config: { apiKey?: string; host?: string; model?: string }
+): Promise<{ success: boolean; message: string }> {
+  const endpoint = PROVIDER_ENDPOINTS[providerKey];
+  if (!endpoint) {
+    return { success: false, message: `Unknown provider: ${providerKey}` };
+  }
+
+  try {
+    if (endpoint.isOllama) {
+      const host = config.host || "http://localhost:11434";
+      const model = config.model || "qwen2.5:7b";
+      const text = await callOllama(host, model, "Hi, reply with OK");
+      return { success: true, message: text.slice(0, 100) };
+    } else {
+      const apiKey = config.apiKey;
+      if (!apiKey) {
+        return { success: false, message: "API key not provided" };
+      }
+      const model = config.model || providerKey;
+      const text = await callOpenAICompatible(endpoint.url, apiKey, model, "Hi, reply with OK");
+      return { success: true, message: text.slice(0, 100) };
+    }
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    return { success: false, message: msg };
+  }
+}
+
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
 
 export async function generateMeetingTitle(

@@ -40,7 +40,14 @@
     "configureBtn": "配置",
     "configureTitle": "配置 {{provider}}",
     "saveBtn": "保存",
-    "credentialsSaved": "凭证已保存"
+    "credentialsSaved": "凭证已保存",
+    "testConnection": "测试连接",
+    "testing": "测试中...",
+    "testSuccess": "连接成功！",
+    "testFailed": "连接失败：",
+    "searchModel": "搜索或输入模型名称...",
+    "useCustomModel": "使用自定义模型: \"{{model}}\"",
+    "noModelsFound": "未找到匹配的模型"
   },
   "asr": {
     "title": "ASR 模型管理",
