@@ -13,6 +13,41 @@ fn open_url(url: String) -> Result<(), String> {
     open::that(&url).map_err(|e| e.to_string())
 }
 
+/// Open the system file explorer and highlight the given file
+#[tauri::command]
+fn reveal_file(path: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    if !p.exists() {
+        return Err("File not found".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .args(["/select,", &path])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .args(["-R", &path])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        if let Some(parent) = p.parent() {
+            open::that(parent).map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -71,6 +106,7 @@ pub fn run() {
             database::db_set_setting,
             database::get_app_data_dir,
             open_url,
+            reveal_file,
             crypto::encrypt_secret,
             crypto::decrypt_secret,
         ])

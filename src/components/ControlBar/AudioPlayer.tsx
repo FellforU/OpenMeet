@@ -1,5 +1,6 @@
 import { useRef, useEffect } from "react";
-import { Play, Pause, SkipBack, SkipForward } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, FolderOpen } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
 import { Button } from "../ui/button";
 import { Slider } from "../ui/slider";
 import { useTranscriptionStore } from "../../stores/transcriptionStore";
@@ -116,6 +117,17 @@ export function AudioPlayer() {
       <span className="whitespace-nowrap text-xs text-muted-foreground">
         {formatTime(audio.currentTime)} / {formatTime(audio.duration)}
       </span>
+      {audio.filePath && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 w-7 shrink-0 p-0"
+          title={audio.filePath}
+          onClick={() => invoke("reveal_file", { path: audio.filePath })}
+        >
+          <FolderOpen className="h-3.5 w-3.5" />
+        </Button>
+      )}
     </div>
   );
 }
