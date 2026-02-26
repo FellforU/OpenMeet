@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import * as api from "../services/asrClient";
 import { useTranscriptionStore } from "./transcriptionStore";
 import { useProjectStore } from "./projectStore";
@@ -7,12 +7,19 @@ import { generateMeetingTitle } from "../services/llmClient";
 import type { Segment } from "../types";
 
 type RecordingStatus = "idle" | "recording" | "paused";
+type ProcessingStep =
+  | "saving"
+  | "merging"
+  | "loading"
+  | "titling"
+  | null;
 
 interface RecordingStore {
   status: RecordingStatus;
   jobId: string | null;
   elapsed: number;
   segments: Segment[];
+  processingStep: ProcessingStep;
 
   startRecording: (engine: string, modelSize: string, language: string | null) => Promise<void>;
   pauseRecording: () => Promise<void>;
@@ -44,6 +51,7 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
   jobId: null,
   elapsed: 0,
   segments: [],
+  processingStep: null,
 
   startRecording: async (engine, modelSize, language) => {
     // Auto-create a meeting if none is selected
@@ -162,7 +170,7 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
     closeWebSocket();
 
     const { segments, jobId } = get();
-    set({ status: "idle", jobId: null, elapsed: 0, segments: [] });
+    set({ status: "idle", jobId: null, elapsed: 0, segments: [], processingStep: "saving" });
 
     const activeProjectId = useProjectStore.getState().activeProjectId;
     const transcriptionStore = useTranscriptionStore.getState();
@@ -200,6 +208,7 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
         (p) => p.id === activeProjectId
       );
       if (activeProject?.audioPath) {
+        set({ processingStep: "merging" });
         try {
           const merged = await invoke<string>("merge_wav_files", {
             paths: [activeProject.audioPath, audioPath],
@@ -212,47 +221,53 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
       await useProjectStore.getState().updateProject(activeProjectId, { audioPath });
     }
 
-    // Load audio file for playback
+    // Load audio file for playback using asset protocol (instant)
     if (audioPath) {
+      set({ processingStep: "loading" });
       try {
-        const base64 = await invoke<string>("read_audio_file", { path: audioPath });
-        const binary = atob(base64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) {
-          bytes[i] = binary.charCodeAt(i);
-        }
-        const blob = new Blob([bytes], { type: "audio/wav" });
-        const objectUrl = URL.createObjectURL(blob);
-        useTranscriptionStore.getState().setAudioFile(audioPath, objectUrl);
+        const assetUrl = convertFileSrc(audioPath);
+        useTranscriptionStore.getState().setAudioFile(audioPath, assetUrl);
       } catch {
-        // Ignore if not in Tauri environment
+        // Fallback: read file as base64 if convertFileSrc fails
+        try {
+          const base64 = await invoke<string>("read_audio_file", { path: audioPath });
+          const binary = atob(base64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+          }
+          const blob = new Blob([bytes], { type: "audio/wav" });
+          const objectUrl = URL.createObjectURL(blob);
+          useTranscriptionStore.getState().setAudioFile(audioPath, objectUrl);
+        } catch {
+          // Ignore if not in Tauri environment
+        }
       }
     }
 
     // Auto-generate AI title for the active meeting (only first recording)
     if (activeProjectId && segments.length > 0 && existingSegments.length === 0) {
+      set({ processingStep: "titling" });
       const activeProject = useProjectStore.getState().projects.find(
         (p) => p.id === activeProjectId
       );
       if (activeProject && !activeProject.isFolder) {
         const transcriptText = segments.map((s) => s.text).join(" ");
-        generateMeetingTitle(activeProject.createdAt, transcriptText)
-          .then(async (title) => {
-            await useProjectStore.getState().updateProject(activeProjectId, { title });
-          })
-          .catch(() => {
-            // Silently fail - user can manually generate later
-          });
+        try {
+          const title = await generateMeetingTitle(activeProject.createdAt, transcriptText);
+          await useProjectStore.getState().updateProject(activeProjectId, { title });
+        } catch {
+          // Silently fail - user can manually generate later
+        }
       }
     }
 
-    // Cancel the ASR job
+    // Done processing
+    set({ processingStep: null });
+
+    // Cancel the ASR job in background
     if (jobId) {
-      try {
-        await api.cancelJob(jobId);
-      } catch {
-        // Ignore API errors
-      }
+      api.cancelJob(jobId).catch(() => {});
     }
   },
 
@@ -263,6 +278,6 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
   reset: () => {
     clearElapsedTimer();
     closeWebSocket();
-    set({ status: "idle", jobId: null, elapsed: 0, segments: [] });
+    set({ status: "idle", jobId: null, elapsed: 0, segments: [], processingStep: null });
   },
 }));

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import type { Segment, JobStatus, PipelineStep, Summary } from "../types";
 import * as api from "../services/asrClient";
 import { indexProject } from "../services/knowledgeClient";
@@ -304,19 +304,26 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
     );
     if (project?.audioPath) {
       try {
-        const base64 = await invoke<string>("read_audio_file", {
-          path: project.audioPath,
-        });
-        const binary = atob(base64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) {
-          bytes[i] = binary.charCodeAt(i);
-        }
-        const blob = new Blob([bytes], { type: "audio/wav" });
-        const objectUrl = URL.createObjectURL(blob);
-        get().setAudioFile(project.audioPath, objectUrl);
+        // Use Tauri asset protocol for instant audio loading
+        const assetUrl = convertFileSrc(project.audioPath);
+        get().setAudioFile(project.audioPath, assetUrl);
       } catch {
-        // Not in Tauri environment or file not found
+        // Fallback: read file as base64
+        try {
+          const base64 = await invoke<string>("read_audio_file", {
+            path: project.audioPath,
+          });
+          const binary = atob(base64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+          }
+          const blob = new Blob([bytes], { type: "audio/wav" });
+          const objectUrl = URL.createObjectURL(blob);
+          get().setAudioFile(project.audioPath, objectUrl);
+        } catch {
+          // Not in Tauri environment or file not found
+        }
       }
     }
   },

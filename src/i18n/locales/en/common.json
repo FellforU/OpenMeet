@@ -110,6 +110,12 @@
     "reloadApp": "Reload App",
     "recordingFailed": "Recording failed: {{message}}"
   },
+  "processing": {
+    "saving": "Saving audio...",
+    "merging": "Merging audio...",
+    "loading": "Loading audio...",
+    "titling": "Generating title..."
+  },
   "toast": {
     "fileLoaded": "Loaded: {{name}}",
     "exportSuccess": "Exported as {{format}}",

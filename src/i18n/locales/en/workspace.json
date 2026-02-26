@@ -28,7 +28,9 @@
     "title": "Export",
     "markdown": "Markdown (.md)",
     "plainText": "Plain Text (.txt)",
-    "json": "JSON (.json)"
+    "json": "JSON (.json)",
+    "success": "Exported as {{format}}",
+    "failed": "Export failed"
   },
   "recording": {
     "start": "Start Recording",

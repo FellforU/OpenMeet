@@ -110,6 +110,12 @@
     "reloadApp": "重新加载应用",
     "recordingFailed": "录制启动失败：{{message}}"
   },
+  "processing": {
+    "saving": "保存音频中...",
+    "merging": "合并音频中...",
+    "loading": "加载音频中...",
+    "titling": "生成标题中..."
+  },
   "toast": {
     "fileLoaded": "已加载: {{name}}",
     "exportSuccess": "已导出为 {{format}}",

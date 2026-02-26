@@ -28,7 +28,9 @@
     "title": "导出",
     "markdown": "Markdown (.md)",
     "plainText": "纯文本 (.txt)",
-    "json": "JSON (.json)"
+    "json": "JSON (.json)",
+    "success": "已导出为 {{format}}",
+    "failed": "导出失败"
   },
   "recording": {
     "start": "开始录制",

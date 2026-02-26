@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::Mutex;
 use tauri::State;
@@ -27,6 +28,54 @@ impl Drop for SidecarState {
     }
 }
 
+/// Find the project root directory (where asr_service/ lives).
+/// In dev mode, current_dir is src-tauri/, so we check the parent.
+fn find_project_root() -> Result<PathBuf, String> {
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+
+    // Check if asr_service/ exists in current dir
+    if cwd.join("asr_service").is_dir() {
+        return Ok(cwd);
+    }
+    // Check parent (when running from src-tauri/)
+    if let Some(parent) = cwd.parent() {
+        if parent.join("asr_service").is_dir() {
+            return Ok(parent.to_path_buf());
+        }
+    }
+    // Fallback to current dir
+    Ok(cwd)
+}
+
+/// Find the best Python executable: prefer venv Python, fall back to system Python.
+fn find_python(project_root: &PathBuf) -> String {
+    // Try virtualenv Python first
+    let venv_candidates = if cfg!(target_os = "windows") {
+        vec![
+            project_root.join(".venv/Scripts/python.exe"),
+            project_root.join("venv/Scripts/python.exe"),
+        ]
+    } else {
+        vec![
+            project_root.join(".venv/bin/python"),
+            project_root.join("venv/bin/python"),
+        ]
+    };
+
+    for candidate in venv_candidates {
+        if candidate.exists() {
+            return candidate.to_string_lossy().to_string();
+        }
+    }
+
+    // Fallback to system Python
+    if cfg!(target_os = "windows") {
+        "python".to_string()
+    } else {
+        "python3".to_string()
+    }
+}
+
 #[tauri::command]
 pub async fn start_asr_service(state: State<'_, SidecarState>) -> Result<String, String> {
     let mut proc_guard = state.process.lock().map_err(|e| e.to_string())?;
@@ -35,14 +84,17 @@ pub async fn start_asr_service(state: State<'_, SidecarState>) -> Result<String,
         return Ok("ASR service already running".to_string());
     }
 
-    let child = Command::new("python3")
+    let project_root = find_project_root()?;
+    let python = find_python(&project_root);
+
+    let child = Command::new(&python)
         .args(["-m", "asr_service.main"])
-        .current_dir(std::env::current_dir().map_err(|e| e.to_string())?)
+        .current_dir(&project_root)
         .spawn()
-        .map_err(|e| format!("Failed to start ASR service: {}", e))?;
+        .map_err(|e| format!("Failed to start ASR service (python={}): {}", python, e))?;
 
     *proc_guard = Some(child);
-    Ok("ASR service started".to_string())
+    Ok(format!("ASR service started (python={}, root={})", python, project_root.display()))
 }
 
 #[tauri::command]

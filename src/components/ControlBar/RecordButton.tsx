@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Mic, Pause, Square } from "lucide-react";
+import { Mic, Pause, Square, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
 import { useRecordingStore } from "../../stores/recordingStore";
@@ -12,9 +12,16 @@ function formatElapsed(seconds: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+const STEP_LABEL_MAP: Record<string, string> = {
+  saving: "processing.saving",
+  merging: "processing.merging",
+  loading: "processing.loading",
+  titling: "processing.titling",
+};
+
 export function RecordButton() {
   const { t } = useTranslation();
-  const { status, elapsed, startRecording, pauseRecording, resumeRecording, stopRecording } =
+  const { status, elapsed, processingStep, startRecording, pauseRecording, resumeRecording, stopRecording } =
     useRecordingStore();
   const { selectedEngine, selectedModelSize, selectedLanguage } =
     useEngineStore();
@@ -32,6 +39,18 @@ export function RecordButton() {
       setStarting(false);
     }
   };
+
+  // Show processing indicator after recording stops
+  if (processingStep) {
+    return (
+      <div className="flex items-center gap-2">
+        <Button variant="outline" size="sm" disabled>
+          <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+          {t(STEP_LABEL_MAP[processingStep] || "status.processing")}
+        </Button>
+      </div>
+    );
+  }
 
   if (status === "idle") {
     return (
