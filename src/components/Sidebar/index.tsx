@@ -47,15 +47,21 @@ export function Sidebar({ collapsed, onCollapse }: SidebarProps) {
     >
       {!collapsed && (
         <>
-          <div className="px-3 pt-4 pb-1">
-            <img src={logoHorizontal} alt="OpenMeet" className="h-12 object-contain" />
+          <div className="px-3 pt-3 pb-2">
+            <img
+              src={logoHorizontal}
+              alt="OpenMeet"
+              className="h-8 object-contain"
+            />
           </div>
-          <div className="flex items-center justify-end px-3 pb-2">
+          <div className="flex items-center gap-2 px-3 pb-2">
+            <div className="flex-1">
+              <SearchBar compact />
+            </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button size="sm">
-                  <Plus className="mr-1 h-4 w-4" />
-                  {t("action.new")}
+                <Button size="sm" className="h-8 shrink-0 px-2.5">
+                  <Plus className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -70,7 +76,6 @@ export function Sidebar({ collapsed, onCollapse }: SidebarProps) {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-          <SearchBar />
           <ProjectList />
         </>
       )}

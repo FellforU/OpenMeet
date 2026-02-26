@@ -15,7 +15,7 @@ interface SearchResult {
   speaker: string | null;
 }
 
-export function SearchBar() {
+export function SearchBar({ compact }: { compact?: boolean }) {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -56,7 +56,7 @@ export function SearchBar() {
   };
 
   return (
-    <div className="px-3 py-2">
+    <div className={compact ? "" : "px-3 py-2"}>
       <div className="relative">
         <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
