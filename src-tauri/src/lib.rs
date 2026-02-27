@@ -6,7 +6,51 @@ mod sidecar;
 use audio_capture::AudioCaptureState;
 use crypto::CryptoState;
 use sidecar::SidecarState;
+use std::collections::HashMap;
 use tauri::Manager;
+
+#[derive(serde::Serialize)]
+struct HttpFetchResponse {
+    status: u16,
+    body: String,
+}
+
+/// Proxy HTTP requests from the frontend to bypass CORS restrictions.
+#[tauri::command]
+async fn http_fetch(
+    url: String,
+    method: String,
+    headers: Option<HashMap<String, String>>,
+    body: Option<String>,
+) -> Result<HttpFetchResponse, String> {
+    let client = reqwest::Client::new();
+    let mut builder = match method.to_uppercase().as_str() {
+        "GET" => client.get(&url),
+        "POST" => client.post(&url),
+        "PUT" => client.put(&url),
+        "DELETE" => client.delete(&url),
+        _ => return Err(format!("Unsupported HTTP method: {}", method)),
+    };
+
+    if let Some(hdrs) = headers {
+        for (key, value) in hdrs {
+            builder = builder.header(key, value);
+        }
+    }
+
+    if let Some(b) = body {
+        builder = builder.body(b);
+    }
+
+    let resp = builder.send().await.map_err(|e| e.to_string())?;
+    let status = resp.status().as_u16();
+    let resp_body = resp.text().await.map_err(|e| e.to_string())?;
+
+    Ok(HttpFetchResponse {
+        status,
+        body: resp_body,
+    })
+}
 
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
@@ -105,6 +149,7 @@ pub fn run() {
             database::db_get_setting,
             database::db_set_setting,
             database::get_app_data_dir,
+            http_fetch,
             open_url,
             reveal_file,
             crypto::encrypt_secret,
