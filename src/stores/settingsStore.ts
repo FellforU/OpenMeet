@@ -5,7 +5,12 @@ interface LLMProviderConfig {
   enabled: boolean;
   apiKey?: string;
   host?: string;
-  model?: string;
+  model?: string;               // Keep for backward compatibility
+  modelByType?: {               // Per-type model selection
+    LLM?: string;
+    EMBEDDING?: string;
+    RERANK?: string;
+  };
 }
 
 interface GeneralConfig {
@@ -43,12 +48,12 @@ const defaultState = {
     exportFormat: "markdown" as const,
   },
   llmProviders: {
-    ollama: { enabled: true, host: "http://localhost:11434", model: "qwen2.5:7b" },
-    deepseek: { enabled: false, model: "deepseek-chat" },
-    qwen: { enabled: false, model: "qwen-plus" },
-    zhipu: { enabled: false, model: "glm-4-flash" },
-    openai: { enabled: false, model: "gpt-4o-mini" },
-    gemini: { enabled: false, model: "gemini-2.0-flash" },
+    ollama: { enabled: true, host: "http://localhost:11434", model: "qwen2.5:7b", modelByType: { LLM: "qwen2.5:7b" } },
+    deepseek: { enabled: false, model: "deepseek-chat", modelByType: { LLM: "deepseek-chat" } },
+    qwen: { enabled: false, model: "qwen-plus", modelByType: { LLM: "qwen-plus" } },
+    zhipu: { enabled: false, model: "glm-4-flash", modelByType: { LLM: "glm-4-flash" } },
+    openai: { enabled: false, model: "gpt-4o-mini", modelByType: { LLM: "gpt-4o-mini" } },
+    gemini: { enabled: false, model: "gemini-2.0-flash", modelByType: { LLM: "gemini-2.0-flash" } },
   },
   cloudAsr: {
     openaiWhisper: { apiKey: "" },
@@ -135,6 +140,13 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       try {
         const data = JSON.parse(raw);
         const mergedProviders = { ...defaultState.llmProviders, ...data.llmProviders };
+        // Migrate: if modelByType is missing but model exists, generate modelByType
+        for (const key of Object.keys(mergedProviders)) {
+          const cfg = mergedProviders[key];
+          if ((!cfg.modelByType || Object.keys(cfg.modelByType).length === 0) && cfg.model) {
+            mergedProviders[key] = { ...cfg, modelByType: { LLM: cfg.model } };
+          }
+        }
         const decrypted = await decryptProviders(mergedProviders);
         set({
           general: { ...defaultState.general, ...data.general },

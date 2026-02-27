@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Shield, ChevronsUpDown, Check, Loader2, CheckCircle2, XCircle, RefreshCw, ExternalLink } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
@@ -12,13 +12,6 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../ui/select";
 import { cn } from "../../lib/utils";
 import { PasswordInput } from "./PasswordInput";
 import { testLLMConnection, fetchModelList } from "../../services/llmClient";
@@ -30,6 +23,14 @@ interface FieldDef {
   isPassword: boolean;
 }
 
+interface ProviderConfig {
+  enabled: boolean;
+  apiKey?: string;
+  host?: string;
+  model?: string;
+  modelByType?: Record<string, string | undefined>;
+}
+
 interface ProviderConfigModalProps {
   open: boolean;
   onClose: () => void;
@@ -37,12 +38,11 @@ interface ProviderConfigModalProps {
   providerKey: string;
   providerName: string;
   fields: FieldDef[];
-  presetModels: string[];
-  presetModelsByType?: Record<string, string[]>;
-  supportedTypes?: string[];
+  presetModelsByType: Record<string, string[]>;
+  supportedTypes: string[];
   apiKeyUrl?: string;
-  values: Record<string, string>;
-  onSave: (values: Record<string, string>) => void;
+  config: ProviderConfig;
+  onSave: (config: Record<string, unknown>) => void;
 }
 
 function ModelSelector({
@@ -192,44 +192,79 @@ export function ProviderConfigModal({
   providerKey,
   providerName,
   fields,
-  presetModels,
   presetModelsByType,
   supportedTypes,
   apiKeyUrl,
-  values,
+  config,
   onSave,
 }: ProviderConfigModalProps) {
   const { t } = useTranslation("settings");
-  const [localValues, setLocalValues] = useState<Record<string, string>>({});
+  const [localFields, setLocalFields] = useState<Record<string, string>>({});
+  const [localModelByType, setLocalModelByType] = useState<Record<string, string>>({});
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [testMessage, setTestMessage] = useState("");
-  const [selectedModelType, setSelectedModelType] = useState("LLM");
 
   useEffect(() => {
     if (open) {
-      setLocalValues({ ...values });
+      // Initialize non-model fields from config
+      const fieldValues: Record<string, string> = {};
+      for (const field of fields) {
+        const val = config[field.key as keyof ProviderConfig];
+        if (typeof val === "string") {
+          fieldValues[field.key] = val;
+        }
+      }
+      setLocalFields(fieldValues);
+
+      // Initialize per-type models from config.modelByType, fallback LLM to config.model
+      const modelByType: Record<string, string> = {};
+      for (const type of supportedTypes) {
+        const fromType = config.modelByType?.[type];
+        if (fromType) {
+          modelByType[type] = fromType;
+        } else if (type === "LLM" && config.model) {
+          modelByType[type] = config.model;
+        }
+      }
+      setLocalModelByType(modelByType);
+
       setTestStatus("idle");
       setTestMessage("");
-      setSelectedModelType("LLM");
     }
-  }, [open, values]);
+  }, [open, config, fields, supportedTypes]);
 
-  // Get preset models based on selected model type
-  const activePresetModels = presetModelsByType?.[selectedModelType] ?? presetModels;
+  const handleFieldChange = (key: string, value: string) => {
+    setLocalFields((prev) => ({ ...prev, [key]: value }));
+  };
 
-  const handleChange = (key: string, value: string) => {
-    setLocalValues((prev) => ({ ...prev, [key]: value }));
+  const handleModelChange = (type: string, value: string) => {
+    setLocalModelByType((prev) => ({ ...prev, [type]: value }));
   };
 
   const handleSave = () => {
-    onSave(localValues);
+    const result: Record<string, unknown> = { ...localFields };
+    // Only write modelByType/model when per-type selectors are active (LLM providers)
+    // Cloud ASR providers pass supportedTypes=[] and keep model in localFields
+    if (supportedTypes.length > 0) {
+      result.modelByType = { ...localModelByType };
+      if (localModelByType.LLM) {
+        result.model = localModelByType.LLM;
+      }
+    }
+    onSave(result);
     onClose();
   };
 
   const handleTest = async () => {
     setTestStatus("testing");
     setTestMessage("");
-    const result = await testLLMConnection(providerKey, localValues);
+    // Test using LLM model only
+    const testConfig = {
+      ...localFields,
+      model: localModelByType.LLM || config.model,
+      modelByType: localModelByType,
+    };
+    const result = await testLLMConnection(providerKey, testConfig);
     if (result.success) {
       setTestStatus("success");
       setTestMessage(result.message);
@@ -238,6 +273,11 @@ export function ProviderConfigModal({
       setTestMessage(result.message);
     }
   };
+
+  const connConfig = useMemo(
+    () => ({ apiKey: localFields.apiKey, host: localFields.host }),
+    [localFields.apiKey, localFields.host]
+  );
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -257,53 +297,40 @@ export function ProviderConfigModal({
         </Alert>
 
         <div className="mt-4 space-y-4">
-          {/* Model type selector */}
-          {supportedTypes && supportedTypes.length > 1 && (
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">{t("llm.modelType")}</label>
-              <Select value={selectedModelType} onValueChange={setSelectedModelType}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {supportedTypes.map((type) => (
-                    <SelectItem key={type} value={type}>
-                      {type}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
+          {/* Non-model fields (apiKey, host, etc.) */}
           {fields.map((field) => (
             <div key={field.key} className="space-y-1.5">
               <label className="text-sm font-medium">{t(field.labelKey)}</label>
               {field.isPassword ? (
                 <PasswordInput
-                  value={localValues[field.key] || ""}
-                  onChange={(val) => handleChange(field.key, val)}
+                  value={localFields[field.key] || ""}
+                  onChange={(val) => handleFieldChange(field.key, val)}
                   placeholder={field.placeholder}
-                />
-              ) : field.key === "model" ? (
-                <ModelSelector
-                  value={localValues[field.key] || ""}
-                  onChange={(val) => handleChange(field.key, val)}
-                  providerKey={providerKey}
-                  presetModels={activePresetModels}
-                  placeholder={field.placeholder}
-                  config={{
-                    apiKey: localValues.apiKey,
-                    host: localValues.host,
-                  }}
                 />
               ) : (
                 <Input
-                  value={localValues[field.key] || ""}
-                  onChange={(e) => handleChange(field.key, e.target.value)}
+                  value={localFields[field.key] || ""}
+                  onChange={(e) => handleFieldChange(field.key, e.target.value)}
                   placeholder={field.placeholder}
                 />
               )}
+            </div>
+          ))}
+
+          {/* Per-type model selectors */}
+          {supportedTypes.map((type) => (
+            <div key={type} className="space-y-1.5">
+              <label className="text-sm font-medium">
+                {t(`llm.modelType_${type}`)}
+              </label>
+              <ModelSelector
+                value={localModelByType[type] || ""}
+                onChange={(val) => handleModelChange(type, val)}
+                providerKey={providerKey}
+                presetModels={presetModelsByType[type] || []}
+                placeholder={t("llm.selectModel")}
+                config={connConfig}
+              />
             </div>
           ))}
         </div>

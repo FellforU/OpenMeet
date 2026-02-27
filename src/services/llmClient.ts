@@ -6,6 +6,15 @@ interface LLMResponse {
   text: string;
 }
 
+// Resolve model from per-type config with fallback chain
+function resolveModel(
+  config: { model?: string; modelByType?: Record<string, string | undefined> },
+  type: "LLM" | "EMBEDDING" | "RERANK",
+  fallback: string
+): string {
+  return config.modelByType?.[type] ?? config.model ?? fallback;
+}
+
 // Provider endpoint configurations
 const PROVIDER_ENDPOINTS: Record<string, { url: string; isOllama?: boolean }> = {
   ollama: { url: "/api/generate", isOllama: true },
@@ -81,14 +90,14 @@ export async function generateText(
 
   if (endpoint.isOllama) {
     const host = config.host || "http://localhost:11434";
-    const model = config.model || "qwen2.5:7b";
+    const model = resolveModel(config, "LLM", "qwen2.5:7b");
     text = await callOllama(host, model, prompt);
   } else {
     const apiKey = config.apiKey;
     if (!apiKey) {
       throw new Error(`API key not configured for "${providerKey}"`);
     }
-    const model = config.model || providerKey;
+    const model = resolveModel(config, "LLM", providerKey);
     text = await callOpenAICompatible(
       endpoint.url,
       apiKey,
@@ -103,7 +112,7 @@ export async function generateText(
 
 export async function testLLMConnection(
   providerKey: string,
-  config: { apiKey?: string; host?: string; model?: string }
+  config: { apiKey?: string; host?: string; model?: string; modelByType?: Record<string, string | undefined> }
 ): Promise<{ success: boolean; message: string }> {
   const endpoint = PROVIDER_ENDPOINTS[providerKey];
   if (!endpoint) {
@@ -113,7 +122,7 @@ export async function testLLMConnection(
   try {
     if (endpoint.isOllama) {
       const host = config.host || "http://localhost:11434";
-      const model = config.model || "qwen2.5:7b";
+      const model = resolveModel(config, "LLM", "qwen2.5:7b");
       const text = await callOllama(host, model, "Hi, reply with OK");
       return { success: true, message: text.slice(0, 100) };
     } else {
@@ -121,7 +130,7 @@ export async function testLLMConnection(
       if (!apiKey) {
         return { success: false, message: "API key not provided" };
       }
-      const model = config.model || providerKey;
+      const model = resolveModel(config, "LLM", providerKey);
       const text = await callOpenAICompatible(endpoint.url, apiKey, model, "Hi, reply with OK");
       return { success: true, message: text.slice(0, 100) };
     }

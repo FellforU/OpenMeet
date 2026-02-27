@@ -54,7 +54,11 @@
     "useCustomModel": "使用自定义模型: \"{{model}}\"",
     "noModelsFound": "未找到匹配的模型",
     "fetchModels": "获取模型列表",
-    "getApiKey": "获取 API Key"
+    "getApiKey": "获取 API Key",
+    "modelType_LLM": "LLM 模型",
+    "modelType_EMBEDDING": "Embedding 模型",
+    "modelType_RERANK": "Rerank 模型",
+    "selectModel": "选择模型..."
   },
   "asr": {
     "title": "ASR 模型管理",

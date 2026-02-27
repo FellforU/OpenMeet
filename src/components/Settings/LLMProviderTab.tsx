@@ -24,7 +24,6 @@ export interface LLMProviderDef {
   supportedTypes: ModelType[];
   fields: { key: string; labelKey: string; placeholder: string; isPassword: boolean }[];
   presetModelsByType: Record<string, string[]>;
-  presetModels: string[];
   isConfigured: (config: { enabled: boolean; apiKey?: string; host?: string; model?: string }) => boolean;
 }
 
@@ -38,7 +37,6 @@ export const LLM_PROVIDERS: LLMProviderDef[] = [
     supportedTypes: ["LLM", "EMBEDDING"],
     fields: [
       { key: "host", labelKey: "settings:llm.ollamaHost", placeholder: "http://localhost:11434", isPassword: false },
-      { key: "model", labelKey: "settings:llm.ollamaModel", placeholder: "qwen3:8b", isPassword: false },
     ],
     presetModelsByType: {
       LLM: [
@@ -54,14 +52,6 @@ export const LLM_PROVIDERS: LLMProviderDef[] = [
         "all-minilm", "snowflake-arctic-embed",
       ],
     },
-    presetModels: [
-      "qwen3:8b", "qwen3:14b", "qwen3:32b",
-      "qwen2.5:7b", "qwen2.5:14b", "qwen2.5:32b",
-      "deepseek-r1:8b", "deepseek-r1:32b",
-      "llama4:scout", "llama3.2:8b",
-      "gemma2:9b", "gemma2:27b",
-      "mistral:7b", "glm4:9b",
-    ],
     isConfigured: (c) => Boolean(c.host),
   },
   {
@@ -73,15 +63,10 @@ export const LLM_PROVIDERS: LLMProviderDef[] = [
     supportedTypes: ["LLM"],
     fields: [
       { key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "sk-...", isPassword: true },
-      { key: "model", labelKey: "settings:llm.model", placeholder: "deepseek-chat", isPassword: false },
     ],
     presetModelsByType: {
       LLM: ["deepseek-chat", "deepseek-reasoner"],
     },
-    presetModels: [
-      "deepseek-chat",
-      "deepseek-reasoner",
-    ],
     isConfigured: (c) => Boolean(c.apiKey),
   },
   {
@@ -93,7 +78,6 @@ export const LLM_PROVIDERS: LLMProviderDef[] = [
     supportedTypes: ["LLM", "EMBEDDING", "RERANK"],
     fields: [
       { key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "sk-...", isPassword: true },
-      { key: "model", labelKey: "settings:llm.model", placeholder: "qwen3.5-plus", isPassword: false },
     ],
     presetModelsByType: {
       LLM: [
@@ -109,12 +93,6 @@ export const LLM_PROVIDERS: LLMProviderDef[] = [
         "gte-rerank-v2", "gte-rerank",
       ],
     },
-    presetModels: [
-      "qwen3.5-plus", "qwen3.5-flash",
-      "qwen3-max", "qwen-plus-latest",
-      "qwen-turbo-latest", "qwen-max-latest",
-      "qwq-plus",
-    ],
     isConfigured: (c) => Boolean(c.apiKey),
   },
   {
@@ -126,7 +104,6 @@ export const LLM_PROVIDERS: LLMProviderDef[] = [
     supportedTypes: ["LLM", "EMBEDDING"],
     fields: [
       { key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "...", isPassword: true },
-      { key: "model", labelKey: "settings:llm.model", placeholder: "glm-4.7-flash", isPassword: false },
     ],
     presetModelsByType: {
       LLM: [
@@ -138,11 +115,6 @@ export const LLM_PROVIDERS: LLMProviderDef[] = [
         "embedding-3", "embedding-2",
       ],
     },
-    presetModels: [
-      "glm-5", "glm-4.7", "glm-4.7-flash",
-      "glm-4-plus", "glm-4-flash-250414",
-      "glm-z1-flash", "glm-z1-airx", "glm-z1-air",
-    ],
     isConfigured: (c) => Boolean(c.apiKey),
   },
   {
@@ -154,7 +126,6 @@ export const LLM_PROVIDERS: LLMProviderDef[] = [
     supportedTypes: ["LLM", "EMBEDDING"],
     fields: [
       { key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "sk-proj-...", isPassword: true },
-      { key: "model", labelKey: "settings:llm.model", placeholder: "gpt-4o-mini", isPassword: false },
     ],
     presetModelsByType: {
       LLM: [
@@ -168,12 +139,6 @@ export const LLM_PROVIDERS: LLMProviderDef[] = [
         "text-embedding-ada-002",
       ],
     },
-    presetModels: [
-      "gpt-5.2", "gpt-5.2-pro",
-      "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano",
-      "gpt-4o", "gpt-4o-mini",
-      "o3", "o3-pro", "o4-mini",
-    ],
     isConfigured: (c) => Boolean(c.apiKey),
   },
   {
@@ -185,7 +150,6 @@ export const LLM_PROVIDERS: LLMProviderDef[] = [
     supportedTypes: ["LLM", "EMBEDDING"],
     fields: [
       { key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "AIza...", isPassword: true },
-      { key: "model", labelKey: "settings:llm.model", placeholder: "gemini-2.5-flash", isPassword: false },
     ],
     presetModelsByType: {
       LLM: [
@@ -196,10 +160,6 @@ export const LLM_PROVIDERS: LLMProviderDef[] = [
         "text-embedding-004", "embedding-001",
       ],
     },
-    presetModels: [
-      "gemini-3.1-pro-preview", "gemini-3-flash-preview", "gemini-3-pro-preview",
-      "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro",
-    ],
     isConfigured: (c) => Boolean(c.apiKey),
   },
 ];
@@ -220,18 +180,13 @@ export function LLMProviderTab() {
     (p) => !p.isConfigured(llmProviders[p.key] || { enabled: false })
   );
 
-  const handleSave = (values: Record<string, string>) => {
+  const handleSave = (config: Record<string, unknown>) => {
     if (!configuring) return;
-    setLLMProvider(configuring, values);
+    setLLMProvider(configuring, config);
   };
 
-  const getValues = (key: string): Record<string, string> => {
-    const cfg = llmProviders[key] || {};
-    const result: Record<string, string> = {};
-    for (const [k, v] of Object.entries(cfg)) {
-      if (typeof v === "string") result[k] = v;
-    }
-    return result;
+  const getConfig = (key: string) => {
+    return llmProviders[key] || { enabled: false };
   };
 
   return (
@@ -304,11 +259,10 @@ export function LLMProviderTab() {
           providerKey={configuringDef.key}
           providerName={t(`llm.${configuringDef.key}`)}
           fields={configuringDef.fields}
-          presetModels={configuringDef.presetModels}
           presetModelsByType={configuringDef.presetModelsByType}
           supportedTypes={configuringDef.supportedTypes}
           apiKeyUrl={configuringDef.apiKeyUrl}
-          values={getValues(configuringDef.key)}
+          config={getConfig(configuringDef.key)}
           onSave={handleSave}
         />
       )}

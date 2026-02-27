@@ -54,7 +54,11 @@
     "useCustomModel": "Use custom model: \"{{model}}\"",
     "noModelsFound": "No matching models found",
     "fetchModels": "Fetch Models",
-    "getApiKey": "Get API Key"
+    "getApiKey": "Get API Key",
+    "modelType_LLM": "LLM Model",
+    "modelType_EMBEDDING": "Embedding Model",
+    "modelType_RERANK": "Rerank Model",
+    "selectModel": "Select model..."
   },
   "asr": {
     "title": "ASR Model Manager",

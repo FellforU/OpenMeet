@@ -273,13 +273,18 @@ export function ModelManager() {
     return result;
   };
 
-  const handleCloudSave = async (values: Record<string, string>) => {
+  const handleCloudSave = async (values: Record<string, unknown>) => {
     if (!configuringDef) return;
-    setCloudAsr(configuringDef.providerKey, values);
+    // Extract string values for Cloud ASR config
+    const stringValues: Record<string, string> = {};
+    for (const [k, v] of Object.entries(values)) {
+      if (typeof v === "string") stringValues[k] = v;
+    }
+    setCloudAsr(configuringDef.providerKey, stringValues);
     try {
       await api.configureEngine(
         configuringDef.engineName,
-        configuringDef.toCredentials(values)
+        configuringDef.toCredentials(stringValues)
       );
       toast.success(t("llm.credentialsSaved"));
     } catch {
@@ -415,8 +420,9 @@ export function ModelManager() {
           providerKey={configuringDef.providerKey}
           providerName={t(`asr.${configuringDef.providerKey}`)}
           fields={configuringDef.fields}
-          presetModels={configuringDef.presetModels}
-          values={getCloudValues(configuringDef.providerKey)}
+          presetModelsByType={{}}
+          supportedTypes={[]}
+          config={{ enabled: true, ...getCloudValues(configuringDef.providerKey) }}
           onSave={handleCloudSave}
         />
       )}
