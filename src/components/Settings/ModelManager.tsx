@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Download, Trash2, Loader2, Settings as SettingsIcon } from "lucide-react";
+import { Download, Trash2, Loader2, Settings as SettingsIcon, Play, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Switch } from "../ui/switch";
+import { Progress } from "../ui/progress";
 import {
   Dialog,
   DialogContent,
@@ -115,28 +116,35 @@ function formatElapsed(seconds: number): string {
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
-// Vendor card config modal
+// Vendor card config modal with download/load split
 function VendorConfigModal({
   open,
   onClose,
   vendor,
+  downloadedModels,
   loadedModels,
   loadingState,
+  downloadState,
   unloadingKey,
+  onDownload,
   onLoad,
   onUnload,
 }: {
   open: boolean;
   onClose: () => void;
   vendor: VendorDef;
+  downloadedModels: Set<string>;
   loadedModels: Set<string>;
   loadingState: { phase: string; modelSize: string; elapsedSeconds: number; error: string | null } | null;
+  downloadState: { phase: string; modelSize: string; progressPct: number; error: string | null } | null;
   unloadingKey: string | null;
+  onDownload: (engine: string, size: string) => void;
   onLoad: (engine: string, size: string) => void;
   onUnload: (engine: string) => void;
 }) {
   const { t } = useTranslation("settings");
   const isEngineLoading = loadingState && (loadingState.phase === "preparing" || loadingState.phase === "loading");
+  const isEngineDownloading = downloadState && downloadState.phase === "downloading";
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -155,78 +163,124 @@ function VendorConfigModal({
         <div className="mt-2 space-y-2">
           {vendor.models.map((model) => {
             const key = `${vendor.engine}:${model.size}`;
+            const isDownloaded = downloadedModels.has(key);
             const isLoaded = loadedModels.has(key);
             const isThisModelLoading = isEngineLoading && loadingState?.modelSize === model.size;
+            const isThisModelDownloading = isEngineDownloading && downloadState?.modelSize === model.size;
             const isUnloading = unloadingKey === `${vendor.engine}:unload`;
-            const isDisabled = Boolean(isEngineLoading) || isUnloading;
+            const isBusy = Boolean(isEngineLoading) || Boolean(isEngineDownloading) || isUnloading;
 
             return (
               <div
                 key={key}
-                className="flex items-center justify-between rounded-lg border border-border p-3"
+                className="rounded-lg border border-border p-3"
               >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">{model.size}</span>
-                    {isLoaded && !isThisModelLoading && (
-                      <Badge variant="outline" className="border-green-300 text-green-600">
-                        {t("common:status.loaded")}
+                <div className="flex items-center justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{model.size}</span>
+                      {isLoaded && (
+                        <Badge variant="outline" className="border-green-300 text-green-600">
+                          {t("common:status.loaded")}
+                        </Badge>
+                      )}
+                      {isDownloaded && !isLoaded && (
+                        <Badge variant="outline" className="border-blue-300 text-blue-600">
+                          {t("common:downloadPhase.completed")}
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                      <span>{t(`common:${model.descKey}`)}</span>
+                      <Badge variant="outline" className="text-[10px]">
+                        {model.vramGb} GB VRAM
                       </Badge>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {isLoaded ? (
+                      // Loaded: show unload button
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        disabled={isBusy}
+                        onClick={() => onUnload(vendor.engine)}
+                      >
+                        {isUnloading ? (
+                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                        )}
+                        {t("common:action.unload")}
+                      </Button>
+                    ) : isDownloaded ? (
+                      // Downloaded but not loaded: show load button
+                      <Button
+                        variant="default"
+                        size="sm"
+                        disabled={isBusy}
+                        onClick={() => onLoad(vendor.engine, model.size)}
+                      >
+                        {isThisModelLoading ? (
+                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Play className="mr-1.5 h-3.5 w-3.5" />
+                        )}
+                        {t("settings:asr.activate")}
+                      </Button>
+                    ) : (
+                      // Not downloaded: show download button
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={isBusy}
+                        onClick={() => onDownload(vendor.engine, model.size)}
+                      >
+                        {isThisModelDownloading ? (
+                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Download className="mr-1.5 h-3.5 w-3.5" />
+                        )}
+                        {downloadState?.phase === "error" && downloadState.modelSize === model.size
+                          ? t("common:action.retry")
+                          : t("common:action.download")}
+                      </Button>
                     )}
                   </div>
-                  <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                    <span>{t(`common:${model.descKey}`)}</span>
-                    <Badge variant="outline" className="text-[10px]">
-                      {model.vramGb} GB VRAM
-                    </Badge>
-                  </div>
-                  {isThisModelLoading && loadingState && (
-                    <div className="mt-1.5 flex items-center gap-2 text-xs text-blue-600">
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      <span>
-                        {t(`common:loadPhase.${loadingState.phase}`)}
-                      </span>
-                      <span className="text-muted-foreground">
-                        {formatElapsed(loadingState.elapsedSeconds)}
-                      </span>
-                    </div>
-                  )}
-                  {loadingState?.phase === "error" && loadingState.modelSize === model.size && (
-                    <div className="mt-1.5 text-xs text-destructive">
-                      {loadingState.error}
-                    </div>
-                  )}
                 </div>
-                {isLoaded ? (
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    disabled={isDisabled}
-                    onClick={() => onUnload(vendor.engine)}
-                  >
-                    {isUnloading ? (
-                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-                    )}
-                    {t("common:action.unload")}
-                  </Button>
-                ) : (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={isDisabled}
-                    onClick={() => onLoad(vendor.engine, model.size)}
-                  >
-                    {isThisModelLoading ? (
-                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Download className="mr-1.5 h-3.5 w-3.5" />
-                    )}
-                    {loadingState?.phase === "error" && loadingState.modelSize === model.size
-                      ? t("common:action.retry")
-                      : t("common:action.load")}
-                  </Button>
+                {/* Download progress bar */}
+                {isThisModelDownloading && downloadState && (
+                  <div className="mt-2 space-y-1">
+                    <Progress value={downloadState.progressPct} className="h-2" />
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>{t("common:downloadPhase.downloading")}</span>
+                      <span>{Math.round(downloadState.progressPct)}%</span>
+                    </div>
+                  </div>
+                )}
+                {/* Loading progress */}
+                {isThisModelLoading && loadingState && (
+                  <div className="mt-2 flex items-center gap-2 text-xs text-blue-600">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <span>
+                      {t(`common:loadPhase.${loadingState.phase}`)}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {formatElapsed(loadingState.elapsedSeconds)}
+                    </span>
+                  </div>
+                )}
+                {/* Download error */}
+                {downloadState?.phase === "error" && downloadState.modelSize === model.size && (
+                  <div className="mt-2 text-xs text-destructive">
+                    {downloadState.error}
+                  </div>
+                )}
+                {/* Load error */}
+                {loadingState?.phase === "error" && loadingState.modelSize === model.size && (
+                  <div className="mt-2 text-xs text-destructive">
+                    {loadingState.error}
+                  </div>
                 )}
               </div>
             );
@@ -239,8 +293,16 @@ function VendorConfigModal({
 
 export function ModelManager() {
   const { t } = useTranslation("settings");
-  const { engines, fetchEngines, loadingStates, startModelLoad, clearLoadingState } =
-    useEngineStore();
+  const {
+    engines,
+    fetchEngines,
+    loadingStates,
+    downloadStates,
+    startModelLoad,
+    startModelDownload,
+    clearLoadingState,
+    clearDownloadState,
+  } = useEngineStore();
   const { cloudAsr, setCloudAsr, autoDegradation, setAutoDegradation } =
     useSettingsStore();
   const [unloadingKey, setUnloadingKey] = useState<string | null>(null);
@@ -252,26 +314,54 @@ export function ModelManager() {
   }, [fetchEngines]);
 
   // Track which engines have already been toasted to prevent duplicates
-  const notifiedRef = useRef<Set<string>>(new Set());
+  const loadNotifiedRef = useRef<Set<string>>(new Set());
+  const downloadNotifiedRef = useRef<Set<string>>(new Set());
 
   // Watch loading states for toast notifications
   useEffect(() => {
     for (const [engineName, state] of Object.entries(loadingStates)) {
-      if (notifiedRef.current.has(engineName)) continue;
+      if (loadNotifiedRef.current.has(engineName)) continue;
       if (state.phase === "ready") {
-        notifiedRef.current.add(engineName);
+        loadNotifiedRef.current.add(engineName);
         toast.success(t("asr.loadSuccess", { model: state.modelSize }));
         clearLoadingState(engineName);
       } else if (state.phase === "error") {
-        notifiedRef.current.add(engineName);
+        loadNotifiedRef.current.add(engineName);
         toast.error(t("asr.loadFailed", { error: state.error ?? "" }));
       }
     }
-    // Clean up notifiedRef when states are removed
-    for (const key of notifiedRef.current) {
-      if (!loadingStates[key]) notifiedRef.current.delete(key);
+    for (const key of loadNotifiedRef.current) {
+      if (!loadingStates[key]) loadNotifiedRef.current.delete(key);
     }
   }, [loadingStates, t, clearLoadingState]);
+
+  // Watch download states for toast notifications
+  useEffect(() => {
+    for (const [engineName, state] of Object.entries(downloadStates)) {
+      if (downloadNotifiedRef.current.has(engineName)) continue;
+      if (state.phase === "completed") {
+        downloadNotifiedRef.current.add(engineName);
+        toast.success(t("asr.downloadSuccess", { model: state.modelSize }));
+        clearDownloadState(engineName);
+      } else if (state.phase === "error") {
+        downloadNotifiedRef.current.add(engineName);
+        toast.error(t("asr.downloadFailed", { error: state.error ?? "" }));
+      }
+    }
+    for (const key of downloadNotifiedRef.current) {
+      if (!downloadStates[key]) downloadNotifiedRef.current.delete(key);
+    }
+  }, [downloadStates, t, clearDownloadState]);
+
+  const downloadedModels = useMemo(
+    () =>
+      new Set(
+        engines.flatMap((e) =>
+          (e.downloaded_models ?? []).map((m) => `${e.name}:${m}`)
+        )
+      ),
+    [engines]
+  );
 
   const loadedModels = useMemo(
     () =>
@@ -283,8 +373,11 @@ export function ModelManager() {
     [engines]
   );
 
+  const handleDownload = (engine: string, size: string) => {
+    startModelDownload(engine, size);
+  };
+
   const handleLoad = (engine: string, size: string) => {
-    // startModelLoad initializes phase to "preparing", overwriting any prior error state
     startModelLoad(engine, size);
   };
 
@@ -319,7 +412,6 @@ export function ModelManager() {
 
   const handleCloudSave = async (values: Record<string, unknown>) => {
     if (!configuringDef) return;
-    // Extract string values for Cloud ASR config
     const stringValues: Record<string, string> = {};
     for (const [k, v] of Object.entries(values)) {
       if (typeof v === "string") stringValues[k] = v;
@@ -342,6 +434,12 @@ export function ModelManager() {
     return loaded?.current_model_size || null;
   };
 
+  // Get downloaded count for a vendor
+  const getDownloadedCount = (engine: string): number => {
+    const e = engines.find((eng) => eng.name === engine);
+    return e?.downloaded_models?.length ?? 0;
+  };
+
   return (
     <div className="space-y-6 py-2">
       <div>
@@ -353,6 +451,7 @@ export function ModelManager() {
       <div className="grid gap-2">
         {VENDOR_DEFS.map((vendor) => {
           const loadedSize = getVendorStatus(vendor.engine);
+          const downloadedCount = getDownloadedCount(vendor.engine);
           return (
             <div
               key={vendor.engine}
@@ -373,6 +472,12 @@ export function ModelManager() {
                   <Badge variant="secondary" className="gap-1 text-[10px]">
                     {t("llm.local")}
                   </Badge>
+                  {downloadedCount > 0 && (
+                    <Badge variant="outline" className="gap-1 border-blue-300 text-[10px] text-blue-600">
+                      <CheckCircle2 className="h-2.5 w-2.5" />
+                      {downloadedCount}
+                    </Badge>
+                  )}
                   {loadedSize && (
                     <Badge variant="outline" className="gap-1 border-green-300 text-[10px] text-green-600">
                       {loadedSize}
@@ -448,9 +553,12 @@ export function ModelManager() {
           open={Boolean(configuringVendor)}
           onClose={() => setConfiguringVendor(null)}
           vendor={configuringVendorDef}
+          downloadedModels={downloadedModels}
           loadedModels={loadedModels}
           loadingState={loadingStates[configuringVendorDef.engine] ?? null}
+          downloadState={downloadStates[configuringVendorDef.engine] ?? null}
           unloadingKey={unloadingKey}
+          onDownload={handleDownload}
           onLoad={handleLoad}
           onUnload={handleUnload}
         />

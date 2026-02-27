@@ -19,6 +19,8 @@ interface GeneralConfig {
   defaultRerankProvider: string;
   autoSummary: boolean;
   exportFormat: "markdown" | "txt" | "json";
+  asrEngine: string;
+  asrModelSize: string;
 }
 
 interface CloudAsrConfig {
@@ -46,6 +48,8 @@ const defaultState = {
     defaultRerankProvider: "qwen",
     autoSummary: true,
     exportFormat: "markdown" as const,
+    asrEngine: "whisper",
+    asrModelSize: "base",
   },
   llmProviders: {
     ollama: { enabled: true, host: "http://localhost:11434", model: "qwen2.5:7b", modelByType: { LLM: "qwen2.5:7b" } },

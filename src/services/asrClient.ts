@@ -90,6 +90,7 @@ export interface EngineInfo {
   model_sizes: string[];
   is_loaded: boolean;
   current_model_size: string | null;
+  downloaded_models: string[];
 }
 
 export async function listEngines(): Promise<EngineInfo[]> {
@@ -147,4 +148,42 @@ export async function configureEngine(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ credentials }),
   });
+}
+
+// --- Download API ---
+
+export type DownloadPhase = "idle" | "downloading" | "completed" | "error";
+
+export interface DownloadResponse {
+  status: "downloading" | "already_downloaded";
+  engine_name: string;
+  model_size: string;
+}
+
+export interface DownloadStatus {
+  engine_name: string;
+  model_size: string | null;
+  phase: DownloadPhase;
+  progress_pct: number;
+  downloaded_bytes: number;
+  total_bytes: number;
+  error: string | null;
+}
+
+export async function downloadEngineModel(
+  engineName: string,
+  modelSize: string
+): Promise<DownloadResponse> {
+  return fetchJson(
+    `${ASR_BASE_URL}/engines/${engineName}/download?model_size=${encodeURIComponent(modelSize)}`,
+    { method: "POST" }
+  );
+}
+
+export async function getDownloadStatus(
+  engineName: string
+): Promise<DownloadStatus> {
+  return fetchJson(
+    `${ASR_BASE_URL}/engines/${engineName}/download-status`
+  );
 }

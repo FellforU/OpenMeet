@@ -7,15 +7,23 @@ import { ModelSizeSelector } from "./ModelSizeSelector";
 import { LanguageSelector } from "./LanguageSelector";
 import { SettingsDialog } from "../Settings/SettingsDialog";
 import { useEngineStore } from "../../stores/engineStore";
+import { useSettingsStore } from "../../stores/settingsStore";
 
 export function HeaderBar() {
   const { t, i18n } = useTranslation();
   const fetchEngines = useEngineStore((s) => s.fetchEngines);
+  const initFromSettings = useEngineStore((s) => s.initFromSettings);
+  const loadSettings = useSettingsStore((s) => s.loadSettings);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
-    fetchEngines();
-  }, [fetchEngines]);
+    const init = async () => {
+      await loadSettings();
+      await fetchEngines();
+      initFromSettings();
+    };
+    init();
+  }, [fetchEngines, initFromSettings, loadSettings]);
 
   const toggleUILanguage = () => {
     const next = i18n.language === "zh" ? "en" : "zh";

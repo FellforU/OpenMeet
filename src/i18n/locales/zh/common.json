@@ -130,6 +130,12 @@
     "ready": "加载完成",
     "error": "加载失败"
   },
+  "downloadPhase": {
+    "idle": "未下载",
+    "downloading": "下载中…",
+    "completed": "已下载",
+    "error": "下载失败"
+  },
   "toast": {
     "fileLoaded": "已加载: {{name}}",
     "exportSuccess": "已导出为 {{format}}",

@@ -82,7 +82,12 @@
     "securityNote": "API keys are stored locally and never sent to our servers.",
     "loading": "Loading...",
     "loadSuccess": "{{model}} model loaded successfully",
-    "loadFailed": "Model load failed: {{error}}"
+    "loadFailed": "Model load failed: {{error}}",
+    "downloadSuccess": "{{model}} model downloaded",
+    "downloadFailed": "Model download failed: {{error}}",
+    "notDownloaded": "Please download the model first",
+    "activate": "Load",
+    "activateDesc": "Set as default and load into memory"
   },
   "about": {
     "description": "Local-first AI meeting transcription tool. Built with Tauri 2.x, React 19, FastAPI, Ollama.",

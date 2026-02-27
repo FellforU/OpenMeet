@@ -18,6 +18,10 @@ _manager = None
 _loading_status: dict[str, dict] = {}
 _loading_tasks: dict[str, asyncio.Task] = {}
 
+# Background download state tracking
+_download_status: dict[str, dict] = {}
+_download_tasks: dict[str, asyncio.Task] = {}
+
 
 def set_manager(manager):
     global _manager
@@ -31,12 +35,17 @@ def get_manager():
 
 
 def reset_loading_state():
-    """Reset module-level loading state. Used in test teardown."""
+    """Reset module-level loading and download state. Used in test teardown."""
     _loading_status.clear()
     for task in _loading_tasks.values():
         if not task.done():
             task.cancel()
     _loading_tasks.clear()
+    _download_status.clear()
+    for task in _download_tasks.values():
+        if not task.done():
+            task.cancel()
+    _download_tasks.clear()
 
 
 class LoadPhase(str, Enum):
@@ -56,6 +65,7 @@ class EngineInfo(BaseModel):
     model_sizes: list[str]
     is_loaded: bool
     current_model_size: str | None
+    downloaded_models: list[str]
 
 
 class LoadResponse(BaseModel):
@@ -73,6 +83,29 @@ class LoadingStatus(BaseModel):
     error: str | None
 
 
+class DownloadPhase(str, Enum):
+    IDLE = "idle"
+    DOWNLOADING = "downloading"
+    COMPLETED = "completed"
+    ERROR = "error"
+
+
+class DownloadResponse(BaseModel):
+    status: str  # "downloading" | "already_downloaded"
+    engine_name: str
+    model_size: str
+
+
+class DownloadStatus(BaseModel):
+    engine_name: str
+    model_size: str | None
+    phase: DownloadPhase
+    progress_pct: float
+    downloaded_bytes: int
+    total_bytes: int
+    error: str | None
+
+
 class ConfigureEngineRequest(BaseModel):
     credentials: dict[str, str]
 
@@ -80,6 +113,14 @@ class ConfigureEngineRequest(BaseModel):
 async def _build_engine_info(engine) -> EngineInfo:
     """Build EngineInfo from an engine instance."""
     caps = await engine.get_capabilities()
+    downloaded = []
+    if hasattr(engine, "is_model_downloaded"):
+        for size in caps.model_sizes:
+            try:
+                if engine.is_model_downloaded(size):
+                    downloaded.append(size)
+            except Exception:
+                pass
     return EngineInfo(
         name=caps.name,
         supported_languages=caps.supported_languages,
@@ -89,6 +130,7 @@ async def _build_engine_info(engine) -> EngineInfo:
         model_sizes=caps.model_sizes,
         is_loaded=engine.is_loaded(),
         current_model_size=getattr(engine, "_model_size", None),
+        downloaded_models=downloaded,
     )
 
 
@@ -105,6 +147,22 @@ async def _do_load_model(engine_name: str, engine, model_size: str):
         logger.error("Failed to load model %s/%s: %s", engine_name, model_size, e)
     finally:
         _loading_tasks.pop(engine_name, None)
+
+
+async def _do_download_model(engine_name: str, engine, model_size: str):
+    """Background task to download model files."""
+    status = _download_status[engine_name]
+    try:
+        status["phase"] = DownloadPhase.DOWNLOADING
+        await engine.download_model(model_size)
+        status["phase"] = DownloadPhase.COMPLETED
+        status["progress_pct"] = 100.0
+    except Exception as e:
+        status["phase"] = DownloadPhase.ERROR
+        status["error"] = str(e)
+        logger.error("Failed to download model %s/%s: %s", engine_name, model_size, e)
+    finally:
+        _download_tasks.pop(engine_name, None)
 
 
 @router.get("", response_model=list[EngineInfo])
@@ -217,6 +275,96 @@ async def unload_engine_model(engine_name: str):
     _loading_status.pop(engine_name, None)
     await engine.unload_model()
     return await _build_engine_info(engine)
+
+
+@router.post("/{engine_name}/download", response_model=DownloadResponse)
+async def download_engine_model(
+    engine_name: str, model_size: str = Query(...)
+):
+    """Start downloading model files in the background. Returns immediately."""
+    manager = get_manager()
+    engine = manager._engines.get(engine_name)
+    if not engine:
+        raise HTTPException(404, f"Engine '{engine_name}' not found")
+
+    if not hasattr(engine, "download_model"):
+        raise HTTPException(400, f"Engine '{engine_name}' does not support download")
+
+    # Validate model_size
+    caps = await engine.get_capabilities()
+    if model_size not in caps.model_sizes:
+        raise HTTPException(
+            400,
+            f"Invalid model_size '{model_size}' for engine '{engine_name}'. "
+            f"Available: {caps.model_sizes}",
+        )
+
+    # Already downloaded
+    if hasattr(engine, "is_model_downloaded") and engine.is_model_downloaded(model_size):
+        return DownloadResponse(
+            status="already_downloaded",
+            engine_name=engine_name,
+            model_size=model_size,
+        )
+
+    # Already has a download task in progress
+    if engine_name in _download_tasks and not _download_tasks[engine_name].done():
+        return DownloadResponse(
+            status="downloading",
+            engine_name=engine_name,
+            model_size=model_size,
+        )
+
+    # Start background download
+    _download_status[engine_name] = {
+        "engine_name": engine_name,
+        "model_size": model_size,
+        "phase": DownloadPhase.DOWNLOADING,
+        "started_at": time.time(),
+        "progress_pct": 0.0,
+        "downloaded_bytes": 0,
+        "total_bytes": 0,
+        "error": None,
+    }
+    task = asyncio.create_task(_do_download_model(engine_name, engine, model_size))
+    _download_tasks[engine_name] = task
+
+    return DownloadResponse(
+        status="downloading",
+        engine_name=engine_name,
+        model_size=model_size,
+    )
+
+
+@router.get("/{engine_name}/download-status", response_model=DownloadStatus)
+async def get_download_status(engine_name: str):
+    """Get the current download status for an engine."""
+    manager = get_manager()
+    engine = manager._engines.get(engine_name)
+    if not engine:
+        raise HTTPException(404, f"Engine '{engine_name}' not found")
+
+    status = _download_status.get(engine_name)
+    if status:
+        return DownloadStatus(
+            engine_name=engine_name,
+            model_size=status.get("model_size"),
+            phase=status["phase"],
+            progress_pct=status.get("progress_pct", 0.0),
+            downloaded_bytes=status.get("downloaded_bytes", 0),
+            total_bytes=status.get("total_bytes", 0),
+            error=status.get("error"),
+        )
+
+    return DownloadStatus(
+        engine_name=engine_name,
+        model_size=None,
+        phase=DownloadPhase.IDLE,
+        progress_pct=0.0,
+        downloaded_bytes=0,
+        total_bytes=0,
+        error=None,
+    )
 
 
 @router.post("/{engine_name}/configure")

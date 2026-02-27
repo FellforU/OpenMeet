@@ -1,6 +1,7 @@
 import asyncio
 from typing import Optional, Callable
 
+import faster_whisper
 from faster_whisper import WhisperModel
 
 from asr_service.engines.base import AudioInput, EngineCapabilities
@@ -52,6 +53,25 @@ class WhisperEngine:
 
     def is_loaded(self) -> bool:
         return self._model is not None
+
+    def is_model_downloaded(self, model_size: str) -> bool:
+        """Check if model files exist in HuggingFace cache."""
+        try:
+            faster_whisper.download_model(model_size, local_files_only=True)
+            return True
+        except Exception:
+            return False
+
+    async def download_model(self, model_size: str) -> str:
+        """Download model files without loading into memory."""
+        if model_size not in self.SUPPORTED_SIZES:
+            raise ValueError(f"Unsupported model size: {model_size}")
+
+        def _download():
+            return faster_whisper.download_model(model_size)
+
+        path = await asyncio.to_thread(_download)
+        return str(path)
 
     async def transcribe(
         self,

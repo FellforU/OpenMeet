@@ -130,6 +130,12 @@
     "ready": "Load complete",
     "error": "Load failed"
   },
+  "downloadPhase": {
+    "idle": "Not Downloaded",
+    "downloading": "Downloading…",
+    "completed": "Downloaded",
+    "error": "Download Failed"
+  },
   "toast": {
     "fileLoaded": "Loaded: {{name}}",
     "exportSuccess": "Exported as {{format}}",

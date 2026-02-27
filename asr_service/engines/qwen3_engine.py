@@ -1,10 +1,13 @@
 """ASR engine wrapping Qwen3-ASR (FunASR AutoModel)."""
 
 import asyncio
+from pathlib import Path
 from typing import Optional, Callable
 
 from asr_service.engines.base import AudioInput, EngineCapabilities
 from asr_service.models.job import Segment
+
+MODELSCOPE_CACHE = Path.home() / ".cache" / "modelscope" / "hub"
 
 
 # Lazy import to avoid hard dependency at module level
@@ -77,6 +80,25 @@ class Qwen3Engine:
 
     def is_loaded(self) -> bool:
         return self._model is not None
+
+    def is_model_downloaded(self, model_size: str) -> bool:
+        """Check if model exists in ModelScope cache."""
+        cache_dir = MODELSCOPE_CACHE / "iic" / model_size
+        return cache_dir.exists()
+
+    async def download_model(self, model_size: str) -> str:
+        """Download model files without keeping in memory."""
+        if model_size not in self.SUPPORTED_SIZES:
+            raise ValueError(f"Unsupported model size: {model_size}")
+
+        AM = _ensure_automodel()
+
+        def _download():
+            model = AM(model=f"iic/{model_size}", device="cpu")
+            del model
+            return str(MODELSCOPE_CACHE / "iic" / model_size)
+
+        return await asyncio.to_thread(_download)
 
     async def transcribe(
         self,

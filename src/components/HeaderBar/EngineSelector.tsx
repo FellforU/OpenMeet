@@ -25,6 +25,7 @@ export function EngineSelector() {
       <SelectContent>
         {ENGINE_KEYS.map((key) => {
           const engine = engines.find((e) => e.name === key);
+          const downloadedCount = engine?.downloaded_models?.length ?? 0;
           return (
             <SelectItem key={key} value={key}>
               <div className="flex items-center gap-2">
@@ -32,6 +33,11 @@ export function EngineSelector() {
                 {engine?.is_loaded && (
                   <Badge variant="secondary" className="text-[10px] px-1 py-0">
                     {t("status.loaded")}
+                  </Badge>
+                )}
+                {downloadedCount > 0 && !engine?.is_loaded && (
+                  <Badge variant="outline" className="text-[10px] px-1 py-0 border-blue-300 text-blue-600">
+                    {downloadedCount}
                   </Badge>
                 )}
               </div>

@@ -1,11 +1,19 @@
 import { create } from "zustand";
 import type { EngineInfo } from "../services/asrClient";
 import * as api from "../services/asrClient";
+import { useSettingsStore } from "./settingsStore";
 
 interface ModelLoadingState {
   phase: api.LoadPhase;
   modelSize: string;
   elapsedSeconds: number;
+  error: string | null;
+}
+
+interface ModelDownloadState {
+  phase: api.DownloadPhase;
+  modelSize: string;
+  progressPct: number;
   error: string | null;
 }
 
@@ -16,6 +24,7 @@ interface EngineStore {
   selectedLanguage: string;
   loading: boolean;
   loadingStates: Record<string, ModelLoadingState>;
+  downloadStates: Record<string, ModelDownloadState>;
 
   fetchEngines: () => Promise<void>;
   setSelectedEngine: (engine: string) => void;
@@ -25,10 +34,16 @@ interface EngineStore {
   pollLoadStatus: (engineName: string) => void;
   stopPolling: (engineName: string) => void;
   clearLoadingState: (engineName: string) => void;
+  startModelDownload: (engineName: string, modelSize: string) => Promise<void>;
+  pollDownloadStatus: (engineName: string) => void;
+  stopDownloadPolling: (engineName: string) => void;
+  clearDownloadState: (engineName: string) => void;
+  initFromSettings: () => void;
 }
 
 // Track polling timeouts per engine
 const _pollTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+const _downloadPollTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 
 // Fallback model sizes when ASR service is unavailable
 export const FALLBACK_MODEL_SIZES: Record<string, string[]> = {
@@ -77,6 +92,7 @@ export const useEngineStore = create<EngineStore>((set, get) => ({
   selectedLanguage: "auto",
   loading: false,
   loadingStates: {},
+  downloadStates: {},
 
   fetchEngines: async () => {
     set({ loading: true });
@@ -89,24 +105,42 @@ export const useEngineStore = create<EngineStore>((set, get) => ({
   },
 
   setSelectedEngine: (engine) => {
+    const modelSize = defaultModelSize(engine);
     set({
       selectedEngine: engine,
-      selectedModelSize: defaultModelSize(engine),
+      selectedModelSize: modelSize,
     });
+    // Persist to settings
+    useSettingsStore.getState().setGeneral({ asrEngine: engine, asrModelSize: modelSize });
   },
 
   setSelectedModelSize: (size) => {
     set({ selectedModelSize: size });
+    // Persist to settings
+    useSettingsStore.getState().setGeneral({ asrModelSize: size });
   },
 
   setSelectedLanguage: (lang) => {
     const { engines } = get();
     const recommended = recommendEngine(lang, engines);
+    const modelSize = defaultModelSize(recommended);
     set({
       selectedLanguage: lang,
       selectedEngine: recommended,
-      selectedModelSize: defaultModelSize(recommended),
+      selectedModelSize: modelSize,
     });
+    // Persist to settings
+    useSettingsStore.getState().setGeneral({ asrEngine: recommended, asrModelSize: modelSize });
+  },
+
+  initFromSettings: () => {
+    const { general } = useSettingsStore.getState();
+    if (general.asrEngine) {
+      set({
+        selectedEngine: general.asrEngine,
+        selectedModelSize: general.asrModelSize || defaultModelSize(general.asrEngine),
+      });
+    }
   },
 
   startModelLoad: async (engineName, modelSize) => {
@@ -229,6 +263,122 @@ export const useEngineStore = create<EngineStore>((set, get) => ({
     set((state) => {
       const { [engineName]: _, ...rest } = state.loadingStates;
       return { loadingStates: rest };
+    });
+  },
+
+  startModelDownload: async (engineName, modelSize) => {
+    get().stopDownloadPolling(engineName);
+
+    set((state) => ({
+      downloadStates: {
+        ...state.downloadStates,
+        [engineName]: {
+          phase: "downloading",
+          modelSize,
+          progressPct: 0,
+          error: null,
+        },
+      },
+    }));
+
+    try {
+      const resp = await api.downloadEngineModel(engineName, modelSize);
+      if (resp.status === "already_downloaded") {
+        set((state) => ({
+          downloadStates: {
+            ...state.downloadStates,
+            [engineName]: {
+              phase: "completed",
+              modelSize,
+              progressPct: 100,
+              error: null,
+            },
+          },
+        }));
+        await get().fetchEngines();
+        return;
+      }
+      get().pollDownloadStatus(engineName);
+    } catch (err) {
+      set((state) => ({
+        downloadStates: {
+          ...state.downloadStates,
+          [engineName]: {
+            phase: "error",
+            modelSize,
+            progressPct: 0,
+            error: String(err),
+          },
+        },
+      }));
+    }
+  },
+
+  pollDownloadStatus: (engineName) => {
+    get().stopDownloadPolling(engineName);
+
+    const MAX_RETRIES = 5;
+
+    const poll = async (retryCount = 0) => {
+      try {
+        const status = await api.getDownloadStatus(engineName);
+        const currentState = get().downloadStates[engineName];
+        if (!currentState) return;
+
+        set((state) => ({
+          downloadStates: {
+            ...state.downloadStates,
+            [engineName]: {
+              phase: status.phase as api.DownloadPhase,
+              modelSize: status.model_size ?? currentState.modelSize,
+              progressPct: status.progress_pct,
+              error: status.error,
+            },
+          },
+        }));
+
+        if (status.phase === "completed" || status.phase === "error") {
+          delete _downloadPollTimers[engineName];
+          await get().fetchEngines();
+          return;
+        }
+
+        _downloadPollTimers[engineName] = setTimeout(() => poll(0), 1000);
+      } catch {
+        if (retryCount >= MAX_RETRIES - 1) {
+          set((state) => ({
+            downloadStates: {
+              ...state.downloadStates,
+              [engineName]: {
+                ...state.downloadStates[engineName],
+                phase: "error" as api.DownloadPhase,
+                error: "ASR service unreachable",
+              },
+            },
+          }));
+          delete _downloadPollTimers[engineName];
+          return;
+        }
+        _downloadPollTimers[engineName] = setTimeout(() => poll(retryCount + 1), 3000);
+      }
+    };
+
+    poll();
+  },
+
+  stopDownloadPolling: (engineName) => {
+    const timer = _downloadPollTimers[engineName];
+    if (timer) {
+      clearTimeout(timer);
+      delete _downloadPollTimers[engineName];
+    }
+  },
+
+  clearDownloadState: (engineName) => {
+    get().stopDownloadPolling(engineName);
+    set((state) => {
+      const { [engineName]: _, ...rest } = state.downloadStates;
+      return { downloadStates: rest };
     });
   },
 }));

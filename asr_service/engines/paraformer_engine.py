@@ -102,6 +102,42 @@ class ParaformerEngine:
     def is_loaded(self) -> bool:
         return self._model is not None
 
+    def is_model_downloaded(self, model_size: str) -> bool:
+        """Check if model files exist locally or in ModelScope cache."""
+        if model_size not in self.SUPPORTED_SIZES:
+            return False
+        # Check local model directories first
+        local_dir = LOCAL_MODEL_DIRS.get(model_size)
+        if local_dir:
+            local_path = config.PROJECT_ROOT / "meeting" / "models" / local_dir
+            if local_path.exists():
+                return True
+            local_path = config.MODELS_DIR / local_dir
+            if local_path.exists():
+                return True
+        # Check ModelScope cache
+        modelscope_cache = Path.home() / ".cache" / "modelscope" / "hub"
+        model_id = MODEL_MAP.get(model_size, "")
+        if model_id.startswith("iic/"):
+            cache_dir = modelscope_cache / "iic" / model_id.split("/", 1)[1]
+            return cache_dir.exists()
+        return False
+
+    async def download_model(self, model_size: str) -> str:
+        """Download model files without keeping in memory."""
+        if model_size not in self.SUPPORTED_SIZES:
+            raise ValueError(f"Unsupported model size: {model_size}")
+
+        AM = _ensure_automodel()
+        model_path = MODEL_MAP[model_size]
+
+        def _download():
+            model = AM(model=model_path, device="cpu")
+            del model
+            return model_path
+
+        return await asyncio.to_thread(_download)
+
     async def transcribe(
         self,
         audio: AudioInput,

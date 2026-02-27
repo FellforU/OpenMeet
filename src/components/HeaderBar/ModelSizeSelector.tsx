@@ -6,6 +6,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../ui/select";
+import { Badge } from "../ui/badge";
 import { useEngineStore, FALLBACK_MODEL_SIZES } from "../../stores/engineStore";
 
 export function ModelSizeSelector() {
@@ -17,6 +18,7 @@ export function ModelSizeSelector() {
   const sizes = engine?.model_sizes?.length
     ? engine.model_sizes
     : FALLBACK_MODEL_SIZES[selectedEngine] || [];
+  const downloadedModels = new Set(engine?.downloaded_models ?? []);
 
   return (
     <Select
@@ -31,7 +33,19 @@ export function ModelSizeSelector() {
       <SelectContent>
         {sizes.map((size) => (
           <SelectItem key={size} value={size}>
-            {size}
+            <div className="flex items-center gap-2">
+              <span>{size}</span>
+              {engine?.is_loaded && engine.current_model_size === size && (
+                <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                  {t("status.loaded")}
+                </Badge>
+              )}
+              {downloadedModels.has(size) && !(engine?.is_loaded && engine.current_model_size === size) && (
+                <Badge variant="outline" className="text-[10px] px-1 py-0 border-blue-300 text-blue-600">
+                  {t("downloadPhase.completed")}
+                </Badge>
+              )}
+            </div>
           </SelectItem>
         ))}
       </SelectContent>

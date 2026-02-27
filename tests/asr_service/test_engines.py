@@ -42,6 +42,16 @@ async def test_engine_capabilities_paraformer(client):
     assert paraformer["supports_timestamps"] is True
 
 
+async def test_engine_info_includes_downloaded_models(client):
+    """GET /engines includes downloaded_models field for each engine."""
+    resp = await client.get("/engines")
+    assert resp.status_code == 200
+    data = resp.json()
+    for engine in data:
+        assert "downloaded_models" in engine
+        assert isinstance(engine["downloaded_models"], list)
+
+
 # --- Load endpoint tests ---
 
 
@@ -124,3 +134,63 @@ async def test_unload_unknown_engine(client):
     """POST /engines/{name}/unload with unknown engine returns 404."""
     resp = await client.post("/engines/unknown/unload")
     assert resp.status_code == 404
+
+
+# --- Download endpoint tests ---
+
+
+async def test_download_returns_status(client):
+    """POST /engines/{name}/download returns downloading or already_downloaded."""
+    resp = await client.post("/engines/whisper/download?model_size=base")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] in ("downloading", "already_downloaded")
+    assert data["engine_name"] == "whisper"
+    assert data["model_size"] == "base"
+
+
+async def test_download_invalid_model_size(client):
+    """POST /engines/{name}/download with invalid model_size returns 400."""
+    resp = await client.post("/engines/whisper/download?model_size=nonexistent")
+    assert resp.status_code == 400
+    assert "nonexistent" in resp.json()["detail"]
+
+
+async def test_download_unknown_engine(client):
+    """POST /engines/{name}/download with unknown engine returns 404."""
+    resp = await client.post("/engines/unknown/download?model_size=base")
+    assert resp.status_code == 404
+
+
+async def test_download_status_idle(client):
+    """GET /engines/{name}/download-status returns idle when no download started."""
+    resp = await client.get("/engines/whisper/download-status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["phase"] == "idle"
+    assert data["engine_name"] == "whisper"
+    assert data["progress_pct"] == 0.0
+    assert data["error"] is None
+
+
+async def test_download_status_unknown_engine(client):
+    """GET /engines/{name}/download-status with unknown engine returns 404."""
+    resp = await client.get("/engines/unknown/download-status")
+    assert resp.status_code == 404
+
+
+async def test_download_status_after_start(client):
+    """GET /engines/{name}/download-status shows active state after download."""
+    post_resp = await client.post("/engines/whisper/download?model_size=base")
+    post_data = post_resp.json()
+
+    resp = await client.get("/engines/whisper/download-status")
+    assert resp.status_code == 200
+    data = resp.json()
+
+    if post_data["status"] == "already_downloaded":
+        # Model already in cache, download-status may remain idle
+        assert data["phase"] in ("idle", "downloading", "completed", "error")
+    else:
+        assert data["phase"] in ("downloading", "completed", "error")
+        assert data["model_size"] == "base"
