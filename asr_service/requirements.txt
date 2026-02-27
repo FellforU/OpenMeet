@@ -9,8 +9,11 @@ pytest-cov==6.*
 faster-whisper==1.1.*
 requests==2.*
 
-# FunASR engines (Qwen3-ASR, Paraformer, FSMN-VAD, CT-Transformer, CAMPPlus)
+# FunASR engines (Paraformer, FSMN-VAD, CT-Transformer, CAMPPlus)
 funasr>=1.2,<2.0
+
+# Qwen3-ASR engine
+qwen-asr>=0.3,<1.0
 
 # VAD / Diarization / ITN (optional, lazy-loaded with try-except)
 torch>=2.0

@@ -1,4 +1,4 @@
-import { useSettingsStore } from "../stores/settingsStore";
+import { useSettingsStore, parseModelRef } from "../stores/settingsStore";
 import { tauriFetch } from "./httpProxy";
 import type { Summary } from "../types";
 
@@ -74,7 +74,20 @@ export async function generateText(
   options?: { maxTokens?: number }
 ): Promise<LLMResponse> {
   const { general, llmProviders } = useSettingsStore.getState();
-  const providerKey = general.defaultLLMProvider;
+
+  // Resolve provider and model from compound key (new) or fallback to old provider-based logic
+  let providerKey: string;
+  let modelOverride: string | undefined;
+
+  const modelRef = general.defaultLLMModel;
+  if (modelRef && modelRef.includes("/")) {
+    const parsed = parseModelRef(modelRef);
+    providerKey = parsed.provider;
+    modelOverride = parsed.model;
+  } else {
+    providerKey = general.defaultLLMProvider;
+  }
+
   const config = llmProviders[providerKey];
 
   if (!config?.enabled) {
@@ -90,14 +103,14 @@ export async function generateText(
 
   if (endpoint.isOllama) {
     const host = config.host || "http://localhost:11434";
-    const model = resolveModel(config, "LLM", "qwen2.5:7b");
+    const model = modelOverride || resolveModel(config, "LLM", "qwen2.5:7b");
     text = await callOllama(host, model, prompt);
   } else {
     const apiKey = config.apiKey;
     if (!apiKey) {
       throw new Error(`API key not configured for "${providerKey}"`);
     }
-    const model = resolveModel(config, "LLM", providerKey);
+    const model = modelOverride || resolveModel(config, "LLM", providerKey);
     text = await callOpenAICompatible(
       endpoint.url,
       apiKey,

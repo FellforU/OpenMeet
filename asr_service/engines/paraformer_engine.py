@@ -123,6 +123,28 @@ class ParaformerEngine:
             return cache_dir.exists()
         return False
 
+    def get_model_path(self, model_size: str) -> str | None:
+        """Return the local path for a downloaded model."""
+        if model_size not in self.SUPPORTED_SIZES:
+            return None
+        # Check local model directories first
+        local_dir = LOCAL_MODEL_DIRS.get(model_size)
+        if local_dir:
+            local_path = config.PROJECT_ROOT / "meeting" / "models" / local_dir
+            if local_path.exists():
+                return str(local_path)
+            local_path = config.MODELS_DIR / local_dir
+            if local_path.exists():
+                return str(local_path)
+        # Check ModelScope cache
+        modelscope_cache = Path.home() / ".cache" / "modelscope" / "hub"
+        model_id = MODEL_MAP.get(model_size, "")
+        if model_id.startswith("iic/"):
+            cache_dir = modelscope_cache / "iic" / model_id.split("/", 1)[1]
+            if cache_dir.exists():
+                return str(cache_dir)
+        return None
+
     async def download_model(self, model_size: str) -> str:
         """Download model files without keeping in memory."""
         if model_size not in self.SUPPORTED_SIZES:

@@ -8,7 +8,7 @@ import {
 } from "../ui/select";
 import { useEngineStore } from "../../stores/engineStore";
 
-const LANGUAGE_KEYS = ["auto", "zh", "en", "ja", "ko", "de", "fr", "es", "yue", "wuu"] as const;
+const LANGUAGE_KEYS = ["auto", "zh", "en", "ja", "ko", "de", "fr", "es"] as const;
 
 export function LanguageSelector() {
   const { t } = useTranslation();

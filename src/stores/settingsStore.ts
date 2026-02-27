@@ -1,6 +1,14 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 
+export type ModelType = "LLM" | "EMBEDDING" | "RERANK";
+
+export interface ProviderModelEntry {
+  id: string;
+  type: ModelType;
+  enabled: boolean;
+}
+
 interface LLMProviderConfig {
   enabled: boolean;
   apiKey?: string;
@@ -11,16 +19,32 @@ interface LLMProviderConfig {
     EMBEDDING?: string;
     RERANK?: string;
   };
+  models?: ProviderModelEntry[];  // Fetched + user-toggled model list
 }
 
 interface GeneralConfig {
-  defaultLLMProvider: string;
-  defaultEmbeddingProvider: string;
-  defaultRerankProvider: string;
+  defaultLLMProvider: string;       // DEPRECATED: kept for migration
+  defaultEmbeddingProvider: string; // DEPRECATED: kept for migration
+  defaultRerankProvider: string;    // DEPRECATED: kept for migration
+  defaultLLMModel: string;         // compound key "provider/model"
+  defaultEmbeddingModel: string;   // compound key "provider/model"
+  defaultRerankModel: string;      // compound key "provider/model"
   autoSummary: boolean;
   exportFormat: "markdown" | "txt" | "json";
   asrEngine: string;
   asrModelSize: string;
+}
+
+// Parse a compound model reference like "openai/gpt-4o"
+export function parseModelRef(ref: string): { provider: string; model: string } {
+  const idx = ref.indexOf("/");
+  if (idx === -1) return { provider: ref, model: "" };
+  return { provider: ref.slice(0, idx), model: ref.slice(idx + 1) };
+}
+
+// Build a compound model reference
+export function makeModelRef(provider: string, model: string): string {
+  return `${provider}/${model}`;
 }
 
 interface CloudAsrConfig {
@@ -37,6 +61,8 @@ interface SettingsStore {
   loadSettings: () => Promise<void>;
   setGeneral: (updates: Partial<GeneralConfig>) => Promise<void>;
   setLLMProvider: (key: string, updates: Partial<LLMProviderConfig>) => Promise<void>;
+  setProviderModels: (providerKey: string, models: ProviderModelEntry[]) => Promise<void>;
+  toggleModelEnabled: (providerKey: string, modelId: string, enabled: boolean) => Promise<void>;
   setCloudAsr: (provider: "openaiWhisper" | "alibabaAsr", updates: Record<string, string>) => Promise<void>;
   setAutoDegradation: (enabled: boolean) => Promise<void>;
 }
@@ -46,6 +72,9 @@ const defaultState = {
     defaultLLMProvider: "ollama",
     defaultEmbeddingProvider: "ollama",
     defaultRerankProvider: "qwen",
+    defaultLLMModel: "",
+    defaultEmbeddingModel: "",
+    defaultRerankModel: "",
     autoSummary: true,
     exportFormat: "markdown" as const,
     asrEngine: "whisper",
@@ -151,9 +180,38 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
             mergedProviders[key] = { ...cfg, modelByType: { LLM: cfg.model } };
           }
         }
+
+        const mergedGeneral = { ...defaultState.general, ...data.general };
+
+        // Migrate: old provider-level defaults → new compound key defaults
+        if (!mergedGeneral.defaultLLMModel && mergedGeneral.defaultLLMProvider) {
+          const provider = mergedGeneral.defaultLLMProvider;
+          const cfg = mergedProviders[provider];
+          const model = cfg?.modelByType?.LLM || cfg?.model || "";
+          if (model) {
+            mergedGeneral.defaultLLMModel = `${provider}/${model}`;
+          }
+        }
+        if (!mergedGeneral.defaultEmbeddingModel && mergedGeneral.defaultEmbeddingProvider) {
+          const provider = mergedGeneral.defaultEmbeddingProvider;
+          const cfg = mergedProviders[provider];
+          const model = cfg?.modelByType?.EMBEDDING || "";
+          if (model) {
+            mergedGeneral.defaultEmbeddingModel = `${provider}/${model}`;
+          }
+        }
+        if (!mergedGeneral.defaultRerankModel && mergedGeneral.defaultRerankProvider) {
+          const provider = mergedGeneral.defaultRerankProvider;
+          const cfg = mergedProviders[provider];
+          const model = cfg?.modelByType?.RERANK || "";
+          if (model) {
+            mergedGeneral.defaultRerankModel = `${provider}/${model}`;
+          }
+        }
+
         const decrypted = await decryptProviders(mergedProviders);
         set({
-          general: { ...defaultState.general, ...data.general },
+          general: mergedGeneral,
           llmProviders: decrypted,
           cloudAsr: { ...defaultState.cloudAsr, ...data.cloudAsr },
           autoDegradation: data.autoDegradation ?? defaultState.autoDegradation,
@@ -166,14 +224,49 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
   setGeneral: async (updates) => {
     const newGeneral = { ...get().general, ...updates };
+    // Keep deprecated provider fields in sync when compound key changes
+    if (updates.defaultLLMModel) {
+      newGeneral.defaultLLMProvider = parseModelRef(updates.defaultLLMModel).provider;
+    }
+    if (updates.defaultEmbeddingModel) {
+      newGeneral.defaultEmbeddingProvider = parseModelRef(updates.defaultEmbeddingModel).provider;
+    }
+    if (updates.defaultRerankModel) {
+      newGeneral.defaultRerankProvider = parseModelRef(updates.defaultRerankModel).provider;
+    }
     set({ general: newGeneral });
-    await persistSettings({ ...get(), general: newGeneral });
+    await persistSettings(get());
   },
 
   setLLMProvider: async (key, updates) => {
     const newProviders = {
       ...get().llmProviders,
       [key]: { ...get().llmProviders[key], ...updates },
+    };
+    set({ llmProviders: newProviders });
+    await persistSettings({ ...get(), llmProviders: newProviders });
+  },
+
+  setProviderModels: async (providerKey, models) => {
+    const current = get().llmProviders[providerKey];
+    if (!current) return;
+    const newProviders = {
+      ...get().llmProviders,
+      [providerKey]: { ...current, models },
+    };
+    set({ llmProviders: newProviders });
+    await persistSettings({ ...get(), llmProviders: newProviders });
+  },
+
+  toggleModelEnabled: async (providerKey, modelId, enabled) => {
+    const current = get().llmProviders[providerKey];
+    if (!current?.models) return;
+    const newModels = current.models.map((m) =>
+      m.id === modelId ? { ...m, enabled } : m
+    );
+    const newProviders = {
+      ...get().llmProviders,
+      [providerKey]: { ...current, models: newModels },
     };
     set({ llmProviders: newProviders });
     await persistSettings({ ...get(), llmProviders: newProviders });

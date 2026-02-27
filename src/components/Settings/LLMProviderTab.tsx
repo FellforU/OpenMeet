@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Shield } from "lucide-react";
 import { Alert, AlertDescription } from "../ui/alert";
 import { useSettingsStore } from "../../stores/settingsStore";
+import type { ModelType } from "../../stores/settingsStore";
 import { ProviderCard } from "./ProviderCard";
 import { ProviderConfigModal } from "./ProviderConfigModal";
 
@@ -13,7 +14,7 @@ import zhipuSvg from "@lobehub/icons-static-svg/icons/zhipu-color.svg";
 import openaiSvg from "@lobehub/icons-static-svg/icons/openai.svg";
 import geminiSvg from "@lobehub/icons-static-svg/icons/gemini-color.svg";
 
-export type ModelType = "LLM" | "EMBEDDING" | "RERANK";
+export type { ModelType };
 
 export interface LLMProviderDef {
   key: string;
@@ -207,23 +208,30 @@ export function LLMProviderTab() {
             {t("llm.configured")}
           </h4>
           <div className="grid gap-2">
-            {configured.map((provider) => (
-              <ProviderCard
-                key={provider.key}
-                logoSrc={provider.logoSrc}
-                brandColor={provider.brandColor}
-                name={t(`llm.${provider.key}`)}
-                description={t(`llm.${provider.key}Desc`)}
-                type={provider.type}
-                supportedTypes={provider.supportedTypes}
-                isConfigured
-                isEnabled={llmProviders[provider.key]?.enabled}
-                onToggleEnabled={(val) =>
-                  setLLMProvider(provider.key, { enabled: val })
-                }
-                onClick={() => setConfiguring(provider.key)}
-              />
-            ))}
+            {configured.map((provider) => {
+              const models = llmProviders[provider.key]?.models;
+              const enabledModelCount = models
+                ? models.filter((m) => m.enabled).length
+                : undefined;
+              return (
+                <ProviderCard
+                  key={provider.key}
+                  logoSrc={provider.logoSrc}
+                  brandColor={provider.brandColor}
+                  name={t(`llm.${provider.key}`)}
+                  description={t(`llm.${provider.key}Desc`)}
+                  type={provider.type}
+                  supportedTypes={provider.supportedTypes}
+                  isConfigured
+                  isEnabled={llmProviders[provider.key]?.enabled}
+                  modelCount={enabledModelCount}
+                  onToggleEnabled={(val) =>
+                    setLLMProvider(provider.key, { enabled: val })
+                  }
+                  onClick={() => setConfiguring(provider.key)}
+                />
+              );
+            })}
           </div>
         </div>
       )}

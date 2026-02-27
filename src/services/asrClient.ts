@@ -187,3 +187,20 @@ export async function getDownloadStatus(
     `${ASR_BASE_URL}/engines/${engineName}/download-status`
   );
 }
+
+// --- Model Path API ---
+
+export interface ModelPathResponse {
+  engine_name: string;
+  model_size: string;
+  path: string | null;
+}
+
+export async function getModelPath(
+  engineName: string,
+  modelSize: string
+): Promise<ModelPathResponse> {
+  return fetchJson(
+    `${ASR_BASE_URL}/engines/${engineName}/model-path?model_size=${encodeURIComponent(modelSize)}`
+  );
+}

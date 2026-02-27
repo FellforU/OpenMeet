@@ -54,9 +54,7 @@
     "ko": "韩文",
     "de": "德文",
     "fr": "法文",
-    "es": "西班牙文",
-    "yue": "粤语",
-    "wuu": "吴语（上海话）"
+    "es": "西班牙文"
   },
   "engine": {
     "whisper": "Whisper",
@@ -122,7 +120,8 @@
     "segmentSaveFailed": "转录内容保存失败",
     "titleGenerateFailed": "标题生成失败",
     "summaryFailed": "摘要生成失败：{{message}}",
-    "noSegments": "未检测到语音。请检查 ASR 模型是否已加载，麦克风是否正常工作。"
+    "noSegments": "未检测到语音。请检查 ASR 模型是否已加载，麦克风是否正常工作。",
+    "modelPathNotFound": "模型文件未找到"
   },
   "processing": {
     "saving": "保存音频中...",

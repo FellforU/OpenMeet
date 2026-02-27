@@ -62,6 +62,16 @@ class WhisperEngine:
         except Exception:
             return False
 
+    def get_model_path(self, model_size: str) -> str | None:
+        """Return the local cache path for a downloaded model."""
+        if model_size not in self.SUPPORTED_SIZES:
+            return None
+        try:
+            path = faster_whisper.download_model(model_size, local_files_only=True)
+            return str(path)
+        except Exception:
+            return None
+
     async def download_model(self, model_size: str) -> str:
         """Download model files without loading into memory."""
         if model_size not in self.SUPPORTED_SIZES:

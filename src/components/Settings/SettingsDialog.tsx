@@ -18,6 +18,7 @@ import {
 import { Badge } from "../ui/badge";
 import { ModelManager } from "./ModelManager";
 import { LLMProviderTab, LLM_PROVIDERS } from "./LLMProviderTab";
+import { SystemModelSelector } from "./SystemModelSelector";
 import { useSettingsStore } from "../../stores/settingsStore";
 import logoWithText from "../../../ico/OpenMeet_1.png";
 
@@ -26,98 +27,55 @@ interface SettingsDialogProps {
   onClose: () => void;
 }
 
-const LLM_PROVIDER_OPTIONS = [
-  "ollama",
-  "deepseek",
-  "qwen",
-  "zhipu",
-  "openai",
-  "gemini",
-] as const;
-
-const EMBEDDING_PROVIDER_OPTIONS = LLM_PROVIDERS
-  .filter((p) => p.supportedTypes.includes("EMBEDDING"))
-  .map((p) => p.key);
-
-const RERANK_PROVIDER_OPTIONS = LLM_PROVIDERS
-  .filter((p) => p.supportedTypes.includes("RERANK"))
-  .map((p) => p.key);
-
 function GeneralSettings() {
   const { t } = useTranslation("settings");
   const { general, setGeneral } = useSettingsStore();
+
+  const hasRerankProviders = LLM_PROVIDERS.some((p) =>
+    p.supportedTypes.includes("RERANK")
+  );
 
   return (
     <div className="space-y-6 py-2">
       <div className="space-y-2">
         <label className="text-sm font-medium">
-          {t("general.defaultLLMProvider")}
+          {t("general.defaultLLMModel")}
         </label>
         <p className="text-xs text-muted-foreground">
-          {t("general.defaultLLMProviderDesc")}
+          {t("general.defaultLLMModelDesc")}
         </p>
-        <Select
-          value={general.defaultLLMProvider}
-          onValueChange={(v) => setGeneral({ defaultLLMProvider: v })}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {LLM_PROVIDER_OPTIONS.map((key) => (
-              <SelectItem key={key} value={key}>
-                {t(`llm.${key}`)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <SystemModelSelector
+          value={general.defaultLLMModel}
+          onChange={(v) => setGeneral({ defaultLLMModel: v })}
+          modelType="LLM"
+        />
       </div>
       <div className="space-y-2">
         <label className="text-sm font-medium">
-          {t("general.defaultEmbeddingProvider")}
+          {t("general.defaultEmbeddingModel")}
         </label>
         <p className="text-xs text-muted-foreground">
-          {t("general.defaultEmbeddingProviderDesc")}
+          {t("general.defaultEmbeddingModelDesc")}
         </p>
-        <Select
-          value={general.defaultEmbeddingProvider}
-          onValueChange={(v) => setGeneral({ defaultEmbeddingProvider: v })}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {EMBEDDING_PROVIDER_OPTIONS.map((key) => (
-              <SelectItem key={key} value={key}>
-                {t(`llm.${key}`)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <SystemModelSelector
+          value={general.defaultEmbeddingModel}
+          onChange={(v) => setGeneral({ defaultEmbeddingModel: v })}
+          modelType="EMBEDDING"
+        />
       </div>
-      {RERANK_PROVIDER_OPTIONS.length > 0 && (
+      {hasRerankProviders && (
         <div className="space-y-2">
           <label className="text-sm font-medium">
-            {t("general.defaultRerankProvider")}
+            {t("general.defaultRerankModel")}
           </label>
           <p className="text-xs text-muted-foreground">
-            {t("general.defaultRerankProviderDesc")}
+            {t("general.defaultRerankModelDesc")}
           </p>
-          <Select
-            value={general.defaultRerankProvider}
-            onValueChange={(v) => setGeneral({ defaultRerankProvider: v })}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {RERANK_PROVIDER_OPTIONS.map((key) => (
-                <SelectItem key={key} value={key}>
-                  {t(`llm.${key}`)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <SystemModelSelector
+            value={general.defaultRerankModel}
+            onChange={(v) => setGeneral({ defaultRerankModel: v })}
+            modelType="RERANK"
+          />
         </div>
       )}
       <div className="flex items-center justify-between">

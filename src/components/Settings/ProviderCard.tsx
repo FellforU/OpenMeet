@@ -13,6 +13,7 @@ interface ProviderCardProps {
   supportedTypes?: string[];
   isConfigured: boolean;
   isEnabled?: boolean;
+  modelCount?: number;
   onToggleEnabled?: (enabled: boolean) => void;
   onClick: () => void;
 }
@@ -32,6 +33,7 @@ export function ProviderCard({
   supportedTypes,
   isConfigured,
   isEnabled,
+  modelCount,
   onToggleEnabled,
   onClick,
 }: ProviderCardProps) {
@@ -67,6 +69,11 @@ export function ProviderCard({
             <Badge variant="outline" className="gap-1 border-green-300 text-[10px] text-green-600">
               <Check className="h-2.5 w-2.5" />
               {t("llm.configured")}
+            </Badge>
+          )}
+          {isConfigured && modelCount !== undefined && modelCount > 0 && (
+            <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-600">
+              {t("llm.enabledModels", { count: modelCount })}
             </Badge>
           )}
           {supportedTypes && supportedTypes.length > 0 && (

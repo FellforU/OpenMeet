@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { Shield, ChevronsUpDown, Check, Loader2, CheckCircle2, XCircle, RefreshCw, ExternalLink } from "lucide-react";
+import { Shield, Loader2, CheckCircle2, XCircle, RefreshCw, ExternalLink, Search } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Dialog,
@@ -11,10 +11,12 @@ import {
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Alert, AlertDescription } from "../ui/alert";
-import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
+import { Switch } from "../ui/switch";
 import { cn } from "../../lib/utils";
 import { PasswordInput } from "./PasswordInput";
 import { testLLMConnection, fetchModelList } from "../../services/llmClient";
+import type { ModelType } from "../../stores/settingsStore";
+import type { ProviderModelEntry } from "../../stores/settingsStore";
 
 interface FieldDef {
   key: string;
@@ -29,6 +31,7 @@ interface ProviderConfig {
   host?: string;
   model?: string;
   modelByType?: Record<string, string | undefined>;
+  models?: ProviderModelEntry[];
 }
 
 interface ProviderConfigModalProps {
@@ -39,150 +42,74 @@ interface ProviderConfigModalProps {
   providerName: string;
   fields: FieldDef[];
   presetModelsByType: Record<string, string[]>;
-  supportedTypes: string[];
+  supportedTypes: ModelType[];
   apiKeyUrl?: string;
   config: ProviderConfig;
   onSave: (config: Record<string, unknown>) => void;
 }
 
-function ModelSelector({
-  value,
-  onChange,
-  providerKey,
-  presetModels,
-  placeholder,
-  config,
-}: {
-  value: string;
-  onChange: (val: string) => void;
-  providerKey: string;
-  presetModels: string[];
-  placeholder: string;
-  config: { apiKey?: string; host?: string };
-}) {
-  const { t } = useTranslation("settings");
-  const [open, setOpen] = useState(false);
-  const [filter, setFilter] = useState("");
-  const [remoteModels, setRemoteModels] = useState<string[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [fetchError, setFetchError] = useState<string | null>(null);
+// Classify a model ID to a ModelType based on presets + heuristics
+function classifyModelType(
+  modelId: string,
+  presetModelsByType: Record<string, string[]>
+): ModelType {
+  // Check preset lists first
+  for (const [type, models] of Object.entries(presetModelsByType)) {
+    if (models.includes(modelId)) return type as ModelType;
+  }
+  // Heuristic fallback
+  const lower = modelId.toLowerCase();
+  if (lower.includes("embed")) return "EMBEDDING";
+  if (lower.includes("rerank")) return "RERANK";
+  return "LLM";
+}
 
-  const models = remoteModels ?? presetModels;
+// Merge remote models with existing saved models, preserving enabled state
+function mergeModels(
+  remoteIds: string[],
+  existingModels: ProviderModelEntry[],
+  presetModelsByType: Record<string, string[]>
+): ProviderModelEntry[] {
+  const existingMap = new Map(existingModels.map((m) => [m.id, m]));
+  const seen = new Set<string>();
+  const result: ProviderModelEntry[] = [];
 
-  const filtered = filter
-    ? models.filter((m) => m.toLowerCase().includes(filter.toLowerCase()))
-    : models;
+  // Add all remote models, preserving existing enabled state
+  for (const id of remoteIds) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const existing = existingMap.get(id);
+    result.push({
+      id,
+      type: existing?.type ?? classifyModelType(id, presetModelsByType),
+      enabled: existing?.enabled ?? true,
+    });
+  }
 
-  const loadModels = useCallback(async () => {
-    setLoading(true);
-    setFetchError(null);
-    try {
-      const list = await fetchModelList(providerKey, config);
-      setRemoteModels(list.length > 0 ? list : null);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setFetchError(msg);
-      setRemoteModels(null);
-    } finally {
-      setLoading(false);
+  // Add preset models not in remote list
+  for (const [type, models] of Object.entries(presetModelsByType)) {
+    for (const id of models) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const existing = existingMap.get(id);
+      result.push({
+        id,
+        type: (existing?.type ?? type) as ModelType,
+        enabled: existing?.enabled ?? false,
+      });
     }
-  }, [providerKey, config]);
+  }
 
-  const handleOpen = (isOpen: boolean) => {
-    setOpen(isOpen);
-    if (isOpen && remoteModels === null && !loading) {
-      loadModels();
-    }
+  return result;
+}
+
+// Group models by type
+function groupByType(models: ProviderModelEntry[]): Record<ModelType, ProviderModelEntry[]> {
+  return {
+    LLM: models.filter((m) => m.type === "LLM"),
+    EMBEDDING: models.filter((m) => m.type === "EMBEDDING"),
+    RERANK: models.filter((m) => m.type === "RERANK"),
   };
-
-  return (
-    <Popover open={open} onOpenChange={handleOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          className="w-full justify-between font-normal"
-        >
-          <span className={cn(!value && "text-muted-foreground")}>
-            {value || placeholder}
-          </span>
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-        <div className="flex items-center border-b px-3">
-          <Input
-            className="h-9 border-0 px-0 shadow-none focus-visible:ring-0"
-            placeholder={t("llm.searchModel")}
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-          />
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 shrink-0 p-0"
-            onClick={loadModels}
-            disabled={loading}
-            title={t("llm.fetchModels")}
-          >
-            {loading ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <RefreshCw className="h-3.5 w-3.5" />
-            )}
-          </Button>
-        </div>
-
-        <div className="max-h-[240px] overflow-y-auto p-1">
-          {fetchError && (
-            <p className="px-2 py-1.5 text-xs text-muted-foreground">
-              {fetchError}
-            </p>
-          )}
-
-          {filtered.length === 0 && filter && (
-            <button
-              className="flex w-full items-center rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
-              onClick={() => {
-                onChange(filter);
-                setOpen(false);
-                setFilter("");
-              }}
-            >
-              {t("llm.useCustomModel", { model: filter })}
-            </button>
-          )}
-
-          {filtered.map((model) => (
-            <button
-              key={model}
-              className="flex w-full items-center rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
-              onClick={() => {
-                onChange(model);
-                setOpen(false);
-                setFilter("");
-              }}
-            >
-              <Check
-                className={cn(
-                  "mr-2 h-4 w-4 shrink-0",
-                  value === model ? "opacity-100" : "opacity-0"
-                )}
-              />
-              {model}
-            </button>
-          ))}
-
-          {filtered.length === 0 && !filter && !loading && (
-            <p className="px-2 py-1.5 text-xs text-muted-foreground">
-              {t("llm.noModelsFound")}
-            </p>
-          )}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
 }
 
 export function ProviderConfigModal({
@@ -200,7 +127,10 @@ export function ProviderConfigModal({
 }: ProviderConfigModalProps) {
   const { t } = useTranslation("settings");
   const [localFields, setLocalFields] = useState<Record<string, string>>({});
-  const [localModelByType, setLocalModelByType] = useState<Record<string, string>>({});
+  const [localModels, setLocalModels] = useState<ProviderModelEntry[]>([]);
+  const [modelFilter, setModelFilter] = useState("");
+  const [fetchLoading, setFetchLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [testMessage, setTestMessage] = useState("");
 
@@ -216,39 +146,97 @@ export function ProviderConfigModal({
       }
       setLocalFields(fieldValues);
 
-      // Initialize per-type models from config.modelByType, fallback LLM to config.model
-      const modelByType: Record<string, string> = {};
-      for (const type of supportedTypes) {
-        const fromType = config.modelByType?.[type];
-        if (fromType) {
-          modelByType[type] = fromType;
-        } else if (type === "LLM" && config.model) {
-          modelByType[type] = config.model;
+      // Initialize models from config.models or generate from presets
+      if (config.models && config.models.length > 0) {
+        setLocalModels(config.models);
+      } else {
+        // Generate initial model list from presets
+        const initial: ProviderModelEntry[] = [];
+        for (const [type, models] of Object.entries(presetModelsByType)) {
+          for (const id of models) {
+            initial.push({ id, type: type as ModelType, enabled: false });
+          }
         }
+        setLocalModels(initial);
       }
-      setLocalModelByType(modelByType);
 
+      setModelFilter("");
+      setFetchError(null);
       setTestStatus("idle");
       setTestMessage("");
     }
-  }, [open, config, fields, supportedTypes]);
+  }, [open, config, fields, presetModelsByType]);
 
   const handleFieldChange = (key: string, value: string) => {
     setLocalFields((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleModelChange = (type: string, value: string) => {
-    setLocalModelByType((prev) => ({ ...prev, [type]: value }));
+  const connConfig = useMemo(
+    () => ({ apiKey: localFields.apiKey, host: localFields.host }),
+    [localFields.apiKey, localFields.host]
+  );
+
+  // Fetch remote models
+  const handleFetchModels = useCallback(async () => {
+    setFetchLoading(true);
+    setFetchError(null);
+    try {
+      const remoteIds = await fetchModelList(providerKey, connConfig);
+      if (remoteIds.length > 0) {
+        setLocalModels((prev) =>
+          mergeModels(remoteIds, prev, presetModelsByType)
+        );
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setFetchError(msg);
+    } finally {
+      setFetchLoading(false);
+    }
+  }, [providerKey, connConfig, presetModelsByType]);
+
+  // Auto-fetch on open if credentials are configured
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: only fetch on initial dialog open
+  useEffect(() => {
+    if (open && supportedTypes.length > 0) {
+      const hasCredentials = connConfig.apiKey || connConfig.host;
+      if (hasCredentials) {
+        handleFetchModels();
+      }
+    }
+  }, [open]);
+
+  const handleToggleModel = (modelId: string, enabled: boolean) => {
+    setLocalModels((prev) =>
+      prev.map((m) => (m.id === modelId ? { ...m, enabled } : m))
+    );
+  };
+
+  const handleToggleAll = (type: ModelType, enabled: boolean) => {
+    setLocalModels((prev) =>
+      prev.map((m) => (m.type === type ? { ...m, enabled } : m))
+    );
   };
 
   const handleSave = () => {
     const result: Record<string, unknown> = { ...localFields };
-    // Only write modelByType/model when per-type selectors are active (LLM providers)
-    // Cloud ASR providers pass supportedTypes=[] and keep model in localFields
+
     if (supportedTypes.length > 0) {
-      result.modelByType = { ...localModelByType };
-      if (localModelByType.LLM) {
-        result.model = localModelByType.LLM;
+      result.models = localModels;
+
+      // Build modelByType from first enabled model of each type (backward compat)
+      const modelByType: Record<string, string> = {};
+      for (const type of supportedTypes) {
+        const firstEnabled = localModels.find(
+          (m) => m.type === type && m.enabled
+        );
+        if (firstEnabled) {
+          modelByType[type] = firstEnabled.id;
+        }
+      }
+      result.modelByType = modelByType;
+      if (modelByType.LLM) {
+        result.model = modelByType.LLM;
       }
     }
     onSave(result);
@@ -258,30 +246,41 @@ export function ProviderConfigModal({
   const handleTest = async () => {
     setTestStatus("testing");
     setTestMessage("");
-    // Test using LLM model only
-    const testConfig = {
-      ...localFields,
-      model: localModelByType.LLM || config.model,
-      modelByType: localModelByType,
-    };
-    const result = await testLLMConnection(providerKey, testConfig);
-    if (result.success) {
-      setTestStatus("success");
-      setTestMessage(result.message);
-    } else {
+    try {
+      const firstLLM = localModels.find((m) => m.type === "LLM" && m.enabled);
+      const testConfig = {
+        ...localFields,
+        model: firstLLM?.id || config.model,
+        modelByType: { LLM: firstLLM?.id || config.modelByType?.LLM },
+      };
+      const result = await testLLMConnection(providerKey, testConfig);
+      if (result.success) {
+        setTestStatus("success");
+        setTestMessage(result.message);
+      } else {
+        setTestStatus("error");
+        setTestMessage(result.message);
+      }
+    } catch (err) {
       setTestStatus("error");
-      setTestMessage(result.message);
+      setTestMessage(err instanceof Error ? err.message : String(err));
     }
   };
 
-  const connConfig = useMemo(
-    () => ({ apiKey: localFields.apiKey, host: localFields.host }),
-    [localFields.apiKey, localFields.host]
-  );
+  // Filter and group models
+  const filteredModels = modelFilter
+    ? localModels.filter((m) =>
+        m.id.toLowerCase().includes(modelFilter.toLowerCase())
+      )
+    : localModels;
+
+  const grouped = groupByType(filteredModels);
+
+  const enabledCount = localModels.filter((m) => m.enabled).length;
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <div className="flex items-center gap-3">
             <img src={logoSrc} alt={providerName} className="h-6 w-6" />
@@ -291,83 +290,175 @@ export function ProviderConfigModal({
           </div>
         </DialogHeader>
 
-        <Alert className="mt-2">
-          <Shield className="h-4 w-4" />
-          <AlertDescription>{t("llm.securityNote")}</AlertDescription>
-        </Alert>
+        <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+          <Alert>
+            <Shield className="h-4 w-4" />
+            <AlertDescription>{t("llm.securityNote")}</AlertDescription>
+          </Alert>
 
-        <div className="mt-4 space-y-4">
-          {/* Non-model fields (apiKey, host, etc.) */}
-          {fields.map((field) => (
-            <div key={field.key} className="space-y-1.5">
-              <label className="text-sm font-medium">{t(field.labelKey)}</label>
-              {field.isPassword ? (
-                <PasswordInput
-                  value={localFields[field.key] || ""}
-                  onChange={(val) => handleFieldChange(field.key, val)}
-                  placeholder={field.placeholder}
-                />
-              ) : (
-                <Input
-                  value={localFields[field.key] || ""}
-                  onChange={(e) => handleFieldChange(field.key, e.target.value)}
-                  placeholder={field.placeholder}
-                />
+          {/* Credential fields */}
+          <div className="space-y-3">
+            {fields.map((field) => (
+              <div key={field.key} className="space-y-1.5">
+                <label className="text-sm font-medium">{t(field.labelKey)}</label>
+                {field.isPassword ? (
+                  <PasswordInput
+                    value={localFields[field.key] || ""}
+                    onChange={(val) => handleFieldChange(field.key, val)}
+                    placeholder={field.placeholder}
+                  />
+                ) : (
+                  <Input
+                    value={localFields[field.key] || ""}
+                    onChange={(e) => handleFieldChange(field.key, e.target.value)}
+                    placeholder={field.placeholder}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Model list panel */}
+          {supportedTypes.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-medium">{t("llm.modelList")}</h4>
+                <span className="text-xs text-muted-foreground">
+                  {t("llm.enabledModels", { count: enabledCount })}
+                </span>
+              </div>
+
+              {/* Search + refresh bar */}
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    className="h-8 pl-8 text-sm"
+                    placeholder={t("llm.searchModel")}
+                    value={modelFilter}
+                    onChange={(e) => setModelFilter(e.target.value)}
+                  />
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 shrink-0"
+                  onClick={handleFetchModels}
+                  disabled={fetchLoading}
+                  title={t("llm.fetchModels")}
+                >
+                  {fetchLoading ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+              </div>
+
+              {fetchError && (
+                <p className="text-xs text-destructive">{fetchError}</p>
               )}
-            </div>
-          ))}
 
-          {/* Per-type model selectors */}
-          {supportedTypes.map((type) => (
-            <div key={type} className="space-y-1.5">
-              <label className="text-sm font-medium">
-                {t(`llm.modelType_${type}`)}
-              </label>
-              <ModelSelector
-                value={localModelByType[type] || ""}
-                onChange={(val) => handleModelChange(type, val)}
-                providerKey={providerKey}
-                presetModels={presetModelsByType[type] || []}
-                placeholder={t("llm.selectModel")}
-                config={connConfig}
-              />
-            </div>
-          ))}
-        </div>
+              {fetchLoading && localModels.length === 0 && (
+                <p className="text-xs text-muted-foreground py-2">
+                  {t("llm.fetchingModels")}
+                </p>
+              )}
 
-        {/* Test connection section */}
-        <div className="mt-4">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleTest}
-            disabled={testStatus === "testing"}
-            className="w-full"
-          >
-            {testStatus === "testing" ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {t("llm.testing")}
-              </>
-            ) : (
-              t("llm.testConnection")
+              {/* Model list grouped by type */}
+              <div className="max-h-[280px] overflow-y-auto space-y-3 rounded-md border p-2">
+                {(["LLM", "EMBEDDING", "RERANK"] as ModelType[]).map((type) => {
+                  const models = grouped[type];
+                  if (models.length === 0) return null;
+                  const allEnabled = models.every((m) => m.enabled);
+
+                  return (
+                    <div key={type}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-medium text-muted-foreground">
+                          {t(`llm.modelType_${type}`)}
+                        </span>
+                        <button
+                          className="text-[10px] text-primary hover:underline"
+                          onClick={() => handleToggleAll(type, !allEnabled)}
+                        >
+                          {allEnabled ? t("llm.disableAll") : t("llm.enableAll")}
+                        </button>
+                      </div>
+                      <div className="space-y-0.5">
+                        {models.map((model) => (
+                          <div
+                            key={`${model.type}-${model.id}`}
+                            className="flex items-center justify-between rounded px-2 py-1 hover:bg-accent/50"
+                          >
+                            <span
+                              className={cn(
+                                "text-sm truncate mr-2",
+                                !model.enabled && "text-muted-foreground"
+                              )}
+                            >
+                              {model.id}
+                            </span>
+                            <Switch
+                              checked={model.enabled}
+                              onCheckedChange={(val) =>
+                                handleToggleModel(model.id, val)
+                              }
+                              className="h-4 w-7 shrink-0"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {filteredModels.length === 0 && !fetchLoading && (
+                  <p className="text-xs text-muted-foreground text-center py-4">
+                    {localModels.length === 0
+                      ? t("llm.noModelsHint")
+                      : t("llm.noModelsFound")}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Test connection */}
+          <div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleTest}
+              disabled={testStatus === "testing"}
+              className="w-full"
+            >
+              {testStatus === "testing" ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {t("llm.testing")}
+                </>
+              ) : (
+                t("llm.testConnection")
+              )}
+            </Button>
+            {testStatus === "success" && (
+              <div className="mt-2 flex items-start gap-2 rounded-md bg-green-50 dark:bg-green-950 p-2 text-sm text-green-700 dark:text-green-300">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{t("llm.testSuccess")}{testMessage && ` — ${testMessage}`}</span>
+              </div>
             )}
-          </Button>
-          {testStatus === "success" && (
-            <div className="mt-2 flex items-start gap-2 rounded-md bg-green-50 dark:bg-green-950 p-2 text-sm text-green-700 dark:text-green-300">
-              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{t("llm.testSuccess")}{testMessage && ` — ${testMessage}`}</span>
-            </div>
-          )}
-          {testStatus === "error" && (
-            <div className="mt-2 flex items-start gap-2 rounded-md bg-red-50 dark:bg-red-950 p-2 text-sm text-red-700 dark:text-red-300">
-              <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{t("llm.testFailed")}{testMessage}</span>
-            </div>
-          )}
+            {testStatus === "error" && (
+              <div className="mt-2 flex items-start gap-2 rounded-md bg-red-50 dark:bg-red-950 p-2 text-sm text-red-700 dark:text-red-300">
+                <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{t("llm.testFailed")}{testMessage}</span>
+              </div>
+            )}
+          </div>
         </div>
 
-        <div className="mt-6 flex items-center justify-between">
+        {/* Footer */}
+        <div className="flex items-center justify-between pt-4 border-t">
           {apiKeyUrl ? (
             <button
               className="flex items-center gap-1 text-xs text-primary hover:underline"

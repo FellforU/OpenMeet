@@ -367,6 +367,43 @@ async def get_download_status(engine_name: str):
     )
 
 
+class ModelPathResponse(BaseModel):
+    engine_name: str
+    model_size: str
+    path: str | None
+
+
+@router.get("/{engine_name}/model-path", response_model=ModelPathResponse)
+async def get_model_path(engine_name: str, model_size: str = Query(...)):
+    """Get the local filesystem path for a downloaded model."""
+    manager = get_manager()
+    engine = manager._engines.get(engine_name)
+    if not engine:
+        raise HTTPException(404, f"Engine '{engine_name}' not found")
+
+    # Validate model_size against engine capabilities
+    caps = await engine.get_capabilities()
+    if model_size not in caps.model_sizes:
+        raise HTTPException(
+            400,
+            f"Invalid model_size '{model_size}' for engine '{engine_name}'. "
+            f"Available: {caps.model_sizes}",
+        )
+
+    path = None
+    if hasattr(engine, "get_model_path"):
+        try:
+            path = engine.get_model_path(model_size)
+        except Exception as e:
+            logger.warning("get_model_path failed for %s/%s: %s", engine_name, model_size, e)
+
+    return ModelPathResponse(
+        engine_name=engine_name,
+        model_size=model_size,
+        path=path,
+    )
+
+
 @router.post("/{engine_name}/configure")
 async def configure_engine(engine_name: str, body: ConfigureEngineRequest):
     """Set runtime credentials for cloud engines (bypasses env vars)."""

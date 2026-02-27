@@ -54,9 +54,7 @@
     "ko": "Korean",
     "de": "German",
     "fr": "French",
-    "es": "Spanish",
-    "yue": "Cantonese",
-    "wuu": "Wu (Shanghai)"
+    "es": "Spanish"
   },
   "engine": {
     "whisper": "Whisper",
@@ -122,7 +120,8 @@
     "segmentSaveFailed": "Failed to save transcript",
     "titleGenerateFailed": "Failed to generate title",
     "summaryFailed": "Summary generation failed: {{message}}",
-    "noSegments": "No speech detected. Check if ASR model is loaded and microphone is working."
+    "noSegments": "No speech detected. Check if ASR model is loaded and microphone is working.",
+    "modelPathNotFound": "Model files not found on disk"
   },
   "processing": {
     "saving": "Saving audio...",

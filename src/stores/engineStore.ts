@@ -102,14 +102,6 @@ function recommendEngine(language: string, engines: EngineInfo[]): string {
     return e.is_loaded || (e.downloaded_models?.length ?? 0) > 0;
   };
 
-  // Chinese dialects → Qwen3-ASR (only engine supporting dialects)
-  const dialectCodes = ["yue", "wuu", "min_nan", "gan", "hakka", "xiang"];
-  if (dialectCodes.includes(language)) {
-    if (avail("qwen3")) return "qwen3";
-    // Fallback: alibaba cloud ASR also supports some Chinese dialects
-    if (isCloudEngineConfigured("alibaba-asr", cloudAsr)) return "alibaba-asr";
-  }
-
   // Standard Chinese → Qwen3 preferred, Paraformer fallback, then cloud
   if (language === "zh") {
     if (avail("qwen3")) return "qwen3";

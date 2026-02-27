@@ -1,4 +1,4 @@
-"""ASR engine wrapping Qwen3-ASR (FunASR AutoModel)."""
+"""ASR engine wrapping Qwen3-ASR (qwen-asr package)."""
 
 import asyncio
 from pathlib import Path
@@ -7,33 +7,36 @@ from typing import Optional, Callable
 from asr_service.engines.base import AudioInput, EngineCapabilities
 from asr_service.models.job import Segment
 
-MODELSCOPE_CACHE = Path.home() / ".cache" / "modelscope" / "hub"
+HF_CACHE = Path.home() / ".cache" / "huggingface" / "hub"
+
+# Map short model sizes to HuggingFace model IDs
+MODEL_MAP = {
+    "qwen3-asr-0.6B": "Qwen/Qwen3-ASR-0.6B",
+    "qwen3-asr-1.7B": "Qwen/Qwen3-ASR-1.7B",
+}
 
 
 # Lazy import to avoid hard dependency at module level
-def _import_automodel():
-    from funasr import AutoModel
-    return AutoModel
+def _import_qwen3asr():
+    from qwen_asr import Qwen3ASRModel
+    return Qwen3ASRModel
 
 
 # Module-level reference for mocking
-AutoModel = None
+Qwen3ASRModel = None
 
 
-def _ensure_automodel():
-    global AutoModel
-    if AutoModel is None:
-        AutoModel = _import_automodel()
-    return AutoModel
+def _ensure_qwen3asr():
+    global Qwen3ASRModel
+    if Qwen3ASRModel is None:
+        Qwen3ASRModel = _import_qwen3asr()
+    return Qwen3ASRModel
 
 
 class Qwen3Engine:
-    """ASR engine wrapping Qwen3-ASR via FunASR AutoModel."""
+    """ASR engine wrapping Qwen3-ASR via qwen-asr package."""
 
-    SUPPORTED_SIZES = [
-        "qwen3-asr-0.6B",
-        "qwen3-asr-1.7B",
-    ]
+    SUPPORTED_SIZES = list(MODEL_MAP.keys())
 
     def __init__(self):
         self._model = None
@@ -48,7 +51,7 @@ class Qwen3Engine:
                 "auto",
             ],
             supports_streaming=True,
-            supports_timestamps=True,
+            supports_timestamps=False,
             supports_diarization=False,
             model_sizes=self.SUPPORTED_SIZES,
         )
@@ -61,12 +64,16 @@ class Qwen3Engine:
 
         await self.unload_model()
 
-        AM = _ensure_automodel()
+        QwenASR = _ensure_qwen3asr()
+        model_id = MODEL_MAP[model_size]
 
         def _load():
-            return AM(
-                model=f"iic/{model_size}",
-                device="auto",
+            import torch
+            dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
+            return QwenASR.from_pretrained(
+                model_id,
+                dtype=dtype,
+                device_map="auto",
             )
 
         self._model = await asyncio.to_thread(_load)
@@ -81,24 +88,52 @@ class Qwen3Engine:
     def is_loaded(self) -> bool:
         return self._model is not None
 
+    def _get_hf_cache_dir(self, model_size: str) -> Path:
+        """Return the HuggingFace cache directory for a model."""
+        model_id = MODEL_MAP.get(model_size, "")
+        return HF_CACHE / f"models--{model_id.replace('/', '--')}"
+
     def is_model_downloaded(self, model_size: str) -> bool:
-        """Check if model exists in ModelScope cache."""
-        cache_dir = MODELSCOPE_CACHE / "iic" / model_size
-        return cache_dir.exists()
+        """Check if model exists in HuggingFace cache."""
+        cache_dir = self._get_hf_cache_dir(model_size)
+        snapshots_dir = cache_dir / "snapshots"
+        if not snapshots_dir.exists():
+            return False
+        try:
+            return any(snapshots_dir.iterdir())
+        except OSError:
+            return False
+
+    def get_model_path(self, model_size: str) -> Optional[str]:
+        """Return the local cache path for a downloaded model."""
+        if model_size not in self.SUPPORTED_SIZES:
+            return None
+        cache_dir = self._get_hf_cache_dir(model_size)
+        snapshots_dir = cache_dir / "snapshots"
+        if snapshots_dir.exists():
+            try:
+                subdirs = sorted(snapshots_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True)
+                if subdirs:
+                    return str(subdirs[0])
+            except OSError:
+                pass
+        if cache_dir.exists():
+            return str(cache_dir)
+        return None
 
     async def download_model(self, model_size: str) -> str:
         """Download model files without keeping in memory."""
         if model_size not in self.SUPPORTED_SIZES:
             raise ValueError(f"Unsupported model size: {model_size}")
 
-        AM = _ensure_automodel()
+        model_id = MODEL_MAP[model_size]
 
         def _download():
-            model = AM(model=f"iic/{model_size}", device="cpu")
-            del model
-            return str(MODELSCOPE_CACHE / "iic" / model_size)
+            from huggingface_hub import snapshot_download
+            return snapshot_download(model_id)
 
-        return await asyncio.to_thread(_download)
+        path = await asyncio.to_thread(_download)
+        return str(path)
 
     async def transcribe(
         self,
@@ -112,32 +147,20 @@ class Qwen3Engine:
         language = audio.language if audio.language and audio.language != "auto" else None
 
         def _transcribe():
-            kwargs = {"input": audio.file_path}
-            if language:
-                kwargs["language"] = language
-
-            results = model_ref.generate(**kwargs)
+            results = model_ref.transcribe(
+                audio=audio.file_path,
+                language=language,
+            )
 
             segments = []
             if isinstance(results, list):
                 for item in results:
-                    text = item.get("text", "")
-                    timestamps = item.get("timestamp", [])
-                    if timestamps and len(timestamps) > 0:
-                        ts = timestamps[0]
-                        start = float(ts[0]) if len(ts) > 0 else 0.0
-                        end = float(ts[1]) if len(ts) > 1 else start
-                    else:
-                        start = 0.0
-                        end = 0.0
-
-                    segments.append(
-                        Segment(
-                            start=round(start, 3),
-                            end=round(end, 3),
-                            text=text.strip(),
+                    text = getattr(item, "text", None) or (item.get("text") if isinstance(item, dict) else str(item))
+                    text = text.strip() if text else ""
+                    if text:
+                        segments.append(
+                            Segment(start=0.0, end=0.0, text=text)
                         )
-                    )
             return segments
 
         return await asyncio.to_thread(_transcribe)

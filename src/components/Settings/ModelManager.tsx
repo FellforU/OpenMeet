@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Download, Trash2, Loader2, Settings as SettingsIcon, Play, CheckCircle2 } from "lucide-react";
+import { Download, Trash2, Loader2, Settings as SettingsIcon, Play, CheckCircle2, FolderOpen } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../ui/dialog";
+import { invoke } from "@tauri-apps/api/core";
 import { useEngineStore } from "../../stores/engineStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { ProviderCard } from "./ProviderCard";
@@ -129,6 +130,7 @@ function VendorConfigModal({
   onDownload,
   onLoad,
   onUnload,
+  onRevealFolder,
 }: {
   open: boolean;
   onClose: () => void;
@@ -141,6 +143,7 @@ function VendorConfigModal({
   onDownload: (engine: string, size: string) => void;
   onLoad: (engine: string, size: string) => void;
   onUnload: (engine: string) => void;
+  onRevealFolder: (engine: string, size: string) => void;
 }) {
   const { t } = useTranslation("settings");
   const isEngineLoading = loadingState && (loadingState.phase === "preparing" || loadingState.phase === "loading");
@@ -198,6 +201,17 @@ function VendorConfigModal({
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5">
+                    {(isLoaded || isDownloaded) && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        title={t("common:action.openFolder")}
+                        onClick={() => onRevealFolder(vendor.engine, model.size)}
+                      >
+                        <FolderOpen className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                     {isLoaded ? (
                       // Loaded: show unload button
                       <Button
@@ -381,6 +395,19 @@ export function ModelManager() {
     startModelLoad(engine, size);
   };
 
+  const handleRevealFolder = async (engine: string, size: string) => {
+    try {
+      const resp = await api.getModelPath(engine, size);
+      if (resp.path) {
+        await invoke("reveal_file", { path: resp.path });
+      } else {
+        toast.error(t("common:error.modelPathNotFound"));
+      }
+    } catch (err) {
+      toast.error(String(err));
+    }
+  };
+
   const handleUnload = async (engine: string) => {
     setUnloadingKey(`${engine}:unload`);
     try {
@@ -561,6 +588,7 @@ export function ModelManager() {
           onDownload={handleDownload}
           onLoad={handleLoad}
           onUnload={handleUnload}
+          onRevealFolder={handleRevealFolder}
         />
       )}
 

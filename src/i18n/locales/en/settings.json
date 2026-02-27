@@ -15,7 +15,13 @@
     "defaultEmbeddingProvider": "Default Embedding Provider",
     "defaultEmbeddingProviderDesc": "Choose the embedding service for text vectorization",
     "defaultRerankProvider": "Default Rerank Provider",
-    "defaultRerankProviderDesc": "Choose the rerank service for search result reranking"
+    "defaultRerankProviderDesc": "Choose the rerank service for search result reranking",
+    "defaultLLMModel": "Default LLM Model",
+    "defaultLLMModelDesc": "Choose the model for meeting summary generation",
+    "defaultEmbeddingModel": "Default Embedding Model",
+    "defaultEmbeddingModelDesc": "Choose the model for text vectorization",
+    "defaultRerankModel": "Default Rerank Model",
+    "defaultRerankModelDesc": "Choose the model for search result reranking"
   },
   "llm": {
     "title": "LLM Provider Configuration",
@@ -58,7 +64,15 @@
     "modelType_LLM": "LLM Model",
     "modelType_EMBEDDING": "Embedding Model",
     "modelType_RERANK": "Rerank Model",
-    "selectModel": "Select model..."
+    "selectModel": "Select model...",
+    "modelList": "Model List",
+    "enabledModels": "{{count}} models enabled",
+    "noModelsHint": "Models will be fetched after saving credentials",
+    "fetchingModels": "Fetching model list...",
+    "noEnabledModels": "Please configure a provider and enable models in the LLM Models tab first",
+    "allModels": "All Models",
+    "enableAll": "Enable All",
+    "disableAll": "Disable All"
   },
   "asr": {
     "title": "ASR Model Manager",
