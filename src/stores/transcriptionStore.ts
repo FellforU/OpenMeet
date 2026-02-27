@@ -127,6 +127,43 @@ function summaryFromRust(r: {
   };
 }
 
+/**
+ * Try to load audio via asset protocol; fall back to base64 blob if that fails.
+ * Returns the usable object URL, or null on complete failure.
+ */
+async function loadAudioUrl(audioPath: string): Promise<string | null> {
+  // 1. Try Tauri asset protocol (zero-copy, fast)
+  try {
+    const assetUrl = convertFileSrc(audioPath);
+    const ok = await new Promise<boolean>((resolve) => {
+      const probe = new Audio();
+      probe.onloadedmetadata = () => {
+        probe.src = "";
+        resolve(true);
+      };
+      probe.onerror = () => resolve(false);
+      probe.src = assetUrl;
+    });
+    if (ok) return assetUrl;
+  } catch {
+    // convertFileSrc unavailable outside Tauri
+  }
+
+  // 2. Fallback: read file as base64 via Rust IPC
+  try {
+    const base64 = await invoke<string>("read_audio_file", { path: audioPath });
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    const blob = new Blob([bytes], { type: "audio/wav" });
+    return URL.createObjectURL(blob);
+  } catch {
+    return null;
+  }
+}
+
 export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
   ...initialState,
 
@@ -304,27 +341,9 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
       (p) => p.id === projectId
     );
     if (project?.audioPath) {
-      try {
-        // Use Tauri asset protocol for instant audio loading
-        const assetUrl = convertFileSrc(project.audioPath);
-        get().setAudioFile(project.audioPath, assetUrl);
-      } catch {
-        // Fallback: read file as base64
-        try {
-          const base64 = await invoke<string>("read_audio_file", {
-            path: project.audioPath,
-          });
-          const binary = atob(base64);
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) {
-            bytes[i] = binary.charCodeAt(i);
-          }
-          const blob = new Blob([bytes], { type: "audio/wav" });
-          const objectUrl = URL.createObjectURL(blob);
-          get().setAudioFile(project.audioPath, objectUrl);
-        } catch {
-          // Not in Tauri environment or file not found
-        }
+      const objectUrl = await loadAudioUrl(project.audioPath);
+      if (objectUrl) {
+        get().setAudioFile(project.audioPath, objectUrl);
       }
     }
   },

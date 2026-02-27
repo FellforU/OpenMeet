@@ -71,11 +71,6 @@ export function AudioPlayer() {
           if (audioRef.current) setDuration(audioRef.current.duration);
         }}
         onEnded={() => setIsPlaying(false)}
-        onError={() => {
-          if (audio.objectUrl) {
-            toast.error(t("error.audioLoadFailed"));
-          }
-        }}
       />
       <div className="flex items-center gap-1">
         <Button

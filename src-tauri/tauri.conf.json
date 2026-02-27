@@ -20,7 +20,11 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: https://asset.localhost http://asset.localhost; font-src 'self' data:; connect-src 'self' http://127.0.0.1:18090; media-src 'self' asset: https://asset.localhost http://asset.localhost"
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: https://asset.localhost http://asset.localhost; font-src 'self' data:; connect-src 'self' http://127.0.0.1:18090; media-src 'self' asset: https://asset.localhost http://asset.localhost blob:",
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPDATA/**", "$RESOURCE/**"]
+      }
     }
   },
   "bundle": {
