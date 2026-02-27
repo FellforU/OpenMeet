@@ -169,7 +169,7 @@ async def test_download_status_idle(client):
     data = resp.json()
     assert data["phase"] == "idle"
     assert data["engine_name"] == "whisper"
-    assert data["progress_pct"] == 0.0
+    assert data["elapsed_seconds"] == 0.0
     assert data["error"] is None
 
 

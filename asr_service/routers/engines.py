@@ -100,9 +100,8 @@ class DownloadStatus(BaseModel):
     engine_name: str
     model_size: str | None
     phase: DownloadPhase
-    progress_pct: float
-    downloaded_bytes: int
-    total_bytes: int
+    started_at: float | None
+    elapsed_seconds: float
     error: str | None
 
 
@@ -156,7 +155,6 @@ async def _do_download_model(engine_name: str, engine, model_size: str):
         status["phase"] = DownloadPhase.DOWNLOADING
         await engine.download_model(model_size)
         status["phase"] = DownloadPhase.COMPLETED
-        status["progress_pct"] = 100.0
     except Exception as e:
         status["phase"] = DownloadPhase.ERROR
         status["error"] = str(e)
@@ -321,9 +319,6 @@ async def download_engine_model(
         "model_size": model_size,
         "phase": DownloadPhase.DOWNLOADING,
         "started_at": time.time(),
-        "progress_pct": 0.0,
-        "downloaded_bytes": 0,
-        "total_bytes": 0,
         "error": None,
     }
     task = asyncio.create_task(_do_download_model(engine_name, engine, model_size))
@@ -346,13 +341,14 @@ async def get_download_status(engine_name: str):
 
     status = _download_status.get(engine_name)
     if status:
+        started_at = status.get("started_at")
+        elapsed = time.time() - started_at if started_at else 0.0
         return DownloadStatus(
             engine_name=engine_name,
             model_size=status.get("model_size"),
             phase=status["phase"],
-            progress_pct=status.get("progress_pct", 0.0),
-            downloaded_bytes=status.get("downloaded_bytes", 0),
-            total_bytes=status.get("total_bytes", 0),
+            started_at=started_at,
+            elapsed_seconds=round(elapsed, 1),
             error=status.get("error"),
         )
 
@@ -360,9 +356,8 @@ async def get_download_status(engine_name: str):
         engine_name=engine_name,
         model_size=None,
         phase=DownloadPhase.IDLE,
-        progress_pct=0.0,
-        downloaded_bytes=0,
-        total_bytes=0,
+        started_at=None,
+        elapsed_seconds=0.0,
         error=None,
     )
 

@@ -164,9 +164,7 @@ export interface DownloadStatus {
   engine_name: string;
   model_size: string | null;
   phase: DownloadPhase;
-  progress_pct: number;
-  downloaded_bytes: number;
-  total_bytes: number;
+  elapsed_seconds: number;
   error: string | null;
 }
 

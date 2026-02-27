@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Switch } from "../ui/switch";
-import { Progress } from "../ui/progress";
 import {
   Dialog,
   DialogContent,
@@ -138,7 +137,7 @@ function VendorConfigModal({
   downloadedModels: Set<string>;
   loadedModels: Set<string>;
   loadingState: { phase: string; modelSize: string; elapsedSeconds: number; error: string | null } | null;
-  downloadState: { phase: string; modelSize: string; progressPct: number; error: string | null } | null;
+  downloadState: { phase: string; modelSize: string; elapsedSeconds: number; error: string | null } | null;
   unloadingKey: string | null;
   onDownload: (engine: string, size: string) => void;
   onLoad: (engine: string, size: string) => void;
@@ -171,7 +170,7 @@ function VendorConfigModal({
             const isThisModelLoading = isEngineLoading && loadingState?.modelSize === model.size;
             const isThisModelDownloading = isEngineDownloading && downloadState?.modelSize === model.size;
             const isUnloading = unloadingKey === `${vendor.engine}:unload`;
-            const isBusy = Boolean(isEngineLoading) || Boolean(isEngineDownloading) || isUnloading;
+            const isThisModelBusy = isThisModelLoading || isThisModelDownloading || isUnloading;
 
             return (
               <div
@@ -217,7 +216,7 @@ function VendorConfigModal({
                       <Button
                         variant="destructive"
                         size="sm"
-                        disabled={isBusy}
+                        disabled={isThisModelBusy}
                         onClick={() => onUnload(vendor.engine)}
                       >
                         {isUnloading ? (
@@ -232,7 +231,7 @@ function VendorConfigModal({
                       <Button
                         variant="default"
                         size="sm"
-                        disabled={isBusy}
+                        disabled={isThisModelBusy}
                         onClick={() => onLoad(vendor.engine, model.size)}
                       >
                         {isThisModelLoading ? (
@@ -247,7 +246,7 @@ function VendorConfigModal({
                       <Button
                         variant="outline"
                         size="sm"
-                        disabled={isBusy}
+                        disabled={isThisModelBusy}
                         onClick={() => onDownload(vendor.engine, model.size)}
                       >
                         {isThisModelDownloading ? (
@@ -262,14 +261,14 @@ function VendorConfigModal({
                     )}
                   </div>
                 </div>
-                {/* Download progress bar */}
+                {/* Download elapsed time */}
                 {isThisModelDownloading && downloadState && (
-                  <div className="mt-2 space-y-1">
-                    <Progress value={downloadState.progressPct} className="h-2" />
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{t("common:downloadPhase.downloading")}</span>
-                      <span>{Math.round(downloadState.progressPct)}%</span>
-                    </div>
+                  <div className="mt-2 flex items-center gap-2 text-xs text-blue-600">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <span>{t("common:downloadPhase.downloading")}</span>
+                    <span className="text-muted-foreground">
+                      {formatElapsed(downloadState.elapsedSeconds)}
+                    </span>
                   </div>
                 )}
                 {/* Loading progress */}

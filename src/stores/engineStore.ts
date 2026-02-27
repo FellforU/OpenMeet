@@ -13,7 +13,7 @@ interface ModelLoadingState {
 interface ModelDownloadState {
   phase: api.DownloadPhase;
   modelSize: string;
-  progressPct: number;
+  elapsedSeconds: number;
   error: string | null;
 }
 
@@ -324,7 +324,7 @@ export const useEngineStore = create<EngineStore>((set, get) => ({
         [engineName]: {
           phase: "downloading",
           modelSize,
-          progressPct: 0,
+          elapsedSeconds: 0,
           error: null,
         },
       },
@@ -339,7 +339,7 @@ export const useEngineStore = create<EngineStore>((set, get) => ({
             [engineName]: {
               phase: "completed",
               modelSize,
-              progressPct: 100,
+              elapsedSeconds: 0,
               error: null,
             },
           },
@@ -355,7 +355,7 @@ export const useEngineStore = create<EngineStore>((set, get) => ({
           [engineName]: {
             phase: "error",
             modelSize,
-            progressPct: 0,
+            elapsedSeconds: 0,
             error: String(err),
           },
         },
@@ -380,7 +380,7 @@ export const useEngineStore = create<EngineStore>((set, get) => ({
             [engineName]: {
               phase: status.phase as api.DownloadPhase,
               modelSize: status.model_size ?? currentState.modelSize,
-              progressPct: status.progress_pct,
+              elapsedSeconds: status.elapsed_seconds,
               error: status.error,
             },
           },

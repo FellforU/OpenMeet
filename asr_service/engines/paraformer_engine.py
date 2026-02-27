@@ -150,13 +150,15 @@ class ParaformerEngine:
         if model_size not in self.SUPPORTED_SIZES:
             raise ValueError(f"Unsupported model size: {model_size}")
 
-        AM = _ensure_automodel()
-        model_path = MODEL_MAP[model_size]
+        # Skip if already available locally
+        if self.is_model_downloaded(model_size):
+            return self._resolve_model_path(model_size)
+
+        model_id = MODEL_MAP[model_size]
 
         def _download():
-            model = AM(model=model_path, device="cpu")
-            del model
-            return model_path
+            from modelscope.hub.snapshot_download import snapshot_download
+            return snapshot_download(model_id)
 
         return await asyncio.to_thread(_download)
 
