@@ -21,7 +21,21 @@
     "defaultEmbeddingModel": "默认 Embedding 模型",
     "defaultEmbeddingModelDesc": "选择用于文本向量化的模型",
     "defaultRerankModel": "默认 Rerank 模型",
-    "defaultRerankModelDesc": "选择用于搜索结果重排序的模型"
+    "defaultRerankModelDesc": "选择用于搜索结果重排序的模型",
+    "modelCacheDir": "模型缓存目录",
+    "modelCacheDirDesc": "自定义 ASR 模型文件的存储位置，为空时使用系统默认路径",
+    "selectFolder": "选择文件夹",
+    "openFolder": "打开",
+    "defaultCachePath": "系统默认: {{path}}",
+    "migrateCacheTitle": "迁移缓存数据",
+    "migrateCacheDesc": "是否将已下载的模型数据迁移到新目录？",
+    "migrateFrom": "从",
+    "migrateTo": "到",
+    "migrateSkip": "仅修改路径",
+    "migrateConfirm": "迁移数据并修改路径",
+    "migrating": "正在迁移...",
+    "migrateSuccess": "迁移完成",
+    "migrateFailed": "迁移失败: {{error}}"
   },
   "llm": {
     "title": "LLM 提供商配置",

@@ -7,6 +7,7 @@ use audio_capture::AudioCaptureState;
 use crypto::CryptoState;
 use sidecar::SidecarState;
 use std::collections::HashMap;
+use std::path::Path;
 use tauri::Manager;
 
 #[derive(serde::Serialize)]
@@ -92,6 +93,63 @@ fn reveal_file(path: String) -> Result<(), String> {
     }
 }
 
+#[tauri::command]
+async fn pick_folder() -> Result<Option<String>, String> {
+    let handle = rfd::AsyncFileDialog::new().pick_folder().await;
+    Ok(handle.map(|h| h.path().to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+async fn migrate_cache_dir(from: String, to: String) -> Result<String, String> {
+    let src = Path::new(&from);
+    let dst = Path::new(&to);
+
+    if !src.exists() {
+        return Err("Source directory does not exist".to_string());
+    }
+
+    std::fs::create_dir_all(dst).map_err(|e| format!("Failed to create target directory: {}", e))?;
+
+    let mut file_count: u64 = 0;
+    let mut total_bytes: u64 = 0;
+
+    fn copy_recursive(src: &Path, dst: &Path, count: &mut u64, bytes: &mut u64) -> Result<(), String> {
+        for entry in std::fs::read_dir(src).map_err(|e| format!("Read dir failed: {}", e))? {
+            let entry = entry.map_err(|e| format!("Entry error: {}", e))?;
+            let src_path = entry.path();
+            let dst_path = dst.join(entry.file_name());
+
+            if src_path.is_dir() {
+                std::fs::create_dir_all(&dst_path)
+                    .map_err(|e| format!("Create dir failed: {}", e))?;
+                copy_recursive(&src_path, &dst_path, count, bytes)?;
+            } else if !dst_path.exists() {
+                let metadata = std::fs::metadata(&src_path)
+                    .map_err(|e| format!("Metadata error: {}", e))?;
+                std::fs::copy(&src_path, &dst_path)
+                    .map_err(|e| format!("Copy failed: {}", e))?;
+                *count += 1;
+                *bytes += metadata.len();
+            }
+        }
+        Ok(())
+    }
+
+    copy_recursive(src, dst, &mut file_count, &mut total_bytes)?;
+
+    let size_mb = total_bytes as f64 / 1_048_576.0;
+    Ok(format!("{} files copied ({:.1} MB)", file_count, size_mb))
+}
+
+#[tauri::command]
+fn get_default_cache_dir() -> String {
+    dirs::cache_dir()
+        .unwrap_or_default()
+        .join("huggingface/hub")
+        .to_string_lossy()
+        .to_string()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -152,6 +210,9 @@ pub fn run() {
             http_fetch,
             open_url,
             reveal_file,
+            pick_folder,
+            migrate_cache_dir,
+            get_default_cache_dir,
             crypto::encrypt_secret,
             crypto::decrypt_secret,
         ])

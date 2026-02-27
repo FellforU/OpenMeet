@@ -29,3 +29,5 @@ uuid = { version = "1", features = ["v4"] }
 rsa = "0.9"
 rand = "0.8"
 sha2 = "0.10"
+rfd = "0.15"
+dirs = "6"

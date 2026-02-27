@@ -1,13 +1,28 @@
+import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Settings, BrainCircuit, Mic, Info } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { Settings, BrainCircuit, Mic, Info, FolderOpen, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "../ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "../ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { Switch } from "../ui/switch";
+import { Input } from "../ui/input";
+import { Button } from "../ui/button";
 import {
   Select,
   SelectContent,
@@ -34,6 +49,67 @@ function GeneralSettings() {
   const hasRerankProviders = LLM_PROVIDERS.some((p) =>
     p.supportedTypes.includes("RERANK")
   );
+
+  const [defaultCachePath, setDefaultCachePath] = useState("");
+  const [migrateOpen, setMigrateOpen] = useState(false);
+  const [pendingNewDir, setPendingNewDir] = useState("");
+  const [migrating, setMigrating] = useState(false);
+
+  useEffect(() => {
+    invoke<string>("get_default_cache_dir")
+      .then(setDefaultCachePath)
+      .catch(() => {});
+  }, []);
+
+  const handlePickFolder = useCallback(async () => {
+    try {
+      const picked = await invoke<string | null>("pick_folder");
+      if (!picked) return;
+
+      const oldDir = general.modelCacheDir || defaultCachePath;
+      if (picked === oldDir) return;
+
+      setPendingNewDir(picked);
+      setMigrateOpen(true);
+    } catch {
+      // User cancelled or dialog unavailable
+    }
+  }, [general.modelCacheDir, defaultCachePath]);
+
+  const handleMigrateSkip = useCallback(async () => {
+    setMigrateOpen(false);
+    await setGeneral({ modelCacheDir: pendingNewDir });
+    toast.success(t("general.modelCacheDir"));
+  }, [pendingNewDir, setGeneral, t]);
+
+  const handleMigrateConfirm = useCallback(async () => {
+    const from = general.modelCacheDir || defaultCachePath;
+    setMigrating(true);
+    try {
+      const result = await invoke<string>("migrate_cache_dir", {
+        from,
+        to: pendingNewDir,
+      });
+      await setGeneral({ modelCacheDir: pendingNewDir });
+      toast.success(t("general.migrateSuccess") + ` (${result})`);
+    } catch (err) {
+      toast.error(t("general.migrateFailed", { error: String(err) }));
+    } finally {
+      setMigrating(false);
+      setMigrateOpen(false);
+    }
+  }, [general.modelCacheDir, defaultCachePath, pendingNewDir, setGeneral, t]);
+
+  const handleOpenFolder = useCallback(() => {
+    const dir = general.modelCacheDir || defaultCachePath;
+    if (dir) {
+      invoke("reveal_file", { path: dir }).catch(() => {});
+    }
+  }, [general.modelCacheDir, defaultCachePath]);
+
+  const handleClearCacheDir = useCallback(async () => {
+    await setGeneral({ modelCacheDir: "" });
+  }, [setGeneral]);
 
   return (
     <div className="space-y-6 py-2">
@@ -112,6 +188,65 @@ function GeneralSettings() {
           </SelectContent>
         </Select>
       </div>
+
+      {/* Model Cache Directory */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium">
+          {t("general.modelCacheDir")}
+        </label>
+        <p className="text-xs text-muted-foreground">
+          {t("general.modelCacheDirDesc")}
+        </p>
+        <div className="flex items-center gap-2">
+          <Input
+            readOnly
+            value={general.modelCacheDir}
+            placeholder={defaultCachePath ? t("general.defaultCachePath", { path: defaultCachePath }) : ""}
+            className="flex-1 text-xs"
+          />
+          <Button variant="outline" size="sm" onClick={handlePickFolder}>
+            {t("general.selectFolder")}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={handleOpenFolder} title={t("general.openFolder")}>
+            <FolderOpen className="h-4 w-4" />
+          </Button>
+        </div>
+        {general.modelCacheDir && (
+          <button
+            onClick={handleClearCacheDir}
+            className="text-xs text-muted-foreground underline hover:text-foreground"
+          >
+            {t("general.defaultCachePath", { path: defaultCachePath })}
+          </button>
+        )}
+      </div>
+
+      {/* Migration Confirm Dialog */}
+      <AlertDialog open={migrateOpen} onOpenChange={setMigrateOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("general.migrateCacheTitle")}</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>{t("general.migrateCacheDesc")}</p>
+                <div className="rounded-md bg-muted p-3 text-xs font-mono space-y-1">
+                  <p><span className="font-semibold">{t("general.migrateFrom")}:</span> {general.modelCacheDir || defaultCachePath}</p>
+                  <p><span className="font-semibold">{t("general.migrateTo")}:</span> {pendingNewDir}</p>
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleMigrateSkip} disabled={migrating}>
+              {t("general.migrateSkip")}
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={handleMigrateConfirm} disabled={migrating}>
+              {migrating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {migrating ? t("general.migrating") : t("general.migrateConfirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

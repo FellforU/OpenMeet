@@ -77,7 +77,10 @@ fn find_python(project_root: &PathBuf) -> String {
 }
 
 #[tauri::command]
-pub async fn start_asr_service(state: State<'_, SidecarState>) -> Result<String, String> {
+pub async fn start_asr_service(
+    state: State<'_, SidecarState>,
+    cache_dir: Option<String>,
+) -> Result<String, String> {
     let mut proc_guard = state.process.lock().map_err(|e| e.to_string())?;
 
     if proc_guard.is_some() {
@@ -87,9 +90,17 @@ pub async fn start_asr_service(state: State<'_, SidecarState>) -> Result<String,
     let project_root = find_project_root()?;
     let python = find_python(&project_root);
 
-    let child = Command::new(&python)
-        .args(["-m", "asr_service.main"])
-        .current_dir(&project_root)
+    let mut cmd = Command::new(&python);
+    cmd.args(["-m", "asr_service.main"])
+        .current_dir(&project_root);
+
+    // Inject cache env vars if custom path is set
+    if let Some(ref dir) = cache_dir {
+        cmd.env("HF_HUB_CACHE", dir);
+        cmd.env("MODELSCOPE_CACHE", dir);
+    }
+
+    let child = cmd
         .spawn()
         .map_err(|e| format!("Failed to start ASR service (python={}): {}", python, e))?;
 

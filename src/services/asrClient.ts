@@ -15,8 +15,8 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return JSON.parse(resp.body);
 }
 
-export async function startAsrService(): Promise<string> {
-  return invoke<string>("start_asr_service");
+export async function startAsrService(cacheDir?: string): Promise<string> {
+  return invoke<string>("start_asr_service", { cacheDir: cacheDir || null });
 }
 
 export async function stopAsrService(): Promise<string> {

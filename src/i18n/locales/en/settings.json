@@ -21,7 +21,21 @@
     "defaultEmbeddingModel": "Default Embedding Model",
     "defaultEmbeddingModelDesc": "Choose the model for text vectorization",
     "defaultRerankModel": "Default Rerank Model",
-    "defaultRerankModelDesc": "Choose the model for search result reranking"
+    "defaultRerankModelDesc": "Choose the model for search result reranking",
+    "modelCacheDir": "Model Cache Directory",
+    "modelCacheDirDesc": "Customize storage location for ASR model files. Leave empty for system default.",
+    "selectFolder": "Select Folder",
+    "openFolder": "Open",
+    "defaultCachePath": "System default: {{path}}",
+    "migrateCacheTitle": "Migrate Cache Data",
+    "migrateCacheDesc": "Move downloaded model data to the new directory?",
+    "migrateFrom": "From",
+    "migrateTo": "To",
+    "migrateSkip": "Change path only",
+    "migrateConfirm": "Migrate data and change path",
+    "migrating": "Migrating...",
+    "migrateSuccess": "Migration complete",
+    "migrateFailed": "Migration failed: {{error}}"
   },
   "llm": {
     "title": "LLM Provider Configuration",

@@ -53,7 +53,9 @@ function App() {
 
     async function initAsr() {
       try {
-        await startAsrService();
+        const { general } = useSettingsStore.getState();
+        const cacheDir = general.modelCacheDir || undefined;
+        await startAsrService(cacheDir);
       } catch {
         // May already be running or in browser dev mode
       }

@@ -33,6 +33,7 @@ interface GeneralConfig {
   exportFormat: "markdown" | "txt" | "json";
   asrEngine: string;
   asrModelSize: string;
+  modelCacheDir: string;
 }
 
 // Parse a compound model reference like "openai/gpt-4o"
@@ -79,6 +80,7 @@ const defaultState = {
     exportFormat: "markdown" as const,
     asrEngine: "whisper",
     asrModelSize: "base",
+    modelCacheDir: "",
   },
   llmProviders: {
     ollama: { enabled: true, host: "http://localhost:11434", model: "qwen2.5:7b", modelByType: { LLM: "qwen2.5:7b" } },
