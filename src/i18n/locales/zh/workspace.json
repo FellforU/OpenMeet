@@ -33,8 +33,9 @@
     "failed": "导出失败"
   },
   "regenerate": {
-    "summary": "生成摘要",
-    "transcript": "生成转录",
+    "title": "重新生成",
+    "summary": "重新生成摘要",
+    "transcript": "重新生成转录",
     "summaryGenerating": "正在生成摘要...",
     "transcriptGenerating": "正在转录..."
   },

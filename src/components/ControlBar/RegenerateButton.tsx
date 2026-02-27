@@ -1,8 +1,14 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Loader2, Sparkles, FileText } from "lucide-react";
+import { Loader2, Sparkles, FileText, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 import { useTranscriptionStore } from "../../stores/transcriptionStore";
 import { useProjectStore } from "../../stores/projectStore";
 import { useEngineStore } from "../../stores/engineStore";
@@ -12,7 +18,6 @@ import { generateMeetingSummary } from "../../services/llmClient";
 export function RegenerateButton() {
   const { t } = useTranslation("workspace");
   const segments = useTranscriptionStore((s) => s.segments);
-  const summary = useTranscriptionStore((s) => s.summary);
   const audioFilePath = useTranscriptionStore((s) => s.audio.filePath);
   const jobStatus = useTranscriptionStore((s) => s.job.status);
   const startTranscription = useTranscriptionStore((s) => s.startTranscription);
@@ -32,19 +37,14 @@ export function RegenerateButton() {
 
   const hasAudio = Boolean(audioFilePath);
   const hasSegments = segments.length > 0;
-  const hasSummary = summary !== null;
 
-  // Show "Generate Summary" when we have segments but no summary
-  const needsSummary = hasSegments && !hasSummary;
-  // Show "Generate Transcript" when we have audio but no segments
-  const needsTranscript = hasAudio && !hasSegments;
-
-  if (!needsSummary && !needsTranscript) {
+  // Nothing to regenerate
+  if (!hasAudio && !hasSegments) {
     return null;
   }
 
   const handleGenerateSummary = async () => {
-    if (!activeProjectId) return;
+    if (!activeProjectId || segments.length === 0) return;
     setGenerating("summary");
     try {
       const transcriptText = segments
@@ -76,41 +76,40 @@ export function RegenerateButton() {
     }
   };
 
-  if (needsTranscript) {
+  // Show spinner when generating
+  if (generating) {
     return (
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={isBusy}
-        onClick={handleGenerateTranscript}
-      >
-        {generating === "transcript" ? (
-          <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-        ) : (
-          <FileText className="mr-1.5 h-4 w-4" />
-        )}
-        {generating === "transcript"
-          ? t("regenerate.transcriptGenerating")
-          : t("regenerate.transcript")}
+      <Button variant="outline" size="sm" disabled>
+        <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+        {generating === "summary"
+          ? t("regenerate.summaryGenerating")
+          : t("regenerate.transcriptGenerating")}
       </Button>
     );
   }
 
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      disabled={isBusy}
-      onClick={handleGenerateSummary}
-    >
-      {generating === "summary" ? (
-        <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-      ) : (
-        <Sparkles className="mr-1.5 h-4 w-4" />
-      )}
-      {generating === "summary"
-        ? t("regenerate.summaryGenerating")
-        : t("regenerate.summary")}
-    </Button>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="sm" disabled={isBusy}>
+          <RefreshCw className="mr-1.5 h-4 w-4" />
+          {t("regenerate.title")}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent>
+        {hasAudio && (
+          <DropdownMenuItem onClick={handleGenerateTranscript}>
+            <FileText className="mr-2 h-4 w-4" />
+            {t("regenerate.transcript")}
+          </DropdownMenuItem>
+        )}
+        {hasSegments && (
+          <DropdownMenuItem onClick={handleGenerateSummary}>
+            <Sparkles className="mr-2 h-4 w-4" />
+            {t("regenerate.summary")}
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

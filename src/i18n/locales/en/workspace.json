@@ -33,8 +33,9 @@
     "failed": "Export failed"
   },
   "regenerate": {
-    "summary": "Generate Summary",
-    "transcript": "Generate Transcript",
+    "title": "Regenerate",
+    "summary": "Regenerate Summary",
+    "transcript": "Regenerate Transcript",
     "summaryGenerating": "Generating summary...",
     "transcriptGenerating": "Transcribing..."
   },
