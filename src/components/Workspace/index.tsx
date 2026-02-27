@@ -6,6 +6,7 @@ import { TranscriptPanel } from "./TranscriptPanel";
 import { SummaryPanel } from "./SummaryPanel";
 import { NotesPanel } from "./NotesPanel";
 import { AttachmentsPanel } from "./AttachmentsPanel";
+import { ExportButton } from "./ExportButton";
 import { useTranscriptionStore } from "../../stores/transcriptionStore";
 import { useProjectStore } from "../../stores/projectStore";
 
@@ -22,24 +23,27 @@ export function Workspace() {
 
   return (
     <Tabs value={activeTab} onValueChange={setActiveTab} className="flex h-full flex-col">
-      <TabsList className="mx-4 mt-1 w-fit">
-        <TabsTrigger value="transcript" className="gap-1.5">
-          <FileText className="h-3.5 w-3.5" />
-          {t("tabs.transcript")}
-        </TabsTrigger>
-        <TabsTrigger value="summary" className="gap-1.5">
-          <Lightbulb className="h-3.5 w-3.5" />
-          {t("tabs.summary")}
-        </TabsTrigger>
-        <TabsTrigger value="notes" className="gap-1.5">
-          <NotebookPen className="h-3.5 w-3.5" />
-          {t("tabs.notes")}
-        </TabsTrigger>
-        <TabsTrigger value="attachments" className="gap-1.5">
-          <Paperclip className="h-3.5 w-3.5" />
-          {t("tabs.attachments")}
-        </TabsTrigger>
-      </TabsList>
+      <div className="mx-4 mt-1 flex items-center justify-between">
+        <TabsList className="w-fit">
+          <TabsTrigger value="transcript" className="gap-1.5">
+            <FileText className="h-3.5 w-3.5" />
+            {t("tabs.transcript")}
+          </TabsTrigger>
+          <TabsTrigger value="summary" className="gap-1.5">
+            <Lightbulb className="h-3.5 w-3.5" />
+            {t("tabs.summary")}
+          </TabsTrigger>
+          <TabsTrigger value="notes" className="gap-1.5">
+            <NotebookPen className="h-3.5 w-3.5" />
+            {t("tabs.notes")}
+          </TabsTrigger>
+          <TabsTrigger value="attachments" className="gap-1.5">
+            <Paperclip className="h-3.5 w-3.5" />
+            {t("tabs.attachments")}
+          </TabsTrigger>
+        </TabsList>
+        <ExportButton />
+      </div>
       <TabsContent value="transcript" className="flex-1 overflow-hidden">
         <TranscriptPanel />
       </TabsContent>

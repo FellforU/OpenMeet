@@ -25,12 +25,18 @@
     "deadline": "截止日期"
   },
   "export": {
-    "title": "导出",
+    "title": "导出会议纪要",
     "markdown": "Markdown (.md)",
     "plainText": "纯文本 (.txt)",
     "json": "JSON (.json)",
     "success": "已导出为 {{format}}",
     "failed": "导出失败"
+  },
+  "regenerate": {
+    "summary": "生成摘要",
+    "transcript": "生成转录",
+    "summaryGenerating": "正在生成摘要...",
+    "transcriptGenerating": "正在转录..."
   },
   "recording": {
     "start": "开始录制",

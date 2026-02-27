@@ -25,12 +25,18 @@
     "deadline": "Deadline"
   },
   "export": {
-    "title": "Export",
+    "title": "Export Minutes",
     "markdown": "Markdown (.md)",
     "plainText": "Plain Text (.txt)",
     "json": "JSON (.json)",
     "success": "Exported as {{format}}",
     "failed": "Export failed"
+  },
+  "regenerate": {
+    "summary": "Generate Summary",
+    "transcript": "Generate Transcript",
+    "summaryGenerating": "Generating summary...",
+    "transcriptGenerating": "Transcribing..."
   },
   "recording": {
     "start": "Start Recording",
