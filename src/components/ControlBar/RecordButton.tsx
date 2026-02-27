@@ -17,6 +17,7 @@ const STEP_LABEL_MAP: Record<string, string> = {
   merging: "processing.merging",
   loading: "processing.loading",
   titling: "processing.titling",
+  summarizing: "processing.summarizing",
 };
 
 export function RecordButton() {

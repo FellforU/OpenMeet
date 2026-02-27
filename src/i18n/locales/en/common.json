@@ -108,13 +108,20 @@
     "title": "Something went wrong",
     "tryAgain": "Try Again",
     "reloadApp": "Reload App",
-    "recordingFailed": "Recording failed: {{message}}"
+    "recordingFailed": "Recording failed: {{message}}",
+    "audioSaveFailed": "Failed to save audio",
+    "audioMergeFailed": "Failed to merge audio, using new recording",
+    "audioLoadFailed": "Failed to load audio",
+    "segmentSaveFailed": "Failed to save transcript",
+    "titleGenerateFailed": "Failed to generate title",
+    "summaryFailed": "Summary generation failed: {{message}}"
   },
   "processing": {
     "saving": "Saving audio...",
     "merging": "Merging audio...",
     "loading": "Loading audio...",
-    "titling": "Generating title..."
+    "titling": "Generating title...",
+    "summarizing": "Generating summary..."
   },
   "toast": {
     "fileLoaded": "Loaded: {{name}}",

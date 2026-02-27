@@ -108,13 +108,20 @@
     "title": "出了点问题",
     "tryAgain": "重试",
     "reloadApp": "重新加载应用",
-    "recordingFailed": "录制启动失败：{{message}}"
+    "recordingFailed": "录制启动失败：{{message}}",
+    "audioSaveFailed": "音频保存失败",
+    "audioMergeFailed": "音频合并失败，使用新录制文件",
+    "audioLoadFailed": "音频加载失败",
+    "segmentSaveFailed": "转录内容保存失败",
+    "titleGenerateFailed": "标题生成失败",
+    "summaryFailed": "摘要生成失败：{{message}}"
   },
   "processing": {
     "saving": "保存音频中...",
     "merging": "合并音频中...",
     "loading": "加载音频中...",
-    "titling": "生成标题中..."
+    "titling": "生成标题中...",
+    "summarizing": "生成摘要中..."
   },
   "toast": {
     "fileLoaded": "已加载: {{name}}",

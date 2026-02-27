@@ -201,7 +201,8 @@ pub async fn start_recording(
             Ok(conn) => conn,
             Err(e) => {
                 eprintln!("WebSocket connection failed: {}", e);
-                is_rec.store(false, Ordering::SeqCst);
+                // Do NOT set is_recording=false here — audio capture should
+                // continue so the WAV file is still saved when the user stops.
                 return;
             }
         };
@@ -250,10 +251,8 @@ pub async fn stop_recording(
     app: tauri::AppHandle,
     state: State<'_, AudioCaptureState>,
 ) -> Result<String, String> {
-    if !state.is_recording.load(Ordering::SeqCst) {
-        return Ok("Not recording".to_string());
-    }
-
+    // Always attempt to stop and save — even if is_recording was cleared
+    // (e.g. by a WebSocket failure), samples may still have been captured.
     state.is_recording.store(false, Ordering::SeqCst);
     state.is_paused.store(false, Ordering::SeqCst);
 

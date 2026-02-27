@@ -1,9 +1,11 @@
 import { create } from "zustand";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { toast } from "sonner";
+import i18n from "../i18n";
 import * as api from "../services/asrClient";
 import { useTranscriptionStore } from "./transcriptionStore";
 import { useProjectStore } from "./projectStore";
-import { generateMeetingTitle } from "../services/llmClient";
+import { generateMeetingTitle, generateMeetingSummary } from "../services/llmClient";
 import type { Segment } from "../types";
 
 type RecordingStatus = "idle" | "recording" | "paused";
@@ -12,6 +14,7 @@ type ProcessingStep =
   | "merging"
   | "loading"
   | "titling"
+  | "summarizing"
   | null;
 
 interface RecordingStore {
@@ -45,6 +48,14 @@ function closeWebSocket() {
     wsConnection = null;
   }
 }
+
+/** Check if a string looks like an absolute file path (not an error message) */
+function isFilePath(s: string): boolean {
+  return s.startsWith("/") || /^[A-Za-z]:[/\\]/.test(s);
+}
+
+const t = (key: string, opts?: Record<string, string>) =>
+  i18n.t(key, opts);
 
 export const useRecordingStore = create<RecordingStore>((set, get) => ({
   status: "idle",
@@ -115,9 +126,8 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
     // Start audio capture in Rust
     try {
       await invoke<string>("start_recording", { jobId: job.id });
-    } catch (err) {
+    } catch {
       // If Tauri invoke fails (e.g., in dev browser), recording UI still works
-      console.warn("Audio capture unavailable:", err);
     }
   },
 
@@ -187,7 +197,11 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
 
       // Persist segments to SQLite
       if (activeProjectId) {
-        useTranscriptionStore.getState().persistSegments(activeProjectId).catch(() => {});
+        try {
+          await useTranscriptionStore.getState().persistSegments(activeProjectId);
+        } catch {
+          toast.error(t("error.segmentSaveFailed"));
+        }
       }
     }
 
@@ -195,11 +209,12 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
     let audioPath: string | null = null;
     try {
       const result = await invoke<string>("stop_recording");
-      if (result && result.length > 0) {
+      // Validate the result is a real file path, not an error message
+      if (result && result.length > 0 && isFilePath(result)) {
         audioPath = result;
       }
     } catch {
-      // Ignore if not in Tauri
+      toast.error(t("error.audioSaveFailed"));
     }
 
     // Merge audio files if project already has an audio path
@@ -215,10 +230,21 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
           });
           audioPath = merged;
         } catch {
-          // Use new file if merge fails
+          toast.warning(t("error.audioMergeFailed"));
         }
       }
       await useProjectStore.getState().updateProject(activeProjectId, { audioPath });
+    }
+
+    // Persist durationMs from segments (even when audio capture failed)
+    if (activeProjectId) {
+      const currentSegments = useTranscriptionStore.getState().segments;
+      if (currentSegments.length > 0) {
+        const durationMs = Math.round(
+          currentSegments[currentSegments.length - 1].end * 1000
+        );
+        await useProjectStore.getState().updateProject(activeProjectId, { durationMs });
+      }
     }
 
     // Load audio file for playback using asset protocol (instant)
@@ -240,7 +266,7 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
           const objectUrl = URL.createObjectURL(blob);
           useTranscriptionStore.getState().setAudioFile(audioPath, objectUrl);
         } catch {
-          // Ignore if not in Tauri environment
+          toast.error(t("error.audioLoadFailed"));
         }
       }
     }
@@ -257,8 +283,25 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
           const title = await generateMeetingTitle(activeProject.createdAt, transcriptText);
           await useProjectStore.getState().updateProject(activeProjectId, { title });
         } catch {
-          // Silently fail - user can manually generate later
+          toast.warning(t("error.titleGenerateFailed"));
         }
+      }
+    }
+
+    // Auto-generate meeting summary
+    const finalSegments = useTranscriptionStore.getState().segments;
+    if (activeProjectId && finalSegments.length > 0) {
+      set({ processingStep: "summarizing" });
+      const transcriptText = finalSegments
+        .map((s) => (s.speaker ? `[${s.speaker}] ${s.text}` : s.text))
+        .join("\n");
+      try {
+        const summary = await generateMeetingSummary(transcriptText);
+        useTranscriptionStore.getState().setSummary(summary);
+        await useTranscriptionStore.getState().persistSummary(activeProjectId);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        toast.error(t("error.summaryFailed", { message: msg }));
       }
     }
 
