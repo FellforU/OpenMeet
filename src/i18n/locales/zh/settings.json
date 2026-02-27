@@ -80,7 +80,9 @@
     "autoDegradation": "启用自动降级",
     "autoDegradationDesc": "本地 GPU 不足时自动回退到云端 API",
     "securityNote": "API 密钥仅存储在本地，不会发送到我们的服务器。",
-    "loading": "加载中..."
+    "loading": "加载中...",
+    "loadSuccess": "{{model}} 模型加载成功",
+    "loadFailed": "模型加载失败：{{error}}"
   },
   "about": {
     "description": "本地优先的 AI 会议转录工具。基于 Tauri 2.x、React 19、FastAPI、Ollama 构建。",

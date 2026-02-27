@@ -96,13 +96,37 @@ export async function listEngines(): Promise<EngineInfo[]> {
   return fetchJson(`${ASR_BASE_URL}/engines`);
 }
 
+export type LoadPhase = "idle" | "preparing" | "loading" | "ready" | "error";
+
+export interface LoadResponse {
+  status: "loading" | "already_loaded";
+  engine_name: string;
+  model_size: string;
+}
+
+export interface LoadingStatus {
+  engine_name: string;
+  model_size: string | null;
+  phase: LoadPhase;
+  elapsed_seconds: number;
+  error: string | null;
+}
+
 export async function loadEngineModel(
   engineName: string,
   modelSize: string
-): Promise<EngineInfo> {
+): Promise<LoadResponse> {
   return fetchJson(
     `${ASR_BASE_URL}/engines/${engineName}/load?model_size=${encodeURIComponent(modelSize)}`,
     { method: "POST" }
+  );
+}
+
+export async function getLoadStatus(
+  engineName: string
+): Promise<LoadingStatus> {
+  return fetchJson(
+    `${ASR_BASE_URL}/engines/${engineName}/load-status`
   );
 }
 

@@ -80,7 +80,9 @@
     "autoDegradation": "Enable auto-degradation",
     "autoDegradationDesc": "Automatically fall back to cloud API when local GPU is insufficient",
     "securityNote": "API keys are stored locally and never sent to our servers.",
-    "loading": "Loading..."
+    "loading": "Loading...",
+    "loadSuccess": "{{model}} model loaded successfully",
+    "loadFailed": "Model load failed: {{error}}"
   },
   "about": {
     "description": "Local-first AI meeting transcription tool. Built with Tauri 2.x, React 19, FastAPI, Ollama.",

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Download, Trash2, Loader2, Settings as SettingsIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -109,13 +109,20 @@ const CLOUD_ASR_DEFS: CloudAsrDef[] = [
   },
 ];
 
+function formatElapsed(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
 // Vendor card config modal
 function VendorConfigModal({
   open,
   onClose,
   vendor,
   loadedModels,
-  loadingKey,
+  loadingState,
+  unloadingKey,
   onLoad,
   onUnload,
 }: {
@@ -123,11 +130,13 @@ function VendorConfigModal({
   onClose: () => void;
   vendor: VendorDef;
   loadedModels: Set<string>;
-  loadingKey: string | null;
+  loadingState: { phase: string; modelSize: string; elapsedSeconds: number; error: string | null } | null;
+  unloadingKey: string | null;
   onLoad: (engine: string, size: string) => void;
   onUnload: (engine: string) => void;
 }) {
   const { t } = useTranslation("settings");
+  const isEngineLoading = loadingState && (loadingState.phase === "preparing" || loadingState.phase === "loading");
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -147,17 +156,19 @@ function VendorConfigModal({
           {vendor.models.map((model) => {
             const key = `${vendor.engine}:${model.size}`;
             const isLoaded = loadedModels.has(key);
-            const isOperating = loadingKey === key || loadingKey === `${vendor.engine}:unload`;
+            const isThisModelLoading = isEngineLoading && loadingState?.modelSize === model.size;
+            const isUnloading = unloadingKey === `${vendor.engine}:unload`;
+            const isDisabled = Boolean(isEngineLoading) || isUnloading;
 
             return (
               <div
                 key={key}
                 className="flex items-center justify-between rounded-lg border border-border p-3"
               >
-                <div>
+                <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="font-medium">{model.size}</span>
-                    {isLoaded && (
+                    {isLoaded && !isThisModelLoading && (
                       <Badge variant="outline" className="border-green-300 text-green-600">
                         {t("common:status.loaded")}
                       </Badge>
@@ -169,15 +180,31 @@ function VendorConfigModal({
                       {model.vramGb} GB VRAM
                     </Badge>
                   </div>
+                  {isThisModelLoading && loadingState && (
+                    <div className="mt-1.5 flex items-center gap-2 text-xs text-blue-600">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      <span>
+                        {t(`common:loadPhase.${loadingState.phase}`)}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {formatElapsed(loadingState.elapsedSeconds)}
+                      </span>
+                    </div>
+                  )}
+                  {loadingState?.phase === "error" && loadingState.modelSize === model.size && (
+                    <div className="mt-1.5 text-xs text-destructive">
+                      {loadingState.error}
+                    </div>
+                  )}
                 </div>
                 {isLoaded ? (
                   <Button
                     variant="destructive"
                     size="sm"
-                    disabled={isOperating}
+                    disabled={isDisabled}
                     onClick={() => onUnload(vendor.engine)}
                   >
-                    {isOperating ? (
+                    {isUnloading ? (
                       <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                     ) : (
                       <Trash2 className="mr-1.5 h-3.5 w-3.5" />
@@ -188,15 +215,17 @@ function VendorConfigModal({
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={isOperating}
+                    disabled={isDisabled}
                     onClick={() => onLoad(vendor.engine, model.size)}
                   >
-                    {isOperating ? (
+                    {isThisModelLoading ? (
                       <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                     ) : (
                       <Download className="mr-1.5 h-3.5 w-3.5" />
                     )}
-                    {t("common:action.load")}
+                    {loadingState?.phase === "error" && loadingState.modelSize === model.size
+                      ? t("common:action.retry")
+                      : t("common:action.load")}
                   </Button>
                 )}
               </div>
@@ -210,16 +239,39 @@ function VendorConfigModal({
 
 export function ModelManager() {
   const { t } = useTranslation("settings");
-  const { engines, fetchEngines } = useEngineStore();
+  const { engines, fetchEngines, loadingStates, startModelLoad, clearLoadingState } =
+    useEngineStore();
   const { cloudAsr, setCloudAsr, autoDegradation, setAutoDegradation } =
     useSettingsStore();
-  const [loadingKey, setLoadingKey] = useState<string | null>(null);
+  const [unloadingKey, setUnloadingKey] = useState<string | null>(null);
   const [configuringVendor, setConfiguringVendor] = useState<string | null>(null);
   const [configuringAsr, setConfiguringAsr] = useState<string | null>(null);
 
   useEffect(() => {
     fetchEngines();
   }, [fetchEngines]);
+
+  // Track which engines have already been toasted to prevent duplicates
+  const notifiedRef = useRef<Set<string>>(new Set());
+
+  // Watch loading states for toast notifications
+  useEffect(() => {
+    for (const [engineName, state] of Object.entries(loadingStates)) {
+      if (notifiedRef.current.has(engineName)) continue;
+      if (state.phase === "ready") {
+        notifiedRef.current.add(engineName);
+        toast.success(t("asr.loadSuccess", { model: state.modelSize }));
+        clearLoadingState(engineName);
+      } else if (state.phase === "error") {
+        notifiedRef.current.add(engineName);
+        toast.error(t("asr.loadFailed", { error: state.error ?? "" }));
+      }
+    }
+    // Clean up notifiedRef when states are removed
+    for (const key of notifiedRef.current) {
+      if (!loadingStates[key]) notifiedRef.current.delete(key);
+    }
+  }, [loadingStates, t, clearLoadingState]);
 
   const loadedModels = useMemo(
     () =>
@@ -231,28 +283,20 @@ export function ModelManager() {
     [engines]
   );
 
-  const handleLoad = async (engine: string, size: string) => {
-    const key = `${engine}:${size}`;
-    setLoadingKey(key);
-    try {
-      await api.loadEngineModel(engine, size);
-      await fetchEngines();
-    } catch (err) {
-      toast.error(String(err));
-    } finally {
-      setLoadingKey(null);
-    }
+  const handleLoad = (engine: string, size: string) => {
+    // startModelLoad initializes phase to "preparing", overwriting any prior error state
+    startModelLoad(engine, size);
   };
 
   const handleUnload = async (engine: string) => {
-    setLoadingKey(`${engine}:unload`);
+    setUnloadingKey(`${engine}:unload`);
     try {
       await api.unloadEngineModel(engine);
       await fetchEngines();
     } catch (err) {
       toast.error(String(err));
     } finally {
-      setLoadingKey(null);
+      setUnloadingKey(null);
     }
   };
 
@@ -405,7 +449,8 @@ export function ModelManager() {
           onClose={() => setConfiguringVendor(null)}
           vendor={configuringVendorDef}
           loadedModels={loadedModels}
-          loadingKey={loadingKey}
+          loadingState={loadingStates[configuringVendorDef.engine] ?? null}
+          unloadingKey={unloadingKey}
           onLoad={handleLoad}
           onUnload={handleUnload}
         />

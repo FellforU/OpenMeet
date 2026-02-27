@@ -1,7 +1,9 @@
 """Engine listing and management endpoints."""
 
+import asyncio
 import logging
-from typing import Optional
+import time
+from enum import Enum
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -11,6 +13,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/engines", tags=["engines"])
 
 _manager = None
+
+# Background loading state tracking
+_loading_status: dict[str, dict] = {}
+_loading_tasks: dict[str, asyncio.Task] = {}
 
 
 def set_manager(manager):
@@ -24,6 +30,23 @@ def get_manager():
     return _manager
 
 
+def reset_loading_state():
+    """Reset module-level loading state. Used in test teardown."""
+    _loading_status.clear()
+    for task in _loading_tasks.values():
+        if not task.done():
+            task.cancel()
+    _loading_tasks.clear()
+
+
+class LoadPhase(str, Enum):
+    IDLE = "idle"
+    PREPARING = "preparing"
+    LOADING = "loading"
+    READY = "ready"
+    ERROR = "error"
+
+
 class EngineInfo(BaseModel):
     name: str
     supported_languages: list[str]
@@ -33,6 +56,21 @@ class EngineInfo(BaseModel):
     model_sizes: list[str]
     is_loaded: bool
     current_model_size: str | None
+
+
+class LoadResponse(BaseModel):
+    status: str  # "loading" | "already_loaded"
+    engine_name: str
+    model_size: str
+
+
+class LoadingStatus(BaseModel):
+    engine_name: str
+    model_size: str | None
+    phase: LoadPhase
+    started_at: float | None
+    elapsed_seconds: float
+    error: str | None
 
 
 class ConfigureEngineRequest(BaseModel):
@@ -54,6 +92,21 @@ async def _build_engine_info(engine) -> EngineInfo:
     )
 
 
+async def _do_load_model(engine_name: str, engine, model_size: str):
+    """Background task to load model."""
+    status = _loading_status[engine_name]
+    try:
+        status["phase"] = LoadPhase.LOADING
+        await engine.load_model(model_size)
+        status["phase"] = LoadPhase.READY
+    except Exception as e:
+        status["phase"] = LoadPhase.ERROR
+        status["error"] = str(e)
+        logger.error("Failed to load model %s/%s: %s", engine_name, model_size, e)
+    finally:
+        _loading_tasks.pop(engine_name, None)
+
+
 @router.get("", response_model=list[EngineInfo])
 async def list_engines():
     """List all available ASR engines and their capabilities."""
@@ -64,20 +117,90 @@ async def list_engines():
     return results
 
 
-@router.post("/{engine_name}/load", response_model=EngineInfo)
+@router.post("/{engine_name}/load", response_model=LoadResponse)
 async def load_engine_model(
     engine_name: str, model_size: str = Query(...)
 ):
-    """Load a specific model for an engine. Downloads if needed."""
+    """Start loading a model in the background. Returns immediately."""
     manager = get_manager()
     engine = manager._engines.get(engine_name)
     if not engine:
         raise HTTPException(404, f"Engine '{engine_name}' not found")
-    try:
-        await engine.load_model(model_size)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-    return await _build_engine_info(engine)
+
+    # Validate model_size against capabilities
+    caps = await engine.get_capabilities()
+    if model_size not in caps.model_sizes:
+        raise HTTPException(
+            400,
+            f"Invalid model_size '{model_size}' for engine '{engine_name}'. "
+            f"Available: {caps.model_sizes}",
+        )
+
+    # Already loaded with same model_size
+    if engine.is_loaded() and getattr(engine, "_model_size", None) == model_size:
+        return LoadResponse(
+            status="already_loaded",
+            engine_name=engine_name,
+            model_size=model_size,
+        )
+
+    # Already has a loading task in progress
+    if engine_name in _loading_tasks and not _loading_tasks[engine_name].done():
+        return LoadResponse(
+            status="loading",
+            engine_name=engine_name,
+            model_size=model_size,
+        )
+
+    # Start background loading
+    _loading_status[engine_name] = {
+        "engine_name": engine_name,
+        "model_size": model_size,
+        "phase": LoadPhase.PREPARING,
+        "started_at": time.time(),
+        "error": None,
+    }
+    task = asyncio.create_task(_do_load_model(engine_name, engine, model_size))
+    _loading_tasks[engine_name] = task
+
+    return LoadResponse(
+        status="loading",
+        engine_name=engine_name,
+        model_size=model_size,
+    )
+
+
+@router.get("/{engine_name}/load-status", response_model=LoadingStatus)
+async def get_load_status(engine_name: str):
+    """Get the current loading status for an engine."""
+    manager = get_manager()
+    engine = manager._engines.get(engine_name)
+    if not engine:
+        raise HTTPException(404, f"Engine '{engine_name}' not found")
+
+    status = _loading_status.get(engine_name)
+    if status:
+        started_at = status.get("started_at")
+        elapsed = time.time() - started_at if started_at else 0.0
+        return LoadingStatus(
+            engine_name=engine_name,
+            model_size=status.get("model_size"),
+            phase=status["phase"],
+            started_at=started_at,
+            elapsed_seconds=round(elapsed, 1),
+            error=status.get("error"),
+        )
+
+    # No loading record — infer from engine state
+    phase = LoadPhase.READY if engine.is_loaded() else LoadPhase.IDLE
+    return LoadingStatus(
+        engine_name=engine_name,
+        model_size=getattr(engine, "_model_size", None),
+        phase=phase,
+        started_at=None,
+        elapsed_seconds=0.0,
+        error=None,
+    )
 
 
 @router.post("/{engine_name}/unload", response_model=EngineInfo)
@@ -87,6 +210,11 @@ async def unload_engine_model(engine_name: str):
     engine = manager._engines.get(engine_name)
     if not engine:
         raise HTTPException(404, f"Engine '{engine_name}' not found")
+    # Cancel any in-progress loading task
+    task = _loading_tasks.pop(engine_name, None)
+    if task and not task.done():
+        task.cancel()
+    _loading_status.pop(engine_name, None)
     await engine.unload_model()
     return await _build_engine_info(engine)
 

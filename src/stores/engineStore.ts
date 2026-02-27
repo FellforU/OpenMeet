@@ -2,18 +2,33 @@ import { create } from "zustand";
 import type { EngineInfo } from "../services/asrClient";
 import * as api from "../services/asrClient";
 
+interface ModelLoadingState {
+  phase: api.LoadPhase;
+  modelSize: string;
+  elapsedSeconds: number;
+  error: string | null;
+}
+
 interface EngineStore {
   engines: EngineInfo[];
   selectedEngine: string;
   selectedModelSize: string;
   selectedLanguage: string;
   loading: boolean;
+  loadingStates: Record<string, ModelLoadingState>;
 
   fetchEngines: () => Promise<void>;
   setSelectedEngine: (engine: string) => void;
   setSelectedModelSize: (size: string) => void;
   setSelectedLanguage: (lang: string) => void;
+  startModelLoad: (engineName: string, modelSize: string) => Promise<void>;
+  pollLoadStatus: (engineName: string) => void;
+  stopPolling: (engineName: string) => void;
+  clearLoadingState: (engineName: string) => void;
 }
+
+// Track polling timeouts per engine
+const _pollTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 
 // Fallback model sizes when ASR service is unavailable
 export const FALLBACK_MODEL_SIZES: Record<string, string[]> = {
@@ -61,6 +76,7 @@ export const useEngineStore = create<EngineStore>((set, get) => ({
   selectedModelSize: "base",
   selectedLanguage: "auto",
   loading: false,
+  loadingStates: {},
 
   fetchEngines: async () => {
     set({ loading: true });
@@ -90,6 +106,129 @@ export const useEngineStore = create<EngineStore>((set, get) => ({
       selectedLanguage: lang,
       selectedEngine: recommended,
       selectedModelSize: defaultModelSize(recommended),
+    });
+  },
+
+  startModelLoad: async (engineName, modelSize) => {
+    // Stop any existing polling for this engine
+    get().stopPolling(engineName);
+
+    // Set initial loading state
+    set((state) => ({
+      loadingStates: {
+        ...state.loadingStates,
+        [engineName]: {
+          phase: "preparing",
+          modelSize,
+          elapsedSeconds: 0,
+          error: null,
+        },
+      },
+    }));
+
+    try {
+      const resp = await api.loadEngineModel(engineName, modelSize);
+      if (resp.status === "already_loaded") {
+        set((state) => ({
+          loadingStates: {
+            ...state.loadingStates,
+            [engineName]: {
+              phase: "ready",
+              modelSize,
+              elapsedSeconds: 0,
+              error: null,
+            },
+          },
+        }));
+        await get().fetchEngines();
+        return;
+      }
+      // Start polling for progress
+      get().pollLoadStatus(engineName);
+    } catch (err) {
+      set((state) => ({
+        loadingStates: {
+          ...state.loadingStates,
+          [engineName]: {
+            phase: "error",
+            modelSize,
+            elapsedSeconds: 0,
+            error: String(err),
+          },
+        },
+      }));
+    }
+  },
+
+  pollLoadStatus: (engineName) => {
+    // Clear existing timer
+    get().stopPolling(engineName);
+
+    const MAX_RETRIES = 5;
+
+    const poll = async (retryCount = 0) => {
+      try {
+        const status = await api.getLoadStatus(engineName);
+        const currentState = get().loadingStates[engineName];
+        if (!currentState) return; // Cleared externally
+
+        set((state) => ({
+          loadingStates: {
+            ...state.loadingStates,
+            [engineName]: {
+              phase: status.phase,
+              modelSize: status.model_size ?? currentState.modelSize,
+              elapsedSeconds: status.elapsed_seconds,
+              error: status.error,
+            },
+          },
+        }));
+
+        if (status.phase === "ready" || status.phase === "error") {
+          delete _pollTimers[engineName];
+          await get().fetchEngines();
+          return;
+        }
+
+        // Continue polling (reset retry count on success)
+        _pollTimers[engineName] = setTimeout(() => poll(0), 1500);
+      } catch {
+        if (retryCount >= MAX_RETRIES - 1) {
+          // Stop polling after max retries
+          set((state) => ({
+            loadingStates: {
+              ...state.loadingStates,
+              [engineName]: {
+                ...state.loadingStates[engineName],
+                phase: "error" as api.LoadPhase,
+                error: "ASR service unreachable",
+              },
+            },
+          }));
+          delete _pollTimers[engineName];
+          return;
+        }
+        // Retry on network error
+        _pollTimers[engineName] = setTimeout(() => poll(retryCount + 1), 3000);
+      }
+    };
+
+    poll();
+  },
+
+  stopPolling: (engineName) => {
+    const timer = _pollTimers[engineName];
+    if (timer) {
+      clearTimeout(timer);
+      delete _pollTimers[engineName];
+    }
+  },
+
+  clearLoadingState: (engineName) => {
+    get().stopPolling(engineName);
+    set((state) => {
+      const { [engineName]: _, ...rest } = state.loadingStates;
+      return { loadingStates: rest };
     });
   },
 }));

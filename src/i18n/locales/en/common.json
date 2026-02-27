@@ -123,6 +123,13 @@
     "titling": "Generating title...",
     "summarizing": "Generating summary..."
   },
+  "loadPhase": {
+    "idle": "Idle",
+    "preparing": "Preparing…",
+    "loading": "Loading model…",
+    "ready": "Load complete",
+    "error": "Load failed"
+  },
   "toast": {
     "fileLoaded": "Loaded: {{name}}",
     "exportSuccess": "Exported as {{format}}",
