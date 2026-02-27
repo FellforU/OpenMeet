@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import type { Segment, JobStatus, PipelineStep, Summary } from "../types";
 import * as api from "../services/asrClient";
+import { tauriFetch } from "../services/httpProxy";
 import { indexProject } from "../services/knowledgeClient";
 
 // Polling timer reference for cleanup
@@ -159,7 +160,7 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
     });
 
     // Start transcription with file path
-    await fetch(`http://127.0.0.1:18090/jobs/${jobResp.id}/start?audio_path=${encodeURIComponent(audio.filePath)}`, {
+    await tauriFetch(`http://127.0.0.1:18090/jobs/${jobResp.id}/start?audio_path=${encodeURIComponent(audio.filePath)}`, {
       method: "POST",
     });
 
@@ -183,9 +184,9 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
 
         if (jobResp.status === "completed" || jobResp.status === "ready") {
           // Fetch results
-          const resp = await fetch(`http://127.0.0.1:18090/jobs/${jobId}/result`);
-          if (resp.ok) {
-            const data = await resp.json();
+          const resp = await tauriFetch(`http://127.0.0.1:18090/jobs/${jobId}/result`, { method: "GET" });
+          if (resp.status >= 200 && resp.status < 300) {
+            const data = JSON.parse(resp.body);
             const segments: Segment[] = data.segments.map(
               (s: { start: number; end: number; text: string; speaker: string | null; confidence: number | null }, i: number) => ({
                 id: `seg-${i}`,

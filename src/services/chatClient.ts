@@ -1,3 +1,5 @@
+import { tauriFetch } from "./httpProxy";
+
 const ASR_BASE_URL = "http://127.0.0.1:18090";
 
 export interface ChatEvent {
@@ -19,7 +21,8 @@ export async function* sendChatMessage(
   projectId?: string,
   model?: string
 ): AsyncGenerator<ChatEvent> {
-  const resp = await fetch(`${ASR_BASE_URL}/chat`, {
+  // SSE streaming: fetch full response via Tauri proxy then parse events
+  const resp = await tauriFetch(`${ASR_BASE_URL}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -30,45 +33,27 @@ export async function* sendChatMessage(
     }),
   });
 
-  if (!resp.ok) {
+  if (resp.status < 200 || resp.status >= 300) {
     throw new Error(`Chat failed: HTTP ${resp.status}`);
   }
 
-  const reader = resp.body?.getReader();
-  if (!reader) {
-    throw new Error("No response body");
-  }
+  // Parse SSE events from the complete response body
+  const lines = resp.body.split("\n");
+  let dataBuffer = "";
 
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-
-    // Parse SSE events from buffer
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
-
-    let dataBuffer = "";
-
-    for (const line of lines) {
-      if (line.startsWith("event: ")) {
-        // Event type is embedded in the JSON data payload
-      } else if (line.startsWith("data: ")) {
-        dataBuffer = line.slice(6);
-      } else if (line === "" && dataBuffer) {
-        // End of event
-        try {
-          const parsed = JSON.parse(dataBuffer);
-          yield parsed as ChatEvent;
-        } catch {
-          // Skip malformed events
-        }
-        dataBuffer = "";
+  for (const line of lines) {
+    if (line.startsWith("event: ")) {
+      // Event type is embedded in the JSON data payload
+    } else if (line.startsWith("data: ")) {
+      dataBuffer = line.slice(6);
+    } else if (line === "" && dataBuffer) {
+      try {
+        const parsed = JSON.parse(dataBuffer);
+        yield parsed as ChatEvent;
+      } catch {
+        // Skip malformed events
       }
+      dataBuffer = "";
     }
   }
 }

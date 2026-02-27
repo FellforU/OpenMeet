@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Search, Clock, Loader2 } from "lucide-react";
 import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
+import { tauriFetch } from "../../services/httpProxy";
 
 const ASR_BASE_URL = "http://127.0.0.1:18090";
 
@@ -33,11 +34,12 @@ export function SearchBar({ compact }: { compact?: boolean }) {
     setSearched(true);
 
     try {
-      const resp = await fetch(
+      const resp = await tauriFetch(
         `${ASR_BASE_URL}/search?q=${encodeURIComponent(value)}`,
+        { method: "GET" },
       );
-      if (resp.ok) {
-        const data = await resp.json();
+      if (resp.status >= 200 && resp.status < 300) {
+        const data = JSON.parse(resp.body);
         setResults(data.results);
       } else {
         setResults([]);

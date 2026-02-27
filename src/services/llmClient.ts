@@ -1,31 +1,9 @@
-import { invoke } from "@tauri-apps/api/core";
 import { useSettingsStore } from "../stores/settingsStore";
+import { tauriFetch } from "./httpProxy";
 import type { Summary } from "../types";
 
 interface LLMResponse {
   text: string;
-}
-
-interface HttpFetchResponse {
-  status: number;
-  body: string;
-}
-
-/** Route HTTP requests through Tauri's Rust layer to bypass CORS. */
-async function tauriFetch(
-  url: string,
-  options: {
-    method: string;
-    headers?: Record<string, string>;
-    body?: string;
-  }
-): Promise<HttpFetchResponse> {
-  return invoke<HttpFetchResponse>("http_fetch", {
-    url,
-    method: options.method,
-    headers: options.headers ?? null,
-    body: options.body ?? null,
-  });
 }
 
 // Provider endpoint configurations

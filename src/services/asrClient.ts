@@ -1,14 +1,18 @@
 import { invoke } from "@tauri-apps/api/core";
+import { tauriFetch } from "./httpProxy";
 
 const ASR_BASE_URL = "http://127.0.0.1:18090";
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const resp = await fetch(url, init);
-  if (!resp.ok) {
-    const detail = await resp.text().catch(() => "Unknown error");
-    throw new Error(`HTTP ${resp.status}: ${detail}`);
+  const resp = await tauriFetch(url, {
+    method: init?.method ?? "GET",
+    headers: init?.headers as Record<string, string> | undefined,
+    body: init?.body as string | undefined,
+  });
+  if (resp.status < 200 || resp.status >= 300) {
+    throw new Error(`HTTP ${resp.status}: ${resp.body}`);
   }
-  return resp.json();
+  return JSON.parse(resp.body);
 }
 
 export async function startAsrService(): Promise<string> {
