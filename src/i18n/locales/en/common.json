@@ -28,7 +28,8 @@
     "unload": "Unload",
     "load": "Load",
     "configure": "Configure",
-    "starting": "Starting..."
+    "starting": "Starting...",
+    "openFolder": "Open Folder"
   },
   "status": {
     "idle": "Idle",
@@ -41,7 +42,9 @@
     "running": "Running",
     "loaded": "Loaded",
     "notLoaded": "Not Loaded",
-    "configuring": "Configuring"
+    "configuring": "Configuring",
+    "apiReady": "API Ready",
+    "unavailable": "Unavailable"
   },
   "language": {
     "auto": "Auto Detect",
@@ -59,9 +62,13 @@
     "whisper": "Whisper",
     "qwen3": "Qwen3-ASR",
     "paraformer": "Paraformer",
+    "openai-whisper": "OpenAI Whisper API",
+    "alibaba-asr": "Alibaba Cloud ASR",
     "whisperDesc": "Best for English & multilingual",
     "qwen3Desc": "Best for Chinese & dialects",
-    "paraformerDesc": "Fastest for Chinese"
+    "paraformerDesc": "Fastest for Chinese",
+    "openai-whisperDesc": "Cloud transcription, 50+ languages",
+    "alibaba-asrDesc": "DashScope Paraformer, Chinese optimized"
   },
   "model": {
     "selectSize": "Model Size",
@@ -114,7 +121,8 @@
     "audioLoadFailed": "Failed to load audio",
     "segmentSaveFailed": "Failed to save transcript",
     "titleGenerateFailed": "Failed to generate title",
-    "summaryFailed": "Summary generation failed: {{message}}"
+    "summaryFailed": "Summary generation failed: {{message}}",
+    "noSegments": "No speech detected. Check if ASR model is loaded and microphone is working."
   },
   "processing": {
     "saving": "Saving audio...",

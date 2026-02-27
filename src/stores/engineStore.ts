@@ -45,30 +45,83 @@ interface EngineStore {
 const _pollTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 const _downloadPollTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 
+// All engine keys: local + cloud
+export const ENGINE_KEYS = [
+  "whisper", "qwen3", "paraformer",
+  "openai-whisper", "alibaba-asr",
+] as const;
+
+export const CLOUD_ENGINES = new Set(["openai-whisper", "alibaba-asr"]);
+
 // Fallback model sizes when ASR service is unavailable
 export const FALLBACK_MODEL_SIZES: Record<string, string[]> = {
   whisper: ["tiny", "base", "small", "medium", "large-v3"],
   qwen3: ["qwen3-asr-0.6B", "qwen3-asr-1.7B"],
   paraformer: ["paraformer-large", "paraformer-large-vad-punc", "paraformer-large-vad-punc-spk"],
+  "openai-whisper": ["whisper-1"],
+  "alibaba-asr": ["paraformer-v2"],
 };
 
-// Auto-recommendation logic based on language
+/** Check if a cloud engine has its API credentials configured (accepts cloudAsr for reactivity) */
+export function isCloudEngineConfigured(
+  engineName: string,
+  cloudAsr: { openaiWhisper: { apiKey: string }; alibabaAsr: { keyId: string; secret: string } },
+): boolean {
+  switch (engineName) {
+    case "openai-whisper":
+      return !!cloudAsr.openaiWhisper.apiKey;
+    case "alibaba-asr":
+      return !!cloudAsr.alibabaAsr.keyId && !!cloudAsr.alibabaAsr.secret;
+    default:
+      return false;
+  }
+}
+
+/** Check if an engine is available for use (local: loaded/downloaded, cloud: API configured) */
+export function isEngineAvailable(
+  engineName: string,
+  engines: EngineInfo[],
+  cloudAsr: { openaiWhisper: { apiKey: string }; alibabaAsr: { keyId: string; secret: string } },
+): boolean {
+  if (CLOUD_ENGINES.has(engineName)) {
+    return isCloudEngineConfigured(engineName, cloudAsr);
+  }
+  const engine = engines.find((e) => e.name === engineName);
+  if (!engine) return false;
+  return engine.is_loaded || (engine.downloaded_models?.length ?? 0) > 0;
+}
+
+// Auto-recommendation logic based on language (prefers available engines)
 function recommendEngine(language: string, engines: EngineInfo[]): string {
   const engineMap = Object.fromEntries(engines.map((e) => [e.name, e]));
+  const cloudAsr = useSettingsStore.getState().cloudAsr;
+
+  const avail = (name: string) => {
+    const e = engineMap[name];
+    if (!e) return false;
+    return e.is_loaded || (e.downloaded_models?.length ?? 0) > 0;
+  };
 
   // Chinese dialects → Qwen3-ASR (only engine supporting dialects)
   const dialectCodes = ["yue", "wuu", "min_nan", "gan", "hakka", "xiang"];
   if (dialectCodes.includes(language)) {
-    if (engineMap["qwen3"]) return "qwen3";
+    if (avail("qwen3")) return "qwen3";
+    // Fallback: alibaba cloud ASR also supports some Chinese dialects
+    if (isCloudEngineConfigured("alibaba-asr", cloudAsr)) return "alibaba-asr";
   }
 
-  // Standard Chinese → Qwen3 preferred, Paraformer fallback
+  // Standard Chinese → Qwen3 preferred, Paraformer fallback, then cloud
   if (language === "zh") {
-    if (engineMap["qwen3"]) return "qwen3";
-    if (engineMap["paraformer"]) return "paraformer";
+    if (avail("qwen3")) return "qwen3";
+    if (avail("paraformer")) return "paraformer";
+    if (isCloudEngineConfigured("alibaba-asr", cloudAsr)) return "alibaba-asr";
   }
 
-  // English or other → faster-whisper
+  // English or other → faster-whisper preferred, then OpenAI cloud
+  if (avail("whisper")) return "whisper";
+  if (isCloudEngineConfigured("openai-whisper", cloudAsr)) return "openai-whisper";
+
+  // Last resort: return whisper even if unavailable (user will see disabled state)
   return "whisper";
 }
 
@@ -80,6 +133,10 @@ function defaultModelSize(engine: string): string {
       return "qwen3-asr-0.6B";
     case "paraformer":
       return "paraformer-large";
+    case "openai-whisper":
+      return "whisper-1";
+    case "alibaba-asr":
+      return "paraformer-v2";
     default:
       return "base";
   }

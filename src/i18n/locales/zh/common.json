@@ -28,7 +28,8 @@
     "unload": "卸载",
     "load": "加载",
     "configure": "配置",
-    "starting": "启动中..."
+    "starting": "启动中...",
+    "openFolder": "打开文件夹"
   },
   "status": {
     "idle": "空闲",
@@ -41,7 +42,9 @@
     "running": "运行中",
     "loaded": "已加载",
     "notLoaded": "未加载",
-    "configuring": "配置中"
+    "configuring": "配置中",
+    "apiReady": "API 就绪",
+    "unavailable": "不可用"
   },
   "language": {
     "auto": "自动检测",
@@ -59,9 +62,13 @@
     "whisper": "Whisper",
     "qwen3": "Qwen3-ASR",
     "paraformer": "Paraformer",
+    "openai-whisper": "OpenAI Whisper API",
+    "alibaba-asr": "阿里云 ASR",
     "whisperDesc": "英文和多语言最佳",
     "qwen3Desc": "中文及方言最佳",
-    "paraformerDesc": "中文最快"
+    "paraformerDesc": "中文最快",
+    "openai-whisperDesc": "云端转录，支持 50+ 种语言",
+    "alibaba-asrDesc": "DashScope Paraformer，中文优化"
   },
   "model": {
     "selectSize": "模型大小",
@@ -114,7 +121,8 @@
     "audioLoadFailed": "音频加载失败",
     "segmentSaveFailed": "转录内容保存失败",
     "titleGenerateFailed": "标题生成失败",
-    "summaryFailed": "摘要生成失败：{{message}}"
+    "summaryFailed": "摘要生成失败：{{message}}",
+    "noSegments": "未检测到语音。请检查 ASR 模型是否已加载，麦克风是否正常工作。"
   },
   "processing": {
     "saving": "保存音频中...",

@@ -216,7 +216,7 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
     clearElapsedTimer();
     closeWebSocket();
 
-    const { segments, jobId } = get();
+    const { segments, jobId, elapsed: recordedSeconds } = get();
     set({ status: "idle", jobId: null, elapsed: 0, segments: [], processingStep: "saving" });
 
     const activeProjectId = useProjectStore.getState().activeProjectId;
@@ -240,6 +240,9 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
           toast.error(t("error.segmentSaveFailed"));
         }
       }
+    } else if (recordedSeconds >= 3) {
+      // No segments after a meaningful recording duration — warn user
+      toast.warning(t("error.noSegments"));
     }
 
     // Stop audio capture in Rust and get saved WAV path
