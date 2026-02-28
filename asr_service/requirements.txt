@@ -9,6 +9,9 @@ pytest-cov==6.*
 faster-whisper==1.1.*
 requests==2.*
 
+# Traditional-to-Simplified Chinese conversion for ASR post-processing
+opencc-python-reimplemented>=0.4,<1.0
+
 # FunASR engines (Paraformer, FSMN-VAD, CT-Transformer, CAMPPlus)
 funasr>=1.2,<2.0
 

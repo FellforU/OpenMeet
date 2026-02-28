@@ -4,9 +4,14 @@ import asyncio
 from pathlib import Path
 from typing import Optional, Callable
 
+from opencc import OpenCC
+
 from asr_service.engines.base import AudioInput, EngineCapabilities
 from asr_service.models.job import Segment
 from asr_service import config
+
+# Traditional-to-Simplified Chinese converter (singleton)
+_t2s = OpenCC("t2s")
 
 
 # Lazy import to avoid hard dependency at module level
@@ -171,6 +176,7 @@ class ParaformerEngine:
             raise RuntimeError("Model not loaded. Call load_model() first.")
 
         model_ref = self._model
+        apply_t2s = not audio.language or audio.language in ("zh", "auto")
 
         def _transcribe():
             results = model_ref.generate(input=audio.file_path)
@@ -185,6 +191,8 @@ class ParaformerEngine:
                 if sentence_info:
                     for sent in sentence_info:
                         text = sent.get("text", "").strip()
+                        if apply_t2s and text:
+                            text = _t2s.convert(text)
                         start_ms = sent.get("start", 0)
                         end_ms = sent.get("end", 0)
                         segments.append(
@@ -197,6 +205,8 @@ class ParaformerEngine:
                 else:
                     # Fallback: single text result
                     text = item.get("text", "").strip()
+                    if apply_t2s and text:
+                        text = _t2s.convert(text)
                     if text:
                         segments.append(
                             Segment(start=0.0, end=0.0, text=text)

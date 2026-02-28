@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { Download, FileText, FileCode, FileDown } from "lucide-react";
 import { toast } from "sonner";
+import { invoke } from "@tauri-apps/api/core";
 import { Button } from "../ui/button";
 import {
   DropdownMenu,
@@ -106,16 +107,37 @@ function buildJson(segments: Segment[], summary: Summary | null): string {
   return JSON.stringify({ summary, transcript: segments }, null, 2);
 }
 
-function downloadBlob(content: string, filename: string, mimeType: string) {
-  const blob = new Blob([content], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+async function saveViaDialog(
+  content: string,
+  defaultName: string,
+  filterName: string,
+  filterExt: string,
+): Promise<string | null> {
+  const path = await invoke<string | null>("save_file_dialog", {
+    defaultName,
+    filters: [[filterName, [filterExt]]],
+  });
+  if (!path) return null;
+  await invoke("write_text_file", { path, content });
+  return path;
+}
+
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+export async function saveXMindViaDialog(data: Uint8Array, defaultName: string): Promise<string | null> {
+  const path = await invoke<string | null>("save_file_dialog", {
+    defaultName,
+    filters: [["XMind", ["xmind"]]],
+  });
+  if (!path) return null;
+  await invoke("write_binary_file", { path, data: uint8ArrayToBase64(data) });
+  return path;
 }
 
 export function ExportButton() {
@@ -125,17 +147,37 @@ export function ExportButton() {
 
   const canExport = segments.length > 0 || summary !== null;
 
-  const handleExport = (format: string) => {
+  const handleExport = async (format: string) => {
     try {
       const timestamp = new Date().toISOString().slice(0, 10);
+      let path: string | null = null;
+
       if (format === "markdown") {
-        downloadBlob(buildMarkdown(segments, summary), `meeting-${timestamp}.md`, "text/markdown");
+        path = await saveViaDialog(
+          buildMarkdown(segments, summary),
+          `meeting-${timestamp}.md`,
+          "Markdown",
+          "md",
+        );
       } else if (format === "txt") {
-        downloadBlob(buildPlainText(segments, summary), `meeting-${timestamp}.txt`, "text/plain");
+        path = await saveViaDialog(
+          buildPlainText(segments, summary),
+          `meeting-${timestamp}.txt`,
+          "Text",
+          "txt",
+        );
       } else if (format === "json") {
-        downloadBlob(buildJson(segments, summary), `meeting-${timestamp}.json`, "application/json");
+        path = await saveViaDialog(
+          buildJson(segments, summary),
+          `meeting-${timestamp}.json`,
+          "JSON",
+          "json",
+        );
       }
-      toast.success(t("export.success", { format: format.toUpperCase() }));
+
+      if (path) {
+        toast.success(t("export.successPath", { path }));
+      }
     } catch {
       toast.error(t("export.failed"));
     }

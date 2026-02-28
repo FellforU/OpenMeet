@@ -5,8 +5,13 @@ import os
 from pathlib import Path
 from typing import Optional, Callable
 
+from opencc import OpenCC
+
 from asr_service.engines.base import AudioInput, EngineCapabilities
 from asr_service.models.job import Segment
+
+# Traditional-to-Simplified Chinese converter (singleton)
+_t2s = OpenCC("t2s")
 
 
 def _get_hf_cache() -> Path:
@@ -158,6 +163,7 @@ class Qwen3Engine:
 
         model_ref = self._model
         language = audio.language if audio.language and audio.language != "auto" else None
+        apply_t2s = language in ("zh", None)
 
         def _transcribe():
             results = model_ref.transcribe(
@@ -171,6 +177,8 @@ class Qwen3Engine:
                     text = getattr(item, "text", None) or (item.get("text") if isinstance(item, dict) else str(item))
                     text = text.strip() if text else ""
                     if text:
+                        if apply_t2s:
+                            text = _t2s.convert(text)
                         segments.append(
                             Segment(start=0.0, end=0.0, text=text)
                         )

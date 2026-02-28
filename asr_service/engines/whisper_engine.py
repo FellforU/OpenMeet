@@ -3,9 +3,13 @@ from typing import Optional, Callable
 
 import faster_whisper
 from faster_whisper import WhisperModel
+from opencc import OpenCC
 
 from asr_service.engines.base import AudioInput, EngineCapabilities
 from asr_service.models.job import Segment
+
+# Traditional-to-Simplified Chinese converter (singleton)
+_t2s = OpenCC("t2s")
 
 
 class WhisperEngine:
@@ -95,20 +99,31 @@ class WhisperEngine:
         language = audio.language if audio.language != "auto" else None
 
         def _transcribe():
-            segments_gen, info = model_ref.transcribe(
-                audio.file_path,
-                language=language,
-                beam_size=5,
-                word_timestamps=True,
-                vad_filter=True,
-            )
+            kwargs: dict = {
+                "language": language,
+                "beam_size": 5,
+                "word_timestamps": True,
+                "vad_filter": True,
+            }
+            if language == "zh":
+                kwargs["initial_prompt"] = "以下是简体中文的转录内容。"
+
+            segments_gen, info = model_ref.transcribe(audio.file_path, **kwargs)
+
+            # Only apply T2S for Chinese — use detected language when auto
+            detected_lang = language or info.language
+            apply_t2s = detected_lang == "zh"
+
             results = []
             for seg in segments_gen:
+                text = seg.text.strip()
+                if apply_t2s and text:
+                    text = _t2s.convert(text)
                 results.append(
                     Segment(
                         start=round(seg.start, 3),
                         end=round(seg.end, 3),
-                        text=seg.text.strip(),
+                        text=text,
                         confidence=round(seg.avg_logprob, 3) if seg.avg_logprob else None,
                     )
                 )

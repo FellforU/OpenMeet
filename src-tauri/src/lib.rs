@@ -4,6 +4,7 @@ mod database;
 mod sidecar;
 
 use audio_capture::AudioCaptureState;
+use base64::Engine;
 use crypto::CryptoState;
 use sidecar::SidecarState;
 use std::collections::HashMap;
@@ -100,6 +101,33 @@ async fn pick_folder() -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
+async fn save_file_dialog(
+    default_name: String,
+    filters: Vec<(String, Vec<String>)>,
+) -> Result<Option<String>, String> {
+    let mut dialog = rfd::AsyncFileDialog::new().set_file_name(&default_name);
+    for (name, exts) in &filters {
+        let ext_refs: Vec<&str> = exts.iter().map(|s| s.as_str()).collect();
+        dialog = dialog.add_filter(name, &ext_refs);
+    }
+    let handle = dialog.save_file().await;
+    Ok(handle.map(|h| h.path().to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+fn write_text_file(path: String, content: String) -> Result<(), String> {
+    std::fs::write(&path, &content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn write_binary_file(path: String, data: String) -> Result<(), String> {
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&data)
+        .map_err(|e| format!("Base64 decode error: {}", e))?;
+    std::fs::write(&path, &bytes).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn migrate_cache_dir(from: String, to: String) -> Result<String, String> {
     let src = Path::new(&from);
     let dst = Path::new(&to);
@@ -143,6 +171,13 @@ async fn migrate_cache_dir(from: String, to: String) -> Result<String, String> {
 
 #[tauri::command]
 fn get_default_cache_dir() -> String {
+    // Respect HF env vars, matching Python huggingface_hub priority
+    if let Ok(cache) = std::env::var("HF_HUB_CACHE") {
+        return cache;
+    }
+    if let Ok(home) = std::env::var("HF_HOME") {
+        return format!("{}/hub", home);
+    }
     dirs::home_dir()
         .unwrap_or_default()
         .join(".cache")
@@ -213,6 +248,9 @@ pub fn run() {
             open_url,
             reveal_file,
             pick_folder,
+            save_file_dialog,
+            write_text_file,
+            write_binary_file,
             migrate_cache_dir,
             get_default_cache_dir,
             crypto::encrypt_secret,
