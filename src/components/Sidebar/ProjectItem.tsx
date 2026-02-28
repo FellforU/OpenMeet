@@ -74,7 +74,8 @@ export function ProjectItem({
   const [generatingTitle, setGeneratingTitle] = useState(false);
 
   const date = new Date(project.createdAt);
-  const dateStr = `${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, "0")}`;
+  const weekdays = ["日", "一", "二", "三", "四", "五", "六"];
+  const dateStr = `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} 周${weekdays[date.getDay()]} ${date.getHours()}:${String(date.getMinutes()).padStart(2, "0")}`;
 
   const handleClick = () => {
     if (project.isFolder && onToggleExpand) {

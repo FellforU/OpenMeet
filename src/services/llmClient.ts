@@ -211,23 +211,17 @@ export async function fetchModelList(
   return (data.data || []).map((m: { id: string }) => m.id).sort();
 }
 
-const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
-
 export async function generateMeetingTitle(
-  createdAt: string,
+  _createdAt: string,
   transcriptText: string
 ): Promise<string> {
-  const date = new Date(createdAt);
-  const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-  const weekday = `周${WEEKDAYS[date.getDay()]}`;
-
   // Truncate transcript to ~500 chars
   const truncated =
     transcriptText.length > 500
       ? transcriptText.slice(0, 500) + "..."
       : transcriptText;
 
-  const prompt = `Based on the following meeting transcript, generate a very short meeting title (5-10 Chinese characters, topic keywords only, no date).
+  const prompt = `Based on the following meeting transcript, generate a very short meeting title (5-10 Chinese characters, topic keywords only, no date, no time).
 
 Transcript:
 ${truncated}
@@ -239,7 +233,7 @@ Reply with ONLY the short title, nothing else.`;
   // Clean up: remove quotes, periods, etc.
   const cleaned = text.replace(/["""''。.，,\n]/g, "").trim();
 
-  return `${dateStr} ${weekday} ${cleaned}`;
+  return cleaned;
 }
 
 export async function generateMeetingSummary(

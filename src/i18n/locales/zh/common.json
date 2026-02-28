@@ -148,6 +148,8 @@
     "exportSuccess": "已导出为 {{format}}",
     "exportFailed": "导出失败: 网络错误",
     "summarySaved": "摘要已保存",
+    "transcriptSaved": "转录内容已保存",
+    "persistFailed": "保存失败，请重试",
     "copySuccess": "已复制到剪贴板"
   }
 }

@@ -193,7 +193,10 @@ class Qwen3Engine:
             segments = []
             if isinstance(results, list):
                 for item in results:
-                    text = getattr(item, "text", None) or (item.get("text") if isinstance(item, dict) else str(item))
+                    if isinstance(item, dict):
+                        text = item.get("text", "")
+                    else:
+                        text = getattr(item, "text", None) or ""
                     text = text.strip() if text else ""
                     if text:
                         if apply_t2s:

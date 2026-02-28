@@ -148,6 +148,8 @@
     "exportSuccess": "Exported as {{format}}",
     "exportFailed": "Export failed: network error",
     "summarySaved": "Summary saved",
+    "transcriptSaved": "Transcript saved",
+    "persistFailed": "Save failed, please retry",
     "copySuccess": "Copied to clipboard"
   }
 }
