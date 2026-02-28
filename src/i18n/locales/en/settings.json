@@ -98,7 +98,8 @@
     "noEnabledModels": "Please configure a provider and enable models in the LLM Models tab first",
     "allModels": "All Models",
     "enableAll": "Enable All",
-    "disableAll": "Disable All"
+    "disableAll": "Disable All",
+    "contextLength": "Context Length"
   },
   "asr": {
     "title": "ASR Model Manager",

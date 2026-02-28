@@ -98,7 +98,8 @@
     "noEnabledModels": "请先在 LLM 模型标签页配置提供商并启用模型",
     "allModels": "全部模型",
     "enableAll": "全部启用",
-    "disableAll": "全部禁用"
+    "disableAll": "全部禁用",
+    "contextLength": "上下文长度"
   },
   "asr": {
     "title": "ASR 模型管理",

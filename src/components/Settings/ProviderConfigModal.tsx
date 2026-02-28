@@ -74,7 +74,7 @@ function mergeModels(
   const seen = new Set<string>();
   const result: ProviderModelEntry[] = [];
 
-  // Add all remote models, preserving existing enabled state
+  // Add all remote models, preserving existing enabled state and contextLength
   for (const id of remoteIds) {
     if (seen.has(id)) continue;
     seen.add(id);
@@ -83,6 +83,7 @@ function mergeModels(
       id,
       type: existing?.type ?? classifyModelType(id, presetModelsByType),
       enabled: existing?.enabled ?? true,
+      contextLength: existing?.contextLength,
     });
   }
 
@@ -96,6 +97,7 @@ function mergeModels(
         id,
         type: (existing?.type ?? type) as ModelType,
         enabled: existing?.enabled ?? false,
+        contextLength: existing?.contextLength,
       });
     }
   }
@@ -222,6 +224,17 @@ export function ProviderConfigModal({
   const handleToggleModel = (modelId: string, enabled: boolean) => {
     setLocalModels((prev) =>
       prev.map((m) => (m.id === modelId ? { ...m, enabled } : m))
+    );
+  };
+
+  const handleContextLengthChange = (modelId: string, value: string) => {
+    const num = value === "" ? undefined : parseInt(value, 10);
+    setLocalModels((prev) =>
+      prev.map((m) =>
+        m.id === modelId
+          ? { ...m, contextLength: num && num > 0 ? num : undefined }
+          : m
+      )
     );
   };
 
@@ -402,22 +415,31 @@ export function ProviderConfigModal({
                         {models.map((model) => (
                           <div
                             key={`${model.type}-${model.id}`}
-                            className="flex items-center justify-between rounded px-2 py-1 hover:bg-accent/50"
+                            className="flex items-center justify-between rounded px-2 py-1 hover:bg-accent/50 gap-2"
                           >
                             <span
                               className={cn(
-                                "text-sm truncate mr-2",
+                                "text-sm truncate flex-1 min-w-0",
                                 !model.enabled && "text-muted-foreground"
                               )}
                             >
                               {model.id}
                             </span>
+                            <input
+                              type="number"
+                              className="h-6 w-[70px] shrink-0 rounded border border-input bg-background px-1.5 text-xs text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-ring"
+                              placeholder="4096"
+                              value={model.contextLength ?? ""}
+                              onChange={(e) =>
+                                handleContextLengthChange(model.id, e.target.value)
+                              }
+                            />
                             <Switch
                               checked={model.enabled}
                               onCheckedChange={(val) =>
                                 handleToggleModel(model.id, val)
                               }
-                              className="h-4 w-7 shrink-0"
+                              className="h-4 w-7 shrink-0 data-[state=checked]:bg-green-500"
                             />
                           </div>
                         ))}
