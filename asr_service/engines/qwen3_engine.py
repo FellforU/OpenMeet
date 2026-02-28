@@ -1,13 +1,23 @@
 """ASR engine wrapping Qwen3-ASR (qwen-asr package)."""
 
 import asyncio
+import os
 from pathlib import Path
 from typing import Optional, Callable
 
 from asr_service.engines.base import AudioInput, EngineCapabilities
 from asr_service.models.job import Segment
 
-HF_CACHE = Path.home() / ".cache" / "huggingface" / "hub"
+
+def _get_hf_cache() -> Path:
+    """Return the HuggingFace cache directory, respecting env vars."""
+    env_cache = os.environ.get("HF_HUB_CACHE")
+    if env_cache:
+        return Path(env_cache).resolve()
+    env_home = os.environ.get("HF_HOME")
+    if env_home:
+        return Path(env_home).resolve() / "hub"
+    return Path.home() / ".cache" / "huggingface" / "hub"
 
 # Map short model sizes to HuggingFace model IDs
 MODEL_MAP = {
@@ -66,6 +76,7 @@ class Qwen3Engine:
 
         QwenASR = _ensure_qwen3asr()
         model_id = MODEL_MAP[model_size]
+        cache_dir = str(_get_hf_cache())
 
         def _load():
             import torch
@@ -74,6 +85,7 @@ class Qwen3Engine:
                 model_id,
                 dtype=dtype,
                 device_map="auto",
+                cache_dir=cache_dir,
             )
 
         self._model = await asyncio.to_thread(_load)
@@ -91,7 +103,7 @@ class Qwen3Engine:
     def _get_hf_cache_dir(self, model_size: str) -> Path:
         """Return the HuggingFace cache directory for a model."""
         model_id = MODEL_MAP.get(model_size, "")
-        return HF_CACHE / f"models--{model_id.replace('/', '--')}"
+        return _get_hf_cache() / f"models--{model_id.replace('/', '--')}"
 
     def is_model_downloaded(self, model_size: str) -> bool:
         """Check if model exists in HuggingFace cache."""
@@ -127,10 +139,11 @@ class Qwen3Engine:
             raise ValueError(f"Unsupported model size: {model_size}")
 
         model_id = MODEL_MAP[model_size]
+        cache_dir = str(_get_hf_cache())
 
         def _download():
             from huggingface_hub import snapshot_download
-            return snapshot_download(model_id)
+            return snapshot_download(model_id, cache_dir=cache_dir)
 
         path = await asyncio.to_thread(_download)
         return str(path)
