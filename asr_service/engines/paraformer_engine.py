@@ -40,6 +40,21 @@ MODEL_MAP = {
     "paraformer-online": "iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-online",
 }
 
+# Sub-model dependencies: FunASR pipeline models need VAD / punctuation / speaker sub-models
+SUB_MODEL_DEPS: dict[str, dict[str, str]] = {
+    "paraformer-large": {},
+    "paraformer-large-vad-punc": {
+        "vad_model": "iic/speech_fsmn_vad_zh-cn-16k-common-pytorch",
+        "punc_model": "iic/punc_ct-transformer_zh-cn-common-vad_realtime-vocab272727",
+    },
+    "paraformer-large-vad-punc-spk": {
+        "vad_model": "iic/speech_fsmn_vad_zh-cn-16k-common-pytorch",
+        "punc_model": "iic/punc_ct-transformer_zh-cn-common-vad_realtime-vocab272727",
+        "spk_model": "iic/speech_campplus_sv_zh-cn_16k-common",
+    },
+    "paraformer-online": {},
+}
+
 # Local model directory mapping (from meeting/models/)
 LOCAL_MODEL_DIRS = {
     "paraformer-large": "speech_paraformer-large_asr_nat-zh-cn-16k-common",
@@ -53,10 +68,11 @@ class ParaformerEngine:
     """ASR engine wrapping FunASR Paraformer (non-autoregressive, fast Chinese ASR)."""
 
     SUPPORTED_SIZES = list(MODEL_MAP.keys())
+    # Estimated sizes include main model + sub-models (VAD ~40MB, punc ~275MB, spk ~30MB)
     ESTIMATED_SIZES: dict[str, int] = {
         "paraformer-large": 1_100_000_000,
-        "paraformer-large-vad-punc": 1_300_000_000,
-        "paraformer-large-vad-punc-spk": 1_500_000_000,
+        "paraformer-large-vad-punc": 1_600_000_000,
+        "paraformer-large-vad-punc-spk": 1_850_000_000,
         "paraformer-online": 1_100_000_000,
     }
 
@@ -99,6 +115,24 @@ class ParaformerEngine:
                 return str(local_path)
         return MODEL_MAP[model_size]
 
+    def _resolve_sub_model_path(self, model_id: str) -> str:
+        """Resolve sub-model to local cache path if available, otherwise return remote ID."""
+        if "/" not in model_id:
+            return model_id
+        org, name = model_id.split("/", 1)
+        # Check local meeting/models/ directory
+        local_path = config.PROJECT_ROOT / "meeting" / "models" / name
+        if local_path.exists():
+            return str(local_path)
+        local_path = config.MODELS_DIR / name
+        if local_path.exists():
+            return str(local_path)
+        # Check ModelScope cache
+        cache_dir = self._get_modelscope_cache() / org / name
+        if cache_dir.exists():
+            return str(cache_dir)
+        return model_id
+
     async def load_model(self, model_size: str = "paraformer-large") -> None:
         if model_size not in self.SUPPORTED_SIZES:
             raise ValueError(f"Unsupported model size: {model_size}")
@@ -109,9 +143,21 @@ class ParaformerEngine:
 
         AM = _ensure_automodel()
         model_path = self._resolve_model_path(model_size)
+        sub_deps = SUB_MODEL_DEPS.get(model_size, {})
+        cache_dir = str(self._get_modelscope_cache())
 
         def _load():
-            return AM(model=model_path)
+            kwargs: dict = {
+                "model": model_path,
+                "disable_update": True,
+            }
+            # Resolve sub-model paths (VAD, punctuation, speaker)
+            for key, model_id in sub_deps.items():
+                kwargs[key] = self._resolve_sub_model_path(model_id)
+            # Set cache dir so any missing sub-models download to the right place
+            kwargs["model_hub"] = "ms"
+            kwargs["cache_dir"] = cache_dir
+            return AM(**kwargs)
 
         self._model = await asyncio.to_thread(_load)
         self._model_size = model_size
@@ -204,7 +250,7 @@ class ParaformerEngine:
         return str(cache_base / org / name)
 
     async def download_model(self, model_size: str) -> str:
-        """Download model files without keeping in memory."""
+        """Download model files (including sub-models) without keeping in memory."""
         if model_size not in self.SUPPORTED_SIZES:
             raise ValueError(f"Unsupported model size: {model_size}")
 
@@ -213,11 +259,17 @@ class ParaformerEngine:
             return self._resolve_model_path(model_size)
 
         model_id = MODEL_MAP[model_size]
+        sub_deps = SUB_MODEL_DEPS.get(model_size, {})
         cache_dir = str(self._get_modelscope_cache())
 
         def _download():
             from modelscope.hub.snapshot_download import snapshot_download
-            return snapshot_download(model_id, cache_dir=cache_dir)
+            # Download main model
+            path = snapshot_download(model_id, cache_dir=cache_dir)
+            # Download required sub-models (VAD, punctuation, speaker)
+            for sub_id in sub_deps.values():
+                snapshot_download(sub_id, cache_dir=cache_dir)
+            return path
 
         return await asyncio.to_thread(_download)
 
