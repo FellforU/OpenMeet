@@ -50,10 +50,10 @@ export function Workspace() {
         <ExportButton />
       </div>
       <TabsContent value="transcript" className="flex-1 overflow-hidden">
-        <TranscriptPanel />
+        <TranscriptPanel key={activeProjectId} />
       </TabsContent>
       <TabsContent value="summary" className="flex-1 overflow-hidden">
-        <SummaryPanel onJumpToTranscript={handleJumpToTranscript} />
+        <SummaryPanel key={activeProjectId} onJumpToTranscript={handleJumpToTranscript} />
       </TabsContent>
       <TabsContent value="notes" className="flex-1 overflow-hidden">
         {activeProjectId ? (

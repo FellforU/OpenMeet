@@ -64,6 +64,22 @@
     "editMode": "编辑模式",
     "startWriting": "开始写笔记"
   },
+  "toolbar": {
+    "bold": "加粗",
+    "italic": "斜体",
+    "strikethrough": "删除线",
+    "h1": "一级标题",
+    "h2": "二级标题",
+    "h3": "三级标题",
+    "bulletList": "无序列表",
+    "orderedList": "有序列表",
+    "taskList": "任务列表",
+    "quote": "引用",
+    "code": "行内代码",
+    "hr": "分隔线",
+    "source": "源码",
+    "toggleSource": "切换源码/富文本模式"
+  },
   "mindmap": {
     "empty": "生成摘要后将显示思维导图",
     "exportXmind": "导出 XMind"

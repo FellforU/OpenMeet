@@ -64,6 +64,22 @@
     "editMode": "Edit Mode",
     "startWriting": "Start Writing"
   },
+  "toolbar": {
+    "bold": "Bold",
+    "italic": "Italic",
+    "strikethrough": "Strikethrough",
+    "h1": "Heading 1",
+    "h2": "Heading 2",
+    "h3": "Heading 3",
+    "bulletList": "Bullet List",
+    "orderedList": "Ordered List",
+    "taskList": "Task List",
+    "quote": "Blockquote",
+    "code": "Inline Code",
+    "hr": "Horizontal Rule",
+    "source": "Source",
+    "toggleSource": "Toggle source / rich text mode"
+  },
   "mindmap": {
     "empty": "Mind map will appear after summary is generated",
     "exportXmind": "Export XMind"

@@ -15,6 +15,9 @@ import { Button } from "../ui/button";
 import { useTranscriptionStore } from "../../stores/transcriptionStore";
 import { summaryToNodes, summaryToXMind } from "./mindmapUtils";
 import { saveXMindViaDialog } from "./ExportButton";
+import { MindMapNode } from "./MindMapNode";
+
+const nodeTypes = { mindmapNode: MindMapNode };
 
 export function MindMapPanel() {
   const { t } = useTranslation("workspace");
@@ -29,7 +32,6 @@ export function MindMapPanel() {
   const [nodes, setNodes, onNodesChange] = useNodesState(computedNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(computedEdges);
 
-  // Sync nodes/edges when summary changes
   useEffect(() => {
     setNodes(computedNodes);
   }, [computedNodes, setNodes]);
@@ -75,6 +77,7 @@ export function MindMapPanel() {
           edges={edges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
+          nodeTypes={nodeTypes}
           fitView
           fitViewOptions={{ padding: 0.3 }}
           proOptions={{ hideAttribution: true }}

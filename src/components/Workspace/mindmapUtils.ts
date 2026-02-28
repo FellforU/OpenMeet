@@ -13,6 +13,18 @@ interface LayoutResult {
   edges: Edge[];
 }
 
+function makeEdge(source: string, target: string): Edge {
+  return {
+    id: `e-${source}-${target}`,
+    source,
+    target,
+    sourceHandle: "right",
+    targetHandle: "left",
+    type: "smoothstep",
+    style: { strokeWidth: 2, stroke: "#94a3b8" },
+  };
+}
+
 /** Convert a Summary into React Flow nodes and edges with tree layout. */
 export function summaryToNodes(summary: Summary): LayoutResult {
   const nodes: Node[] = [];
@@ -22,18 +34,14 @@ export function summaryToNodes(summary: Summary): LayoutResult {
   const rootId = "root";
   nodes.push({
     id: rootId,
-    type: "default",
+    type: "mindmapNode",
     position: { x: 0, y: 0 },
-    data: { label: summary.topic },
-    style: {
-      background: "#4f46e5",
-      color: "#fff",
+    data: {
+      label: summary.topic,
+      bgColor: "#4f46e5",
+      textColor: "#fff",
       fontWeight: 600,
-      borderRadius: 8,
-      border: "none",
       fontSize: 14,
-      padding: "8px 16px",
-      minWidth: NODE_WIDTH,
     },
   });
 
@@ -42,40 +50,33 @@ export function summaryToNodes(summary: Summary): LayoutResult {
     const branchId = "conclusions";
     nodes.push({
       id: branchId,
-      type: "default",
+      type: "mindmapNode",
       position: { x: 0, y: 0 },
-      data: { label: "结论" },
-      style: {
-        background: "#059669",
-        color: "#fff",
+      data: {
+        label: "结论",
+        bgColor: "#059669",
+        textColor: "#fff",
         fontWeight: 500,
-        borderRadius: 6,
-        border: "none",
         fontSize: 13,
-        padding: "6px 12px",
-        minWidth: 120,
       },
     });
-    edges.push({ id: `e-root-${branchId}`, source: rootId, target: branchId });
+    edges.push(makeEdge(rootId, branchId));
 
     summary.conclusions.forEach((c, i) => {
       const nodeId = `conclusion-${i}`;
       nodes.push({
         id: nodeId,
-        type: "default",
+        type: "mindmapNode",
         position: { x: 0, y: 0 },
-        data: { label: c },
-        style: {
-          background: "#ecfdf5",
-          color: "#065f46",
-          borderRadius: 6,
-          border: "1px solid #a7f3d0",
+        data: {
+          label: c,
+          bgColor: "#ecfdf5",
+          textColor: "#065f46",
+          borderColor: "#a7f3d0",
           fontSize: 12,
-          padding: "6px 10px",
-          maxWidth: 220,
         },
       });
-      edges.push({ id: `e-${branchId}-${nodeId}`, source: branchId, target: nodeId });
+      edges.push(makeEdge(branchId, nodeId));
     });
   }
 
@@ -84,42 +85,35 @@ export function summaryToNodes(summary: Summary): LayoutResult {
     const branchId = "actions";
     nodes.push({
       id: branchId,
-      type: "default",
+      type: "mindmapNode",
       position: { x: 0, y: 0 },
-      data: { label: "待办事项" },
-      style: {
-        background: "#d97706",
-        color: "#fff",
+      data: {
+        label: "待办事项",
+        bgColor: "#d97706",
+        textColor: "#fff",
         fontWeight: 500,
-        borderRadius: 6,
-        border: "none",
         fontSize: 13,
-        padding: "6px 12px",
-        minWidth: 120,
       },
     });
-    edges.push({ id: `e-root-${branchId}`, source: rootId, target: branchId });
+    edges.push(makeEdge(rootId, branchId));
 
     summary.actionItems.forEach((item, i) => {
       const nodeId = `action-${i}`;
       const label = `${item.assignee}: ${item.task}${item.deadline ? ` (${item.deadline})` : ""}`;
       nodes.push({
         id: nodeId,
-        type: "default",
+        type: "mindmapNode",
         position: { x: 0, y: 0 },
-        data: { label },
-        style: {
-          background: item.done ? "#fef3c7" : "#fffbeb",
-          color: "#92400e",
-          borderRadius: 6,
-          border: `1px solid ${item.done ? "#fbbf24" : "#fde68a"}`,
+        data: {
+          label,
+          bgColor: item.done ? "#fef3c7" : "#fffbeb",
+          textColor: "#92400e",
+          borderColor: item.done ? "#fbbf24" : "#fde68a",
           fontSize: 12,
-          padding: "6px 10px",
-          maxWidth: 220,
-          textDecoration: item.done ? "line-through" : "none",
+          lineThrough: item.done,
         },
       });
-      edges.push({ id: `e-${branchId}-${nodeId}`, source: branchId, target: nodeId });
+      edges.push(makeEdge(branchId, nodeId));
     });
   }
 
@@ -128,40 +122,33 @@ export function summaryToNodes(summary: Summary): LayoutResult {
     const branchId = "discussion";
     nodes.push({
       id: branchId,
-      type: "default",
+      type: "mindmapNode",
       position: { x: 0, y: 0 },
-      data: { label: "讨论要点" },
-      style: {
-        background: "#7c3aed",
-        color: "#fff",
+      data: {
+        label: "讨论要点",
+        bgColor: "#7c3aed",
+        textColor: "#fff",
         fontWeight: 500,
-        borderRadius: 6,
-        border: "none",
         fontSize: 13,
-        padding: "6px 12px",
-        minWidth: 120,
       },
     });
-    edges.push({ id: `e-root-${branchId}`, source: rootId, target: branchId });
+    edges.push(makeEdge(rootId, branchId));
 
     summary.discussion.forEach((d, i) => {
       const nodeId = `disc-${i}`;
       nodes.push({
         id: nodeId,
-        type: "default",
+        type: "mindmapNode",
         position: { x: 0, y: 0 },
-        data: { label: `${d.topic}: ${d.summary}` },
-        style: {
-          background: "#f5f3ff",
-          color: "#5b21b6",
-          borderRadius: 6,
-          border: "1px solid #ddd6fe",
+        data: {
+          label: `${d.topic}: ${d.summary}`,
+          bgColor: "#f5f3ff",
+          textColor: "#5b21b6",
+          borderColor: "#ddd6fe",
           fontSize: 12,
-          padding: "6px 10px",
-          maxWidth: 220,
         },
       });
-      edges.push({ id: `e-${branchId}-${nodeId}`, source: branchId, target: nodeId });
+      edges.push(makeEdge(branchId, nodeId));
     });
   }
 
@@ -198,44 +185,43 @@ function applyTreeLayout(nodes: Node[], edges: Edge[]): LayoutResult {
     return height;
   }
 
-  // Position nodes recursively
-  const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+  // Position nodes recursively, collecting positions immutably
+  const positions = new Map<string, { x: number; y: number }>();
 
   function positionNode(nodeId: string, x: number, yStart: number): void {
-    const node = nodeMap.get(nodeId);
-    if (!node) return;
-
     const children = childrenMap.get(nodeId) || [];
-    const subtreeH = getSubtreeHeight(nodeId);
 
-    // Center node vertically in its subtree
     if (children.length === 0) {
-      node.position = { x, y: yStart };
+      positions.set(nodeId, { x, y: yStart });
     } else {
-      // Position children
       let childY = yStart;
       for (const childId of children) {
         const childH = getSubtreeHeight(childId);
         positionNode(childId, x + NODE_WIDTH + HORIZONTAL_GAP, childY);
         childY += childH + VERTICAL_GAP;
       }
-      // Center parent relative to children
-      const firstChild = nodeMap.get(children[0]);
-      const lastChild = nodeMap.get(children[children.length - 1]);
-      if (firstChild && lastChild) {
-        node.position = {
+      const firstPos = positions.get(children[0]);
+      const lastPos = positions.get(children[children.length - 1]);
+      if (firstPos && lastPos) {
+        positions.set(nodeId, {
           x,
-          y: (firstChild.position.y + lastChild.position.y) / 2,
-        };
+          y: (firstPos.y + lastPos.y) / 2,
+        });
       } else {
-        node.position = { x, y: yStart + subtreeH / 2 - NODE_HEIGHT / 2 };
+        const subtreeH = getSubtreeHeight(nodeId);
+        positions.set(nodeId, { x, y: yStart + subtreeH / 2 - NODE_HEIGHT / 2 });
       }
     }
   }
 
   positionNode("root", 0, 0);
 
-  return { nodes: Array.from(nodeMap.values()), edges };
+  const positionedNodes = nodes.map((n) => ({
+    ...n,
+    position: positions.get(n.id) || n.position,
+  }));
+
+  return { nodes: positionedNodes, edges };
 }
 
 /** Convert a Summary to an XMind archive (as Uint8Array). */
