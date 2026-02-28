@@ -14,6 +14,7 @@ import { configureKnowledge } from "./services/knowledgeClient";
 import { migrateFromLocalStorage } from "./services/dataMigration";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useProjectStore } from "./stores/projectStore";
+import { useEngineStore } from "./stores/engineStore";
 import { ChatButton } from "./components/Chat/ChatButton";
 
 function App() {
@@ -21,15 +22,17 @@ function App() {
   const [showGuide, setShowGuide] = useState(false);
   const [asrReady, setAsrReady] = useState(false);
 
-  // Database initialization and data loading
+  // Database + ASR initialization (sequential to ensure settings load before ASR starts)
   useEffect(() => {
-    async function initDatabase() {
+    let cancelled = false;
+
+    async function init() {
+      // 1. Load settings first — ASR startup depends on modelCacheDir
       try {
         await migrateFromLocalStorage();
         await useProjectStore.getState().loadProjects();
         await useSettingsStore.getState().loadSettings();
 
-        // Check first-run flag from SQLite
         const done = await invoke<string | null>("db_get_setting", {
           key: "first_run_done",
         });
@@ -37,21 +40,13 @@ function App() {
           setShowGuide(true);
         }
       } catch {
-        // Fallback: may be running in browser dev mode without Tauri
         const done = localStorage.getItem("openmeet_first_run_done");
         if (!done) {
           setShowGuide(true);
         }
       }
-    }
-    initDatabase();
-  }, []);
 
-  // ASR service lifecycle + credential push
-  useEffect(() => {
-    let cancelled = false;
-
-    async function initAsr() {
+      // 2. Start ASR with correct cache dir (settings are now loaded)
       try {
         const { general } = useSettingsStore.getState();
         const cacheDir = general.modelCacheDir || undefined;
@@ -60,13 +55,16 @@ function App() {
         // May already be running or in browser dev mode
       }
 
+      // 3. Wait for ASR health, then push config and refresh engines
       const check = async () => {
         try {
           await checkAsrHealth();
           if (!cancelled) {
-            setAsrReady(true);
+            await pushKnowledgeConfig();
             pushCredentials();
-            pushKnowledgeConfig();
+            // Refresh engine list after config is applied (correct cache dir)
+            useEngineStore.getState().fetchEngines();
+            setAsrReady(true);
           }
         } catch {
           if (!cancelled) setTimeout(check, 2000);
@@ -99,7 +97,7 @@ function App() {
       }
     }
 
-    initAsr();
+    init();
     return () => {
       cancelled = true;
     };
