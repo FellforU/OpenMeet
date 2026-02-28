@@ -361,6 +361,43 @@ async def download_engine_model(
     )
 
 
+@router.post("/{engine_name}/cancel-download", response_model=DownloadStatus)
+async def cancel_download(engine_name: str):
+    """Cancel an in-progress model download."""
+    manager = get_manager()
+    engine = manager._engines.get(engine_name)
+    if not engine:
+        raise HTTPException(404, f"Engine '{engine_name}' not found")
+
+    # Cancel the asyncio task if running
+    task = _download_tasks.pop(engine_name, None)
+    if task and not task.done():
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    status = _download_status.get(engine_name)
+    if status and status["phase"] == DownloadPhase.DOWNLOADING:
+        status["phase"] = DownloadPhase.IDLE
+        status["error"] = None
+
+    started_at = status.get("started_at") if status else None
+    elapsed = time.time() - started_at if started_at else 0.0
+
+    return DownloadStatus(
+        engine_name=engine_name,
+        model_size=status.get("model_size") if status else None,
+        phase=DownloadPhase.IDLE,
+        started_at=started_at,
+        elapsed_seconds=round(elapsed, 1),
+        downloaded_bytes=0,
+        total_bytes=0,
+        error=None,
+    )
+
+
 @router.get("/{engine_name}/download-status", response_model=DownloadStatus)
 async def get_download_status(engine_name: str):
     """Get the current download status for an engine."""

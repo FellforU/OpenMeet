@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Download, Trash2, Loader2, Settings as SettingsIcon, Play, CheckCircle2, FolderOpen } from "lucide-react";
+import { Download, Trash2, Loader2, Settings as SettingsIcon, Play, CheckCircle2, FolderOpen, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
@@ -134,6 +134,7 @@ function VendorConfigModal({
   downloadState,
   unloadingKey,
   onDownload,
+  onCancelDownload,
   onLoad,
   onUnload,
   onRevealFolder,
@@ -147,6 +148,7 @@ function VendorConfigModal({
   downloadState: { phase: string; modelSize: string; elapsedSeconds: number; downloadedBytes: number; totalBytes: number; error: string | null } | null;
   unloadingKey: string | null;
   onDownload: (engine: string, size: string) => void;
+  onCancelDownload: (engine: string) => void;
   onLoad: (engine: string, size: string) => void;
   onUnload: (engine: string) => void;
   onRevealFolder: (engine: string, size: string) => void;
@@ -283,6 +285,15 @@ function VendorConfigModal({
                           {" "}({Math.min(100, Math.round((downloadState.downloadedBytes / downloadState.totalBytes) * 100))}%)
                         </span>
                       )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="ml-1 h-5 w-5 p-0 text-muted-foreground hover:text-destructive"
+                        title={t("common:action.cancel")}
+                        onClick={() => onCancelDownload(vendor.engine)}
+                      >
+                        <XCircle className="h-3.5 w-3.5" />
+                      </Button>
                     </div>
                     {downloadState.totalBytes > 0 && (
                       <div className="h-1.5 w-full overflow-hidden rounded-full bg-blue-100 dark:bg-blue-900/30">
@@ -338,6 +349,7 @@ export function ModelManager() {
     downloadStates,
     startModelLoad,
     startModelDownload,
+    cancelModelDownload,
     clearLoadingState,
     clearDownloadState,
   } = useEngineStore();
@@ -413,6 +425,11 @@ export function ModelManager() {
 
   const handleDownload = (engine: string, size: string) => {
     startModelDownload(engine, size);
+  };
+
+  const handleCancelDownload = async (engine: string) => {
+    await cancelModelDownload(engine);
+    toast.info(t("asr.downloadCancelled"));
   };
 
   const handleLoad = (engine: string, size: string) => {
@@ -610,6 +627,7 @@ export function ModelManager() {
           downloadState={downloadStates[configuringVendorDef.engine] ?? null}
           unloadingKey={unloadingKey}
           onDownload={handleDownload}
+          onCancelDownload={handleCancelDownload}
           onLoad={handleLoad}
           onUnload={handleUnload}
           onRevealFolder={handleRevealFolder}

@@ -195,6 +195,15 @@ export async function getDownloadStatus(
   );
 }
 
+export async function cancelDownload(
+  engineName: string
+): Promise<DownloadStatus> {
+  return fetchJson(
+    `${ASR_BASE_URL}/engines/${engineName}/cancel-download`,
+    { method: "POST" }
+  );
+}
+
 // --- Model Path API ---
 
 export interface ModelPathResponse {

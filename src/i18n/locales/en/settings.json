@@ -126,6 +126,7 @@
     "loadFailed": "Model load failed: {{error}}",
     "downloadSuccess": "{{model}} model downloaded",
     "downloadFailed": "Model download failed: {{error}}",
+    "downloadCancelled": "Download cancelled",
     "notDownloaded": "Please download the model first",
     "activate": "Load",
     "activateDesc": "Set as default and load into memory"

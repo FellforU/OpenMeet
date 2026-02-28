@@ -125,6 +125,24 @@ class ParaformerEngine:
     def is_loaded(self) -> bool:
         return self._model is not None
 
+    def _has_model_files(self, path: Path) -> bool:
+        """Check if a directory contains actual model files (not just empty dirs)."""
+        if not path.exists():
+            return False
+        # ModelScope models have configuration.json; local models have config.yaml or .pb files
+        marker_files = ["configuration.json", "config.yaml", "config.json"]
+        for marker in marker_files:
+            if (path / marker).exists():
+                return True
+        # Fallback: check if directory has any non-trivial files (>1KB)
+        try:
+            for f in path.rglob("*"):
+                if f.is_file() and f.stat().st_size > 1024:
+                    return True
+        except OSError:
+            pass
+        return False
+
     def is_model_downloaded(self, model_size: str) -> bool:
         """Check if model files exist locally or in ModelScope cache."""
         if model_size not in self.SUPPORTED_SIZES:
@@ -133,10 +151,10 @@ class ParaformerEngine:
         local_dir = LOCAL_MODEL_DIRS.get(model_size)
         if local_dir:
             local_path = config.PROJECT_ROOT / "meeting" / "models" / local_dir
-            if local_path.exists():
+            if self._has_model_files(local_path):
                 return True
             local_path = config.MODELS_DIR / local_dir
-            if local_path.exists():
+            if self._has_model_files(local_path):
                 return True
         # Check ModelScope cache (runtime-aware)
         modelscope_cache = self._get_modelscope_cache()
@@ -144,7 +162,7 @@ class ParaformerEngine:
         if "/" in model_id:
             org, name = model_id.split("/", 1)
             cache_dir = modelscope_cache / org / name
-            return cache_dir.exists()
+            return self._has_model_files(cache_dir)
         return False
 
     def get_model_path(self, model_size: str) -> str | None:
