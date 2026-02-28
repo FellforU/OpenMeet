@@ -1,10 +1,13 @@
 """LanceDB vector storage for knowledge base."""
 
 import asyncio
+import logging
 from typing import Optional
 
 import numpy as np
 import pyarrow as pa
+
+logger = logging.getLogger(__name__)
 
 
 class VectorStore:
@@ -12,9 +15,10 @@ class VectorStore:
 
     TABLE_NAME = "knowledge"
 
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str, dimension: int = 512):
         self._db_path = db_path
         self._db = None
+        self._dimension = dimension
 
     def _ensure_db(self):
         if self._db is None:
@@ -23,22 +27,48 @@ class VectorStore:
             self._db = lancedb.connect(self._db_path)
         return self._db
 
+    def _get_table_dimension(self, table) -> int:
+        """Get the vector dimension of an existing table."""
+        schema = table.schema
+        for field in schema:
+            if field.name == "vector":
+                # pa.list_(pa.float32(), N) — the list size is the dimension
+                if hasattr(field.type, "list_size") and field.type.list_size > 0:
+                    return field.type.list_size
+                break
+        return 0
+
     def _get_or_create_table(self):
         db = self._ensure_db()
         try:
-            return db.open_table(self.TABLE_NAME)
+            table = db.open_table(self.TABLE_NAME)
+            # Check dimension mismatch
+            existing_dim = self._get_table_dimension(table)
+            if existing_dim > 0 and existing_dim != self._dimension:
+                logger.warning(
+                    "Vector dimension changed: table has %d, embedder needs %d. "
+                    "Dropping table — please re-index your projects.",
+                    existing_dim,
+                    self._dimension,
+                )
+                db.drop_table(self.TABLE_NAME)
+                return self._create_table(db)
+            return table
         except Exception:
-            schema = pa.schema(
-                [
-                    pa.field("id", pa.string()),
-                    pa.field("text", pa.string()),
-                    pa.field("source_type", pa.string()),
-                    pa.field("project_id", pa.string()),
-                    pa.field("metadata_json", pa.string()),
-                    pa.field("vector", pa.list_(pa.float32(), 512)),
-                ]
-            )
-            return db.create_table(self.TABLE_NAME, schema=schema)
+            return self._create_table(db)
+
+    def _create_table(self, db):
+        schema = pa.schema(
+            [
+                pa.field("id", pa.string()),
+                pa.field("text", pa.string()),
+                pa.field("source_type", pa.string()),
+                pa.field("project_id", pa.string()),
+                pa.field("metadata_json", pa.string()),
+                pa.field("vector", pa.list_(pa.float32(), self._dimension)),
+            ]
+        )
+        return db.create_table(self.TABLE_NAME, schema=schema)
 
     def _table_exists(self) -> bool:
         db = self._ensure_db()
@@ -86,6 +116,17 @@ class VectorStore:
             if not self._table_exists():
                 return []
             table = self._ensure_db().open_table(self.TABLE_NAME)
+            # Guard against dimension mismatch at runtime
+            table_dim = self._get_table_dimension(table)
+            query_dim = len(query_vector)
+            if table_dim > 0 and query_dim != table_dim:
+                logger.warning(
+                    "Search skipped: query dim(%d) != table dim(%d). "
+                    "Please re-index after changing embedding model.",
+                    query_dim,
+                    table_dim,
+                )
+                return []
             query = table.search(query_vector.tolist()).limit(top_k)
 
             if project_ids:

@@ -21,17 +21,25 @@ from asr_service.config import get_lance_path, get_sqlite_path
 _embedder = Embedder()
 _ollama = OllamaClient()
 _knowledge_initialized = False
+_last_embedding_dimension: int | None = None
 
 
 async def init_knowledge():
-    global _knowledge_initialized
-    if _knowledge_initialized:
-        return
+    global _knowledge_initialized, _last_embedding_dimension
     lance_path = get_lance_path()
     sqlite_path = get_sqlite_path()
     if not lance_path or not sqlite_path:
         return
-    store = VectorStore(lance_path)
+
+    # Detect actual embedding dimension
+    dimension = await _embedder.get_dimension()
+
+    # Skip re-init if already initialized with the same dimension
+    if _knowledge_initialized and dimension == _last_embedding_dimension:
+        return
+
+    _last_embedding_dimension = dimension
+    store = VectorStore(lance_path, dimension=dimension)
     reader = SQLiteReader(sqlite_path)
     indexer = Indexer(_embedder, store, reader)
     mcp_tools = MCPTools(_embedder, store, reader)

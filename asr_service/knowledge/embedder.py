@@ -20,6 +20,7 @@ class Embedder:
         self._model_name = self.DEFAULT_MODEL
         self._api_key: str | None = None
         self._api_url: str | None = None
+        self._actual_dimension: int | None = None
 
     def configure(
         self,
@@ -44,6 +45,7 @@ class Embedder:
             self._api_key = api_key
             self._api_url = api_url
             self._model = None  # Force reload on next use
+            self._actual_dimension = None  # Reset cached dimension
             logger.info(
                 "Embedder configured: provider=%s, model=%s",
                 self._provider,
@@ -83,6 +85,31 @@ class Embedder:
         """Embed a single query. Returns (DIMENSION,) array."""
         result = await self.embed([query])
         return result[0]
+
+    async def get_dimension(self) -> int:
+        """Get the actual embedding dimension by probing the model.
+
+        Caches the result until configuration changes.
+        """
+        if self._actual_dimension is not None:
+            return self._actual_dimension
+
+        try:
+            probe = await self.embed(["dimension probe"])
+            self._actual_dimension = probe.shape[1]
+            logger.info(
+                "Detected embedding dimension: %d (model=%s)",
+                self._actual_dimension,
+                self._model_name,
+            )
+        except Exception:
+            logger.warning(
+                "Failed to probe embedding dimension, using default %d",
+                self.DIMENSION,
+            )
+            self._actual_dimension = self.DIMENSION
+
+        return self._actual_dimension
 
     async def _embed_local(self, texts: list[str]) -> np.ndarray:
         """Embed using local sentence-transformers model."""
