@@ -23,6 +23,12 @@ const PROVIDER_ENDPOINTS: Record<string, { url: string; isOllama?: boolean }> = 
   qwen: { url: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions" },
   zhipu: { url: "https://open.bigmodel.cn/api/paas/v4/chat/completions" },
   gemini: { url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions" },
+  moonshot: { url: "https://api.moonshot.cn/v1/chat/completions" },
+  wenxin: { url: "https://qianfan.baidubce.com/v2/chat/completions" },
+  hunyuan: { url: "https://api.hunyuan.cloud.tencent.com/v1/chat/completions" },
+  minimax: { url: "https://api.minimax.chat/v1/text/chatcompletion_v2" },
+  siliconflow: { url: "https://api.siliconflow.cn/v1/chat/completions" },
+  volcengine: { url: "https://ark.cn-beijing.volces.com/api/v3/chat/completions" },
 };
 
 async function callOllama(
@@ -161,6 +167,12 @@ const MODEL_LIST_ENDPOINTS: Record<string, { url: string; isOllama?: boolean; is
   qwen: { url: "https://dashscope.aliyuncs.com/compatible-mode/v1/models" },
   zhipu: { url: "https://open.bigmodel.cn/api/paas/v4/models" },
   gemini: { url: "https://generativelanguage.googleapis.com/v1beta/models", isGemini: true },
+  moonshot: { url: "https://api.moonshot.cn/v1/models" },
+  wenxin: { url: "https://qianfan.baidubce.com/v2/models" },
+  hunyuan: { url: "https://api.hunyuan.cloud.tencent.com/v1/models" },
+  minimax: { url: "https://api.minimax.chat/v1/models" },
+  siliconflow: { url: "https://api.siliconflow.cn/v1/models" },
+  volcengine: { url: "https://ark.cn-beijing.volces.com/api/v3/models" },
 };
 
 export async function fetchModelList(

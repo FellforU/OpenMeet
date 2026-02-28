@@ -16,6 +16,13 @@ class WhisperEngine:
     """ASR engine wrapping faster-whisper."""
 
     SUPPORTED_SIZES = ["tiny", "base", "small", "medium", "large-v3"]
+    ESTIMATED_SIZES: dict[str, int] = {
+        "tiny": 150_000_000,
+        "base": 290_000_000,
+        "small": 950_000_000,
+        "medium": 3_000_000_000,
+        "large-v3": 6_000_000_000,
+    }
 
     def __init__(self):
         self._model: Optional[WhisperModel] = None
@@ -75,6 +82,14 @@ class WhisperEngine:
             return str(path)
         except Exception:
             return None
+
+    def estimated_size_bytes(self, model_size: str) -> int:
+        """Return estimated download size in bytes."""
+        return self.ESTIMATED_SIZES.get(model_size, 0)
+
+    def get_download_dir(self, model_size: str) -> str | None:
+        """Return the cache directory for a downloading model."""
+        return self.get_model_path(model_size)
 
     async def download_model(self, model_size: str) -> str:
         """Download model files without loading into memory."""

@@ -116,6 +116,13 @@ function formatElapsed(seconds: number): string {
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
 // Vendor card config modal with download/load split
 function VendorConfigModal({
   open,
@@ -137,7 +144,7 @@ function VendorConfigModal({
   downloadedModels: Set<string>;
   loadedModels: Set<string>;
   loadingState: { phase: string; modelSize: string; elapsedSeconds: number; error: string | null } | null;
-  downloadState: { phase: string; modelSize: string; elapsedSeconds: number; error: string | null } | null;
+  downloadState: { phase: string; modelSize: string; elapsedSeconds: number; downloadedBytes: number; totalBytes: number; error: string | null } | null;
   unloadingKey: string | null;
   onDownload: (engine: string, size: string) => void;
   onLoad: (engine: string, size: string) => void;
@@ -261,14 +268,32 @@ function VendorConfigModal({
                     )}
                   </div>
                 </div>
-                {/* Download elapsed time */}
+                {/* Download progress */}
                 {isThisModelDownloading && downloadState && (
-                  <div className="mt-2 flex items-center gap-2 text-xs text-blue-600">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    <span>{t("common:downloadPhase.downloading")}</span>
-                    <span className="text-muted-foreground">
-                      {formatElapsed(downloadState.elapsedSeconds)}
-                    </span>
+                  <div className="mt-2 space-y-1">
+                    <div className="flex items-center gap-2 text-xs text-blue-600">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      <span>{t("common:downloadPhase.downloading")}</span>
+                      <span className="text-muted-foreground">
+                        {formatElapsed(downloadState.elapsedSeconds)}
+                      </span>
+                      {downloadState.totalBytes > 0 && (
+                        <span className="ml-auto text-muted-foreground">
+                          {formatBytes(downloadState.downloadedBytes)} / {formatBytes(downloadState.totalBytes)}
+                          {" "}({Math.min(100, Math.round((downloadState.downloadedBytes / downloadState.totalBytes) * 100))}%)
+                        </span>
+                      )}
+                    </div>
+                    {downloadState.totalBytes > 0 && (
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-blue-100 dark:bg-blue-900/30">
+                        <div
+                          className="h-full rounded-full bg-blue-500 transition-all duration-500"
+                          style={{
+                            width: `${Math.min(100, Math.round((downloadState.downloadedBytes / downloadState.totalBytes) * 100))}%`,
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
                 {/* Loading progress */}

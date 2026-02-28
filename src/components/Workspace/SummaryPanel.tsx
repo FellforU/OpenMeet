@@ -18,6 +18,7 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { MilkdownEditor } from "../Editor";
 import { useTranscriptionStore } from "../../stores/transcriptionStore";
+import { useProjectStore } from "../../stores/projectStore";
 import type { Segment } from "../../types";
 
 interface ActionItem {
@@ -37,15 +38,31 @@ function findSegmentTime(
   summaryText: string,
   segments: Segment[]
 ): number | null {
-  const keywords = summaryText
-    .replace(/[^\u4e00-\u9fa5a-zA-Z0-9\s]/g, "")
-    .slice(0, 20);
-  if (!keywords) return null;
-  const searchStr = keywords.slice(0, 8);
+  if (!segments.length) return null;
+
+  // Extract Chinese word groups (2-4 chars) and English words as keywords
+  const chineseWords = summaryText.match(/[\u4e00-\u9fa5]{2,4}/g) || [];
+  const englishWords =
+    summaryText.match(/[a-zA-Z]{3,}/g)?.map((w) => w.toLowerCase()) || [];
+  const keywords = [...new Set([...chineseWords, ...englishWords])];
+  if (keywords.length === 0) return null;
+
+  let bestScore = 0;
+  let bestTime: number | null = null;
+
   for (const seg of segments) {
-    if (seg.text.includes(searchStr)) return seg.start;
+    let score = 0;
+    const segLower = seg.text.toLowerCase();
+    for (const kw of keywords) {
+      if (segLower.includes(kw.toLowerCase())) score++;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      bestTime = seg.start;
+    }
   }
-  return null;
+
+  return bestScore > 0 ? bestTime : null;
 }
 
 function formatSummaryToMarkdown(summary: {
@@ -165,6 +182,18 @@ export function SummaryPanel({ onJumpToTranscript }: SummaryPanelProps) {
     setSummary({ ...summary, editedMarkdown: editText });
     setEditing(false);
     toast.success(t("common:toast.summarySaved"));
+
+    // Persist to SQLite
+    const activeProjectId = useProjectStore.getState().activeProjectId;
+    if (activeProjectId) {
+      useTranscriptionStore
+        .getState()
+        .persistSummary(activeProjectId)
+        .catch((err) => {
+          console.error("Failed to persist summary:", err);
+          toast.error(t("common:toast.persistFailed"));
+        });
+    }
   };
 
   const handleCancel = () => {

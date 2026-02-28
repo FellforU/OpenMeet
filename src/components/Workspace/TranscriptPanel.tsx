@@ -7,6 +7,7 @@ import { Badge } from "../ui/badge";
 import { SegmentItem } from "./SegmentItem";
 import { MilkdownEditor } from "../Editor";
 import { useTranscriptionStore } from "../../stores/transcriptionStore";
+import { useProjectStore } from "../../stores/projectStore";
 import type { Segment } from "../../types";
 
 function segmentsToMarkdown(segments: Segment[]): string {
@@ -86,7 +87,19 @@ export function TranscriptPanel() {
 
     setSegments(newSegments);
     setEditing(false);
-    toast.success(t("common:toast.summarySaved"));
+    toast.success(t("common:toast.transcriptSaved"));
+
+    // Persist to SQLite
+    const activeProjectId = useProjectStore.getState().activeProjectId;
+    if (activeProjectId) {
+      useTranscriptionStore
+        .getState()
+        .persistSegments(activeProjectId)
+        .catch((err) => {
+          console.error("Failed to persist segments:", err);
+          toast.error(t("common:toast.persistFailed"));
+        });
+    }
   };
 
   const handleCancel = () => {

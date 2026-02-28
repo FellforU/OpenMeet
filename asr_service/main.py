@@ -44,6 +44,7 @@ async def init_knowledge():
 
 
 config_router.set_knowledge_initializer(init_knowledge)
+config_router.set_embedder(_embedder)
 
 
 @asynccontextmanager

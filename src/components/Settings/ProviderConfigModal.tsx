@@ -206,6 +206,19 @@ export function ProviderConfigModal({
     }
   }, [open]);
 
+  // Re-fetch when credentials change (debounced)
+  useEffect(() => {
+    if (!open || supportedTypes.length === 0) return;
+    const hasCredentials = connConfig.apiKey || connConfig.host;
+    if (!hasCredentials) return;
+
+    const timer = setTimeout(() => {
+      handleFetchModels();
+    }, 800);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- debounced fetch on credential change
+  }, [connConfig.apiKey, connConfig.host]);
+
   const handleToggleModel = (modelId: string, enabled: boolean) => {
     setLocalModels((prev) =>
       prev.map((m) => (m.id === modelId ? { ...m, enabled } : m))

@@ -52,6 +52,10 @@ class Qwen3Engine:
     """ASR engine wrapping Qwen3-ASR via qwen-asr package."""
 
     SUPPORTED_SIZES = list(MODEL_MAP.keys())
+    ESTIMATED_SIZES: dict[str, int] = {
+        "qwen3-asr-0.6B": 1_200_000_000,
+        "qwen3-asr-1.7B": 3_500_000_000,
+    }
 
     def __init__(self):
         self._model = None
@@ -137,6 +141,15 @@ class Qwen3Engine:
         if cache_dir.exists():
             return str(cache_dir)
         return None
+
+    def estimated_size_bytes(self, model_size: str) -> int:
+        """Return estimated download size in bytes."""
+        return self.ESTIMATED_SIZES.get(model_size, 0)
+
+    def get_download_dir(self, model_size: str) -> str | None:
+        """Return the cache directory being downloaded into."""
+        cache_dir = self._get_hf_cache_dir(model_size)
+        return str(cache_dir) if cache_dir.exists() else None
 
     async def download_model(self, model_size: str) -> str:
         """Download model files without keeping in memory."""

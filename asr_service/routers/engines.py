@@ -2,8 +2,10 @@
 
 import asyncio
 import logging
+import os
 import time
 from enum import Enum
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -11,6 +13,22 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/engines", tags=["engines"])
+
+
+def _dir_size(path: str | Path) -> int:
+    """Calculate total file size in a directory tree. Returns 0 if path doesn't exist."""
+    total = 0
+    try:
+        for dirpath, _dirnames, filenames in os.walk(path):
+            for f in filenames:
+                fp = os.path.join(dirpath, f)
+                try:
+                    total += os.path.getsize(fp)
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    return total
 
 _manager = None
 
@@ -102,6 +120,8 @@ class DownloadStatus(BaseModel):
     phase: DownloadPhase
     started_at: float | None
     elapsed_seconds: float
+    downloaded_bytes: int = 0
+    total_bytes: int = 0
     error: str | None
 
 
@@ -236,6 +256,16 @@ async def get_load_status(engine_name: str):
 
     status = _loading_status.get(engine_name)
     if status:
+        # Self-heal: if task finished but status is still in-progress
+        if status["phase"] in (LoadPhase.PREPARING, LoadPhase.LOADING):
+            task = _loading_tasks.get(engine_name)
+            if task is None or task.done():
+                if engine.is_loaded():
+                    status["phase"] = LoadPhase.READY
+                else:
+                    status["phase"] = LoadPhase.ERROR
+                    status["error"] = status.get("error") or "Loading interrupted"
+
         started_at = status.get("started_at")
         elapsed = time.time() - started_at if started_at else 0.0
         return LoadingStatus(
@@ -341,6 +371,29 @@ async def get_download_status(engine_name: str):
 
     status = _download_status.get(engine_name)
     if status:
+        # Self-heal: if task finished but status is still "downloading"
+        if status["phase"] == DownloadPhase.DOWNLOADING:
+            task = _download_tasks.get(engine_name)
+            if task is None or task.done():
+                model_size = status.get("model_size", "")
+                if hasattr(engine, "is_model_downloaded") and engine.is_model_downloaded(model_size):
+                    status["phase"] = DownloadPhase.COMPLETED
+                else:
+                    status["phase"] = DownloadPhase.ERROR
+                    status["error"] = status.get("error") or "Download interrupted"
+
+        # Calculate byte progress if downloading
+        downloaded_bytes = 0
+        total_bytes = 0
+        model_size = status.get("model_size", "")
+        if status["phase"] == DownloadPhase.DOWNLOADING and model_size:
+            if hasattr(engine, "estimated_size_bytes"):
+                total_bytes = engine.estimated_size_bytes(model_size)
+            if hasattr(engine, "get_download_dir"):
+                dl_dir = engine.get_download_dir(model_size)
+                if dl_dir:
+                    downloaded_bytes = _dir_size(dl_dir)
+
         started_at = status.get("started_at")
         elapsed = time.time() - started_at if started_at else 0.0
         return DownloadStatus(
@@ -349,6 +402,8 @@ async def get_download_status(engine_name: str):
             phase=status["phase"],
             started_at=started_at,
             elapsed_seconds=round(elapsed, 1),
+            downloaded_bytes=downloaded_bytes,
+            total_bytes=total_bytes,
             error=status.get("error"),
         )
 
@@ -358,6 +413,8 @@ async def get_download_status(engine_name: str):
         phase=DownloadPhase.IDLE,
         started_at=None,
         elapsed_seconds=0.0,
+        downloaded_bytes=0,
+        total_bytes=0,
         error=None,
     )
 

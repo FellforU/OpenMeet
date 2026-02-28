@@ -1,4 +1,4 @@
-"""Configuration endpoint for setting app data directory."""
+"""Configuration endpoint for setting app data directory and embedding backend."""
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -8,6 +8,7 @@ from ..config import set_app_data_dir, get_lance_path, get_sqlite_path
 router = APIRouter(tags=["config"])
 
 _knowledge_initializer = None
+_embedder_ref = None
 
 
 def set_knowledge_initializer(fn):
@@ -15,8 +16,21 @@ def set_knowledge_initializer(fn):
     _knowledge_initializer = fn
 
 
+def set_embedder(embedder):
+    global _embedder_ref
+    _embedder_ref = embedder
+
+
+class EmbeddingConfig(BaseModel):
+    provider: str = "local"
+    model: str = ""
+    api_key: str | None = None
+    api_url: str | None = None
+
+
 class ConfigRequest(BaseModel):
     app_data_dir: str
+    embedding_config: EmbeddingConfig | None = None
 
 
 class ConfigResponse(BaseModel):
@@ -28,6 +42,16 @@ class ConfigResponse(BaseModel):
 @router.post("/config", response_model=ConfigResponse)
 async def set_config(req: ConfigRequest):
     set_app_data_dir(req.app_data_dir)
+
+    # Apply embedding configuration if provided
+    if req.embedding_config and _embedder_ref:
+        ec = req.embedding_config
+        _embedder_ref.configure(
+            provider=ec.provider,
+            model_name=ec.model,
+            api_key=ec.api_key,
+            api_url=ec.api_url,
+        )
 
     # Initialize knowledge modules if not already
     if _knowledge_initializer:

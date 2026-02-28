@@ -35,6 +35,7 @@ import { ModelManager } from "./ModelManager";
 import { LLMProviderTab, LLM_PROVIDERS } from "./LLMProviderTab";
 import { SystemModelSelector } from "./SystemModelSelector";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { restartAsrService } from "../../services/asrClient";
 import logoWithText from "../../../ico/OpenMeet_1.png";
 
 interface SettingsDialogProps {
@@ -80,6 +81,12 @@ function GeneralSettings() {
     setMigrateOpen(false);
     await setGeneral({ modelCacheDir: pendingNewDir });
     toast.success(t("general.modelCacheDir"));
+    // Restart ASR service with new cache directory
+    try {
+      await restartAsrService(pendingNewDir);
+    } catch {
+      toast.warning(t("general.restartAsrFailed"));
+    }
   }, [pendingNewDir, setGeneral, t]);
 
   const handleMigrateConfirm = useCallback(async () => {
@@ -92,6 +99,12 @@ function GeneralSettings() {
       });
       await setGeneral({ modelCacheDir: pendingNewDir });
       toast.success(t("general.migrateSuccess") + ` (${result})`);
+      // Restart ASR service with new cache directory
+      try {
+        await restartAsrService(pendingNewDir);
+      } catch {
+        toast.warning(t("general.restartAsrFailed"));
+      }
     } catch (err) {
       toast.error(t("general.migrateFailed", { error: String(err) }));
     } finally {

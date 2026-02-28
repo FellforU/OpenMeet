@@ -23,6 +23,13 @@ export async function stopAsrService(): Promise<string> {
   return invoke<string>("stop_asr_service");
 }
 
+export async function restartAsrService(cacheDir?: string): Promise<string> {
+  await stopAsrService();
+  // Small delay to allow process to fully terminate
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  return startAsrService(cacheDir);
+}
+
 export async function checkAsrHealth(): Promise<{
   status: string;
   engines: string[];
@@ -165,6 +172,8 @@ export interface DownloadStatus {
   model_size: string | null;
   phase: DownloadPhase;
   elapsed_seconds: number;
+  downloaded_bytes: number;
+  total_bytes: number;
   error: string | null;
 }
 

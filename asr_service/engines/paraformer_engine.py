@@ -52,6 +52,12 @@ class ParaformerEngine:
     """ASR engine wrapping FunASR Paraformer (non-autoregressive, fast Chinese ASR)."""
 
     SUPPORTED_SIZES = list(MODEL_MAP.keys())
+    ESTIMATED_SIZES: dict[str, int] = {
+        "paraformer-large": 1_100_000_000,
+        "paraformer-large-vad-punc": 1_300_000_000,
+        "paraformer-large-vad-punc-spk": 1_500_000_000,
+        "paraformer-online": 1_100_000_000,
+    }
 
     def __init__(self):
         self._model = None
@@ -149,6 +155,14 @@ class ParaformerEngine:
             if cache_dir.exists():
                 return str(cache_dir)
         return None
+
+    def estimated_size_bytes(self, model_size: str) -> int:
+        """Return estimated download size in bytes."""
+        return self.ESTIMATED_SIZES.get(model_size, 0)
+
+    def get_download_dir(self, model_size: str) -> str | None:
+        """Return the cache directory being downloaded into."""
+        return self.get_model_path(model_size)
 
     async def download_model(self, model_size: str) -> str:
         """Download model files without keeping in memory."""

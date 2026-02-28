@@ -14,6 +14,8 @@ interface ModelDownloadState {
   phase: api.DownloadPhase;
   modelSize: string;
   elapsedSeconds: number;
+  downloadedBytes: number;
+  totalBytes: number;
   error: string | null;
 }
 
@@ -148,6 +150,54 @@ export const useEngineStore = create<EngineStore>((set, get) => ({
     try {
       const engines = await api.listEngines();
       set({ engines, loading: false });
+
+      // Sync stale backend download/load states with frontend
+      for (const engine of engines) {
+        try {
+          const dlStatus = await api.getDownloadStatus(engine.name);
+          if (dlStatus.phase === "downloading" && !get().downloadStates[engine.name]) {
+            // Resume polling for in-progress downloads
+            set((state) => ({
+              downloadStates: {
+                ...state.downloadStates,
+                [engine.name]: {
+                  phase: dlStatus.phase as api.DownloadPhase,
+                  modelSize: dlStatus.model_size ?? "",
+                  elapsedSeconds: dlStatus.elapsed_seconds,
+                  downloadedBytes: dlStatus.downloaded_bytes ?? 0,
+                  totalBytes: dlStatus.total_bytes ?? 0,
+                  error: null,
+                },
+              },
+            }));
+            get().pollDownloadStatus(engine.name);
+          }
+        } catch {
+          // ASR service may not be ready yet
+        }
+        try {
+          const ldStatus = await api.getLoadStatus(engine.name);
+          if (
+            (ldStatus.phase === "preparing" || ldStatus.phase === "loading") &&
+            !get().loadingStates[engine.name]
+          ) {
+            set((state) => ({
+              loadingStates: {
+                ...state.loadingStates,
+                [engine.name]: {
+                  phase: ldStatus.phase as api.LoadPhase,
+                  modelSize: ldStatus.model_size ?? "",
+                  elapsedSeconds: ldStatus.elapsed_seconds,
+                  error: null,
+                },
+              },
+            }));
+            get().pollLoadStatus(engine.name);
+          }
+        } catch {
+          // ASR service may not be ready yet
+        }
+      }
     } catch {
       set({ loading: false });
     }
@@ -325,6 +375,8 @@ export const useEngineStore = create<EngineStore>((set, get) => ({
           phase: "downloading",
           modelSize,
           elapsedSeconds: 0,
+          downloadedBytes: 0,
+          totalBytes: 0,
           error: null,
         },
       },
@@ -340,6 +392,8 @@ export const useEngineStore = create<EngineStore>((set, get) => ({
               phase: "completed",
               modelSize,
               elapsedSeconds: 0,
+              downloadedBytes: 0,
+              totalBytes: 0,
               error: null,
             },
           },
@@ -356,6 +410,8 @@ export const useEngineStore = create<EngineStore>((set, get) => ({
             phase: "error",
             modelSize,
             elapsedSeconds: 0,
+            downloadedBytes: 0,
+            totalBytes: 0,
             error: String(err),
           },
         },
@@ -381,6 +437,8 @@ export const useEngineStore = create<EngineStore>((set, get) => ({
               phase: status.phase as api.DownloadPhase,
               modelSize: status.model_size ?? currentState.modelSize,
               elapsedSeconds: status.elapsed_seconds,
+              downloadedBytes: status.downloaded_bytes ?? 0,
+              totalBytes: status.total_bytes ?? 0,
               error: status.error,
             },
           },

@@ -89,6 +89,12 @@ const defaultState = {
     zhipu: { enabled: false, model: "glm-4-flash", modelByType: { LLM: "glm-4-flash" } },
     openai: { enabled: false, model: "gpt-4o-mini", modelByType: { LLM: "gpt-4o-mini" } },
     gemini: { enabled: false, model: "gemini-2.0-flash", modelByType: { LLM: "gemini-2.0-flash" } },
+    moonshot: { enabled: false, model: "kimi-latest", modelByType: { LLM: "kimi-latest" } },
+    wenxin: { enabled: false, model: "ernie-4.5-8k", modelByType: { LLM: "ernie-4.5-8k" } },
+    hunyuan: { enabled: false, model: "hunyuan-turbos-latest", modelByType: { LLM: "hunyuan-turbos-latest" } },
+    minimax: { enabled: false, model: "MiniMax-M1", modelByType: { LLM: "MiniMax-M1" } },
+    siliconflow: { enabled: false, model: "Qwen/Qwen3-8B", modelByType: { LLM: "Qwen/Qwen3-8B" } },
+    volcengine: { enabled: false, model: "doubao-1.5-pro-32k", modelByType: { LLM: "doubao-1.5-pro-32k" } },
   },
   cloudAsr: {
     openaiWhisper: { apiKey: "" },
@@ -113,7 +119,12 @@ async function decryptSecret(ciphertext: string): Promise<string> {
   try {
     return await invoke<string>("decrypt_secret", { ciphertext });
   } catch {
-    return ciphertext; // Fallback: might already be plaintext
+    // Decryption failed — if it looks like a valid API key (short, printable ASCII), return as-is
+    if (ciphertext.length < 200 && /^[\x20-\x7E]+$/.test(ciphertext)) {
+      return ciphertext;
+    }
+    // Looks like corrupted ciphertext — return empty to force re-entry
+    return "";
   }
 }
 

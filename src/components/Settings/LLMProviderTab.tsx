@@ -13,6 +13,12 @@ import qwenSvg from "@lobehub/icons-static-svg/icons/qwen-color.svg";
 import zhipuSvg from "@lobehub/icons-static-svg/icons/zhipu-color.svg";
 import openaiSvg from "@lobehub/icons-static-svg/icons/openai.svg";
 import geminiSvg from "@lobehub/icons-static-svg/icons/gemini-color.svg";
+import kimiSvg from "@lobehub/icons-static-svg/icons/kimi-color.svg";
+import wenxinSvg from "@lobehub/icons-static-svg/icons/wenxin-color.svg";
+import hunyuanSvg from "@lobehub/icons-static-svg/icons/hunyuan-color.svg";
+import minimaxSvg from "@lobehub/icons-static-svg/icons/minimax-color.svg";
+import siliconcloudSvg from "@lobehub/icons-static-svg/icons/siliconcloud-color.svg";
+import volcengineSvg from "@lobehub/icons-static-svg/icons/volcengine-color.svg";
 
 export type { ModelType };
 
@@ -159,6 +165,137 @@ export const LLM_PROVIDERS: LLMProviderDef[] = [
       ],
       EMBEDDING: [
         "text-embedding-004", "embedding-001",
+      ],
+    },
+    isConfigured: (c) => Boolean(c.apiKey),
+  },
+  {
+    key: "moonshot",
+    type: "cloud",
+    logoSrc: kimiSvg,
+    brandColor: "#000000",
+    apiKeyUrl: "https://platform.moonshot.cn/console/api-keys",
+    supportedTypes: ["LLM"],
+    fields: [
+      { key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "sk-...", isPassword: true },
+    ],
+    presetModelsByType: {
+      LLM: [
+        "kimi-latest", "moonshot-v1-auto",
+        "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k",
+      ],
+    },
+    isConfigured: (c) => Boolean(c.apiKey),
+  },
+  {
+    key: "wenxin",
+    type: "cloud",
+    logoSrc: wenxinSvg,
+    brandColor: "#2468F2",
+    apiKeyUrl: "https://console.bce.baidu.com/qianfan/ais/console/applicationConsole/application",
+    supportedTypes: ["LLM", "EMBEDDING"],
+    fields: [
+      { key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "bce-v3/...", isPassword: true },
+    ],
+    presetModelsByType: {
+      LLM: [
+        "ernie-4.5-8k", "ernie-4.5-turbo-8k",
+        "ernie-4.0-8k", "ernie-4.0-turbo-8k",
+        "ernie-3.5-8k", "ernie-speed-8k",
+      ],
+      EMBEDDING: [
+        "bge-large-zh", "bge-large-en", "tao-8k",
+      ],
+    },
+    isConfigured: (c) => Boolean(c.apiKey),
+  },
+  {
+    key: "hunyuan",
+    type: "cloud",
+    logoSrc: hunyuanSvg,
+    brandColor: "#006EFF",
+    apiKeyUrl: "https://console.cloud.tencent.com/hunyuan/api-key",
+    supportedTypes: ["LLM", "EMBEDDING"],
+    fields: [
+      { key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "sk-...", isPassword: true },
+    ],
+    presetModelsByType: {
+      LLM: [
+        "hunyuan-t1-latest", "hunyuan-turbos-latest",
+        "hunyuan-large-latest", "hunyuan-standard-latest",
+        "hunyuan-lite-latest",
+      ],
+      EMBEDDING: [
+        "hunyuan-embedding",
+      ],
+    },
+    isConfigured: (c) => Boolean(c.apiKey),
+  },
+  {
+    key: "minimax",
+    type: "cloud",
+    logoSrc: minimaxSvg,
+    brandColor: "#1A1A2E",
+    apiKeyUrl: "https://platform.minimaxi.com/user-center/basic-information/interface-key",
+    supportedTypes: ["LLM"],
+    fields: [
+      { key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "eyJ...", isPassword: true },
+    ],
+    presetModelsByType: {
+      LLM: [
+        "MiniMax-M1", "MiniMax-Text-01",
+        "abab6.5s-chat", "abab6.5t-chat",
+      ],
+    },
+    isConfigured: (c) => Boolean(c.apiKey),
+  },
+  {
+    key: "siliconflow",
+    type: "cloud",
+    logoSrc: siliconcloudSvg,
+    brandColor: "#7C3AED",
+    apiKeyUrl: "https://cloud.siliconflow.cn/account/ak",
+    supportedTypes: ["LLM", "EMBEDDING", "RERANK"],
+    fields: [
+      { key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "sk-...", isPassword: true },
+    ],
+    presetModelsByType: {
+      LLM: [
+        "Qwen/Qwen3-8B", "Qwen/Qwen3-14B", "Qwen/Qwen3-32B",
+        "deepseek-ai/DeepSeek-R1-0528",
+        "deepseek-ai/DeepSeek-V3-0324",
+        "Pro/Qwen/Qwen2.5-7B-Instruct",
+      ],
+      EMBEDDING: [
+        "BAAI/bge-m3", "BAAI/bge-large-zh-v1.5",
+        "Pro/BAAI/bge-m3",
+      ],
+      RERANK: [
+        "BAAI/bge-reranker-v2-m3",
+        "Pro/BAAI/bge-reranker-v2-m3",
+      ],
+    },
+    isConfigured: (c) => Boolean(c.apiKey),
+  },
+  {
+    key: "volcengine",
+    type: "cloud",
+    logoSrc: volcengineSvg,
+    brandColor: "#3370FF",
+    apiKeyUrl: "https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey",
+    supportedTypes: ["LLM", "EMBEDDING"],
+    fields: [
+      { key: "apiKey", labelKey: "settings:llm.apiKey", placeholder: "...", isPassword: true },
+    ],
+    presetModelsByType: {
+      LLM: [
+        "doubao-1.5-pro-32k", "doubao-1.5-pro-256k",
+        "doubao-1.5-thinking-pro-250415",
+        "doubao-pro-32k", "doubao-pro-256k",
+        "doubao-lite-32k",
+      ],
+      EMBEDDING: [
+        "doubao-embedding-large", "doubao-embedding",
       ],
     },
     isConfigured: (c) => Boolean(c.apiKey),
