@@ -150,6 +150,7 @@
     "summarySaved": "摘要已保存",
     "transcriptSaved": "转录内容已保存",
     "persistFailed": "保存失败，请重试",
-    "copySuccess": "已复制到剪贴板"
+    "copySuccess": "已复制到剪贴板",
+    "transcriptionCancelled": "转录已取消"
   }
 }

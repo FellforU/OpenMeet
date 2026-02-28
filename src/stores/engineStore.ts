@@ -36,6 +36,7 @@ interface EngineStore {
   pollLoadStatus: (engineName: string) => void;
   stopPolling: (engineName: string) => void;
   clearLoadingState: (engineName: string) => void;
+  cancelModelLoad: (engineName: string) => Promise<void>;
   startModelDownload: (engineName: string, modelSize: string) => Promise<void>;
   cancelModelDownload: (engineName: string) => Promise<void>;
   pollDownloadStatus: (engineName: string) => void;
@@ -364,6 +365,20 @@ export const useEngineStore = create<EngineStore>((set, get) => ({
       const { [engineName]: _, ...rest } = state.loadingStates;
       return { loadingStates: rest };
     });
+  },
+
+  cancelModelLoad: async (engineName) => {
+    get().stopPolling(engineName);
+    try {
+      await api.cancelLoad(engineName);
+    } catch {
+      // Best effort cancel
+    }
+    set((state) => {
+      const { [engineName]: _, ...rest } = state.loadingStates;
+      return { loadingStates: rest };
+    });
+    await get().fetchEngines();
   },
 
   startModelDownload: async (engineName, modelSize) => {

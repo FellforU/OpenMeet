@@ -54,6 +54,7 @@ interface TranscriptionStore {
   setPipelineStep: (step: PipelineStep) => void;
   loadProjectData: (projectId: string) => Promise<void>;
   persistSegments: (projectId: string) => Promise<void>;
+  cancelTranscription: () => void;
   persistSummary: (projectId: string) => Promise<void>;
   reset: () => void;
 }
@@ -296,6 +297,15 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
       i === index ? { ...item, done: !item.done } : item
     );
     set({ summary: { ...summary, actionItems: items } });
+  },
+
+  cancelTranscription: () => {
+    cancelPolling();
+    const jobId = get().job.id;
+    if (jobId) {
+      api.cancelJob(jobId).catch(() => {});
+    }
+    set({ job: { ...get().job, status: "cancelled", progress: 0 } });
   },
 
   setPipelineStep: (step) => set({ job: { ...get().job, pipelineStep: step } }),

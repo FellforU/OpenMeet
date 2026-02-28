@@ -305,6 +305,41 @@ async def unload_engine_model(engine_name: str):
     return await _build_engine_info(engine)
 
 
+@router.post("/{engine_name}/cancel-load", response_model=LoadingStatus)
+async def cancel_load(engine_name: str):
+    """Cancel an in-progress model load without unloading any existing model."""
+    manager = get_manager()
+    engine = manager._engines.get(engine_name)
+    if not engine:
+        raise HTTPException(404, f"Engine '{engine_name}' not found")
+
+    # Cancel the asyncio task if running
+    task = _loading_tasks.pop(engine_name, None)
+    if task and not task.done():
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    status = _loading_status.get(engine_name)
+    if status and status["phase"] in (LoadPhase.PREPARING, LoadPhase.LOADING):
+        status["phase"] = LoadPhase.IDLE
+        status["error"] = None
+
+    started_at = status.get("started_at") if status else None
+    elapsed = time.time() - started_at if started_at else 0.0
+
+    return LoadingStatus(
+        engine_name=engine_name,
+        model_size=status.get("model_size") if status else None,
+        phase=LoadPhase.IDLE,
+        started_at=started_at,
+        elapsed_seconds=round(elapsed, 1),
+        error=None,
+    )
+
+
 @router.post("/{engine_name}/download", response_model=DownloadResponse)
 async def download_engine_model(
     engine_name: str, model_size: str = Query(...)

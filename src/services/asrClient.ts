@@ -138,6 +138,15 @@ export async function getLoadStatus(
   );
 }
 
+export async function cancelLoad(
+  engineName: string
+): Promise<LoadingStatus> {
+  return fetchJson(
+    `${ASR_BASE_URL}/engines/${engineName}/cancel-load`,
+    { method: "POST" }
+  );
+}
+
 export async function unloadEngineModel(
   engineName: string
 ): Promise<EngineInfo> {

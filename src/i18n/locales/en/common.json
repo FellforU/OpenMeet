@@ -150,6 +150,7 @@
     "summarySaved": "Summary saved",
     "transcriptSaved": "Transcript saved",
     "persistFailed": "Save failed, please retry",
-    "copySuccess": "Copied to clipboard"
+    "copySuccess": "Copied to clipboard",
+    "transcriptionCancelled": "Transcription cancelled"
   }
 }

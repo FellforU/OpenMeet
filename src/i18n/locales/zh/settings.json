@@ -127,6 +127,7 @@
     "downloadSuccess": "{{model}} 模型下载完成",
     "downloadFailed": "模型下载失败：{{error}}",
     "downloadCancelled": "下载已取消",
+    "loadCancelled": "模型加载已取消",
     "notDownloaded": "请先下载模型",
     "activate": "加载",
     "activateDesc": "设为默认并加载到内存"

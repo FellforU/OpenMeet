@@ -135,6 +135,7 @@ function VendorConfigModal({
   unloadingKey,
   onDownload,
   onCancelDownload,
+  onCancelLoad,
   onLoad,
   onUnload,
   onRevealFolder,
@@ -149,6 +150,7 @@ function VendorConfigModal({
   unloadingKey: string | null;
   onDownload: (engine: string, size: string) => void;
   onCancelDownload: (engine: string) => void;
+  onCancelLoad: (engine: string) => void;
   onLoad: (engine: string, size: string) => void;
   onUnload: (engine: string) => void;
   onRevealFolder: (engine: string, size: string) => void;
@@ -317,6 +319,15 @@ function VendorConfigModal({
                     <span className="text-muted-foreground">
                       {formatElapsed(loadingState.elapsedSeconds)}
                     </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="ml-1 h-5 w-5 p-0 text-muted-foreground hover:text-destructive"
+                      title={t("common:action.cancel")}
+                      onClick={() => onCancelLoad(vendor.engine)}
+                    >
+                      <XCircle className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
                 )}
                 {/* Download error */}
@@ -348,6 +359,7 @@ export function ModelManager() {
     loadingStates,
     downloadStates,
     startModelLoad,
+    cancelModelLoad,
     startModelDownload,
     cancelModelDownload,
     clearLoadingState,
@@ -430,6 +442,11 @@ export function ModelManager() {
   const handleCancelDownload = async (engine: string) => {
     await cancelModelDownload(engine);
     toast.info(t("asr.downloadCancelled"));
+  };
+
+  const handleCancelLoad = async (engine: string) => {
+    await cancelModelLoad(engine);
+    toast.info(t("asr.loadCancelled"));
   };
 
   const handleLoad = (engine: string, size: string) => {
@@ -628,6 +645,7 @@ export function ModelManager() {
           unloadingKey={unloadingKey}
           onDownload={handleDownload}
           onCancelDownload={handleCancelDownload}
+          onCancelLoad={handleCancelLoad}
           onLoad={handleLoad}
           onUnload={handleUnload}
           onRevealFolder={handleRevealFolder}
