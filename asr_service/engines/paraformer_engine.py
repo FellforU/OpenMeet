@@ -1,6 +1,7 @@
 """ASR engine wrapping FunASR Paraformer."""
 
 import asyncio
+import os
 from pathlib import Path
 from typing import Optional, Callable
 
@@ -62,6 +63,17 @@ class ParaformerEngine:
     def __init__(self):
         self._model = None
         self._model_size: Optional[str] = None
+
+    def _get_modelscope_cache(self) -> Path:
+        """Return the ModelScope cache directory, respecting runtime config and env vars."""
+        from asr_service.config import get_model_cache_dir
+        runtime_dir = get_model_cache_dir()
+        if runtime_dir:
+            return Path(runtime_dir).resolve()
+        env_cache = os.environ.get("MODELSCOPE_CACHE")
+        if env_cache:
+            return Path(env_cache).resolve()
+        return Path.home() / ".cache" / "modelscope" / "hub"
 
     async def get_capabilities(self) -> EngineCapabilities:
         return EngineCapabilities(
@@ -126,11 +138,12 @@ class ParaformerEngine:
             local_path = config.MODELS_DIR / local_dir
             if local_path.exists():
                 return True
-        # Check ModelScope cache
-        modelscope_cache = Path.home() / ".cache" / "modelscope" / "hub"
+        # Check ModelScope cache (runtime-aware)
+        modelscope_cache = self._get_modelscope_cache()
         model_id = MODEL_MAP.get(model_size, "")
-        if model_id.startswith("iic/"):
-            cache_dir = modelscope_cache / "iic" / model_id.split("/", 1)[1]
+        if "/" in model_id:
+            org, name = model_id.split("/", 1)
+            cache_dir = modelscope_cache / org / name
             return cache_dir.exists()
         return False
 
@@ -147,11 +160,12 @@ class ParaformerEngine:
             local_path = config.MODELS_DIR / local_dir
             if local_path.exists():
                 return str(local_path)
-        # Check ModelScope cache
-        modelscope_cache = Path.home() / ".cache" / "modelscope" / "hub"
+        # Check ModelScope cache (runtime-aware)
+        modelscope_cache = self._get_modelscope_cache()
         model_id = MODEL_MAP.get(model_size, "")
-        if model_id.startswith("iic/"):
-            cache_dir = modelscope_cache / "iic" / model_id.split("/", 1)[1]
+        if "/" in model_id:
+            org, name = model_id.split("/", 1)
+            cache_dir = modelscope_cache / org / name
             if cache_dir.exists():
                 return str(cache_dir)
         return None
@@ -161,8 +175,15 @@ class ParaformerEngine:
         return self.ESTIMATED_SIZES.get(model_size, 0)
 
     def get_download_dir(self, model_size: str) -> str | None:
-        """Return the cache directory being downloaded into."""
-        return self.get_model_path(model_size)
+        """Return the expected cache directory for a model (even while downloading)."""
+        if model_size not in self.SUPPORTED_SIZES:
+            return None
+        model_id = MODEL_MAP.get(model_size, "")
+        if "/" not in model_id:
+            return None
+        cache_base = self._get_modelscope_cache()
+        org, name = model_id.split("/", 1)
+        return str(cache_base / org / name)
 
     async def download_model(self, model_size: str) -> str:
         """Download model files without keeping in memory."""
@@ -174,10 +195,11 @@ class ParaformerEngine:
             return self._resolve_model_path(model_size)
 
         model_id = MODEL_MAP[model_size]
+        cache_dir = str(self._get_modelscope_cache())
 
         def _download():
             from modelscope.hub.snapshot_download import snapshot_download
-            return snapshot_download(model_id)
+            return snapshot_download(model_id, cache_dir=cache_dir)
 
         return await asyncio.to_thread(_download)
 

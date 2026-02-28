@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from ..config import set_app_data_dir, get_lance_path, get_sqlite_path
+from ..config import set_app_data_dir, set_model_cache_dir, get_lance_path, get_sqlite_path
 
 router = APIRouter(tags=["config"])
 
@@ -31,6 +31,7 @@ class EmbeddingConfig(BaseModel):
 class ConfigRequest(BaseModel):
     app_data_dir: str
     embedding_config: EmbeddingConfig | None = None
+    model_cache_dir: str | None = None
 
 
 class ConfigResponse(BaseModel):
@@ -42,6 +43,9 @@ class ConfigResponse(BaseModel):
 @router.post("/config", response_model=ConfigResponse)
 async def set_config(req: ConfigRequest):
     set_app_data_dir(req.app_data_dir)
+
+    # Apply model cache directory (empty string resets to default)
+    set_model_cache_dir(req.model_cache_dir or None)
 
     # Apply embedding configuration if provided
     if req.embedding_config and _embedder_ref:

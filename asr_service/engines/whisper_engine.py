@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 from typing import Optional, Callable
 
 import faster_whisper
@@ -10,6 +11,16 @@ from asr_service.models.job import Segment
 
 # Traditional-to-Simplified Chinese converter (singleton)
 _t2s = OpenCC("t2s")
+
+
+# Whisper model size to HF repo mapping (for cache path calculation)
+_WHISPER_HF_REPOS = {
+    "tiny": "Systran/faster-whisper-tiny",
+    "base": "Systran/faster-whisper-base",
+    "small": "Systran/faster-whisper-small",
+    "medium": "Systran/faster-whisper-medium",
+    "large-v3": "Systran/faster-whisper-large-v3",
+}
 
 
 class WhisperEngine:
@@ -27,6 +38,11 @@ class WhisperEngine:
     def __init__(self):
         self._model: Optional[WhisperModel] = None
         self._model_size: Optional[str] = None
+
+    def _get_cache_dir(self) -> str | None:
+        """Return runtime model cache directory, or None for default."""
+        from asr_service.config import get_model_cache_dir
+        return get_model_cache_dir()
 
     async def get_capabilities(self) -> EngineCapabilities:
         return EngineCapabilities(
@@ -46,12 +62,16 @@ class WhisperEngine:
 
         await self.unload_model()
 
+        cache_dir = self._get_cache_dir()
+
         def _load():
-            return WhisperModel(
-                model_size,
-                device="auto",
-                compute_type="auto",
-            )
+            kwargs: dict = {
+                "device": "auto",
+                "compute_type": "auto",
+            }
+            if cache_dir:
+                kwargs["download_root"] = cache_dir
+            return WhisperModel(model_size, **kwargs)
 
         self._model = await asyncio.to_thread(_load)
         self._model_size = model_size
@@ -68,7 +88,10 @@ class WhisperEngine:
     def is_model_downloaded(self, model_size: str) -> bool:
         """Check if model files exist in HuggingFace cache."""
         try:
-            faster_whisper.download_model(model_size, local_files_only=True)
+            cache_dir = self._get_cache_dir()
+            faster_whisper.download_model(
+                model_size, local_files_only=True, output_dir=cache_dir
+            )
             return True
         except Exception:
             return False
@@ -78,7 +101,10 @@ class WhisperEngine:
         if model_size not in self.SUPPORTED_SIZES:
             return None
         try:
-            path = faster_whisper.download_model(model_size, local_files_only=True)
+            cache_dir = self._get_cache_dir()
+            path = faster_whisper.download_model(
+                model_size, local_files_only=True, output_dir=cache_dir
+            )
             return str(path)
         except Exception:
             return None
@@ -88,16 +114,26 @@ class WhisperEngine:
         return self.ESTIMATED_SIZES.get(model_size, 0)
 
     def get_download_dir(self, model_size: str) -> str | None:
-        """Return the cache directory for a downloading model."""
-        return self.get_model_path(model_size)
+        """Return the expected cache directory for a model (even while downloading)."""
+        repo = _WHISPER_HF_REPOS.get(model_size)
+        if not repo:
+            return None
+        cache_dir = self._get_cache_dir()
+        if cache_dir:
+            base = Path(cache_dir)
+        else:
+            base = Path.home() / ".cache" / "huggingface" / "hub"
+        return str(base / f"models--{repo.replace('/', '--')}")
 
     async def download_model(self, model_size: str) -> str:
         """Download model files without loading into memory."""
         if model_size not in self.SUPPORTED_SIZES:
             raise ValueError(f"Unsupported model size: {model_size}")
 
+        cache_dir = self._get_cache_dir()
+
         def _download():
-            return faster_whisper.download_model(model_size)
+            return faster_whisper.download_model(model_size, output_dir=cache_dir)
 
         path = await asyncio.to_thread(_download)
         return str(path)

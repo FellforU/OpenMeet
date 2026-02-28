@@ -15,7 +15,11 @@ _t2s = OpenCC("t2s")
 
 
 def _get_hf_cache() -> Path:
-    """Return the HuggingFace cache directory, respecting env vars."""
+    """Return the HuggingFace cache directory, respecting runtime config and env vars."""
+    from asr_service.config import get_model_cache_dir
+    runtime_dir = get_model_cache_dir()
+    if runtime_dir:
+        return Path(runtime_dir).resolve()
     env_cache = os.environ.get("HF_HUB_CACHE")
     if env_cache:
         return Path(env_cache).resolve()
@@ -147,9 +151,11 @@ class Qwen3Engine:
         return self.ESTIMATED_SIZES.get(model_size, 0)
 
     def get_download_dir(self, model_size: str) -> str | None:
-        """Return the cache directory being downloaded into."""
+        """Return the expected cache directory for a model (even while downloading)."""
+        if model_size not in self.SUPPORTED_SIZES:
+            return None
         cache_dir = self._get_hf_cache_dir(model_size)
-        return str(cache_dir) if cache_dir.exists() else None
+        return str(cache_dir)
 
     async def download_model(self, model_size: str) -> str:
         """Download model files without keeping in memory."""
