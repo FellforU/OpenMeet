@@ -143,9 +143,11 @@ async fn migrate_cache_dir(from: String, to: String) -> Result<String, String> {
 
 #[tauri::command]
 fn get_default_cache_dir() -> String {
-    dirs::cache_dir()
+    dirs::home_dir()
         .unwrap_or_default()
-        .join("huggingface/hub")
+        .join(".cache")
+        .join("huggingface")
+        .join("hub")
         .to_string_lossy()
         .to_string()
 }
