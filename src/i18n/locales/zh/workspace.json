@@ -4,11 +4,13 @@
     "summary": "摘要",
     "edit": "编辑",
     "notes": "笔记",
-    "attachments": "附件"
+    "attachments": "附件",
+    "mindmap": "思维导图"
   },
   "transcript": {
     "empty": "上传音频或开始录音以进行转录",
-    "transcribing": "转录中..."
+    "transcribing": "转录中...",
+    "editMode": "编辑模式"
   },
   "summary": {
     "topic": "主题",
@@ -30,6 +32,7 @@
     "plainText": "纯文本 (.txt)",
     "json": "JSON (.json)",
     "success": "已导出为 {{format}}",
+    "successPath": "已保存至 {{path}}",
     "failed": "导出失败"
   },
   "regenerate": {
@@ -57,7 +60,13 @@
   "notes": {
     "placeholder": "在这里记录会议笔记...",
     "saved": "已保存",
-    "saving": "保存中..."
+    "saving": "保存中...",
+    "editMode": "编辑模式",
+    "startWriting": "开始写笔记"
+  },
+  "mindmap": {
+    "empty": "生成摘要后将显示思维导图",
+    "exportXmind": "导出 XMind"
   },
   "chat": {
     "title": "AI 助手",

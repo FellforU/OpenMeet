@@ -4,11 +4,13 @@
     "summary": "Summary",
     "edit": "Edit",
     "notes": "Notes",
-    "attachments": "Attachments"
+    "attachments": "Attachments",
+    "mindmap": "Mind Map"
   },
   "transcript": {
     "empty": "Upload audio or start recording to begin transcription",
-    "transcribing": "Transcribing..."
+    "transcribing": "Transcribing...",
+    "editMode": "Edit Mode"
   },
   "summary": {
     "topic": "Topic",
@@ -30,6 +32,7 @@
     "plainText": "Plain Text (.txt)",
     "json": "JSON (.json)",
     "success": "Exported as {{format}}",
+    "successPath": "Saved to {{path}}",
     "failed": "Export failed"
   },
   "regenerate": {
@@ -57,7 +60,13 @@
   "notes": {
     "placeholder": "Take meeting notes here...",
     "saved": "Saved",
-    "saving": "Saving..."
+    "saving": "Saving...",
+    "editMode": "Edit Mode",
+    "startWriting": "Start Writing"
+  },
+  "mindmap": {
+    "empty": "Mind map will appear after summary is generated",
+    "exportXmind": "Export XMind"
   },
   "chat": {
     "title": "AI Assistant",

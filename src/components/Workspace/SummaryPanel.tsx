@@ -16,7 +16,7 @@ import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
-import { Textarea } from "../ui/textarea";
+import { MilkdownEditor } from "../Editor";
 import { useTranscriptionStore } from "../../stores/transcriptionStore";
 import type { Segment } from "../../types";
 
@@ -175,8 +175,8 @@ export function SummaryPanel({ onJumpToTranscript }: SummaryPanelProps) {
   // Edit mode
   if (editing) {
     return (
-      <div className="h-full overflow-y-auto p-4">
-        <div className="mb-3 flex items-center gap-2">
+      <div className="flex h-full flex-col">
+        <div className="flex items-center gap-2 px-4 py-2">
           <Badge variant="secondary">{t("summary.editMode")}</Badge>
           <div className="ml-auto flex gap-2">
             <Button size="sm" onClick={handleSave}>
@@ -189,10 +189,9 @@ export function SummaryPanel({ onJumpToTranscript }: SummaryPanelProps) {
             </Button>
           </div>
         </div>
-        <Textarea
-          value={editText}
-          onChange={(e) => setEditText(e.target.value)}
-          className="min-h-[400px] font-mono text-[13px]"
+        <MilkdownEditor
+          defaultValue={editText}
+          onChange={(md) => setEditText(md)}
         />
       </div>
     );
