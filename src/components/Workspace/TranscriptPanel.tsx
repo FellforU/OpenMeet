@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Mic, Loader2, Pencil, Save, X } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { SegmentItem } from "./SegmentItem";
@@ -54,9 +55,38 @@ export function TranscriptPanel() {
     setEditing(true);
   };
 
+  const setSegments = useTranscriptionStore((s) => s.setSegments);
+
   const handleSave = () => {
-    // Save edited markdown — future enhancement: parse back to segments
+    // Parse edited markdown back to segments, preserving timestamps from originals
+    const lines = editText.split("\n").filter((l) => l.trim());
+    const newSegments: Segment[] = [];
+    let currentSpeaker = "";
+    let segIdx = 0;
+
+    for (const line of lines) {
+      // Detect speaker header: **SpeakerName:**
+      const speakerMatch = line.match(/^\*\*(.+?):\*\*$/);
+      if (speakerMatch) {
+        currentSpeaker = speakerMatch[1];
+        continue;
+      }
+      // Map to original segment for timestamps, or create new
+      const orig = segments[segIdx];
+      newSegments.push({
+        id: orig?.id ?? `seg-${segIdx}`,
+        start: orig?.start ?? 0,
+        end: orig?.end ?? 0,
+        text: line,
+        speaker: currentSpeaker || orig?.speaker || null,
+        confidence: orig?.confidence ?? null,
+      });
+      segIdx++;
+    }
+
+    setSegments(newSegments);
     setEditing(false);
+    toast.success(t("common:toast.summarySaved"));
   };
 
   const handleCancel = () => {

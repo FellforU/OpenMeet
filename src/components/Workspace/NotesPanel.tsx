@@ -41,7 +41,7 @@ export function NotesPanel({ projectId }: { projectId: string }) {
       setSaveStatus("saved");
       indexProject(projectIdRef.current).catch(() => {});
     } catch {
-      // silent retry
+      setSaveStatus("idle");
     }
   }, []);
 

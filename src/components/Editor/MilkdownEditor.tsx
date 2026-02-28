@@ -52,6 +52,8 @@ function InnerEditor({ defaultValue, onChange, readonly }: MilkdownEditorProps) 
       .use(trailing);
 
     return editor;
+    // Deps intentionally empty: editor initializes once per mount.
+    // Callers MUST use React `key` to force remount when defaultValue/readonly changes.
   }, []);
 
   return <Milkdown />;
