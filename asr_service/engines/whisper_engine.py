@@ -90,7 +90,7 @@ class WhisperEngine:
         try:
             cache_dir = self._get_cache_dir()
             faster_whisper.download_model(
-                model_size, local_files_only=True, output_dir=cache_dir
+                model_size, local_files_only=True, cache_dir=cache_dir
             )
             return True
         except Exception:
@@ -103,7 +103,7 @@ class WhisperEngine:
         try:
             cache_dir = self._get_cache_dir()
             path = faster_whisper.download_model(
-                model_size, local_files_only=True, output_dir=cache_dir
+                model_size, local_files_only=True, cache_dir=cache_dir
             )
             return str(path)
         except Exception:
@@ -133,7 +133,7 @@ class WhisperEngine:
         cache_dir = self._get_cache_dir()
 
         def _download():
-            return faster_whisper.download_model(model_size, output_dir=cache_dir)
+            return faster_whisper.download_model(model_size, cache_dir=cache_dir)
 
         path = await asyncio.to_thread(_download)
         return str(path)
