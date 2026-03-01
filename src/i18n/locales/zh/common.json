@@ -123,6 +123,10 @@
     "noSegments": "未检测到语音。请检查 ASR 模型是否已加载，麦克风是否正常工作。",
     "modelPathNotFound": "模型文件未找到"
   },
+  "recording": {
+    "microphone": "麦克风",
+    "systemAudio": "系统音频"
+  },
   "processing": {
     "saving": "保存音频中...",
     "merging": "合并音频中...",

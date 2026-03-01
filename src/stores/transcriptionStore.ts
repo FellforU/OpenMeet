@@ -34,6 +34,7 @@ interface TranscriptionStore {
     isPlaying: boolean;
     playbackSpeed: number;
   };
+  highlightSegmentTime: number | null;
 
   setAudioFile: (filePath: string, objectUrl: string) => void;
   startTranscription: (engine: string, modelSize: string, language: string | null) => Promise<void>;
@@ -56,6 +57,7 @@ interface TranscriptionStore {
   persistSegments: (projectId: string) => Promise<void>;
   cancelTranscription: () => void;
   persistSummary: (projectId: string) => Promise<void>;
+  clearHighlight: () => void;
   reset: () => void;
 }
 
@@ -78,6 +80,7 @@ const initialState = {
     isPlaying: false,
     playbackSpeed: 1,
   },
+  highlightSegmentTime: null as number | null,
 };
 
 // Map segment to Rust format for persistence
@@ -266,7 +269,7 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
   },
   setJobStatus: (status) => set({ job: { ...get().job, status } }),
   setProgress: (progress) => set({ job: { ...get().job, progress } }),
-  seekTo: (time) => set({ audio: { ...get().audio, currentTime: time } }),
+  seekTo: (time) => set({ audio: { ...get().audio, currentTime: time }, highlightSegmentTime: time }),
   setIsPlaying: (isPlaying) => set({ audio: { ...get().audio, isPlaying } }),
   setCurrentTime: (time) => set({ audio: { ...get().audio, currentTime: time } }),
   setDuration: (duration) => set({ audio: { ...get().audio, duration } }),
@@ -311,6 +314,25 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
   setPipelineStep: (step) => set({ job: { ...get().job, pipelineStep: step } }),
 
   loadProjectData: async (projectId: string) => {
+    // Cancel any active polling from previous meeting
+    cancelPolling();
+
+    // Revoke previous audio blob URL
+    const prevUrl = get().audio.objectUrl;
+    if (prevUrl) {
+      URL.revokeObjectURL(prevUrl);
+    }
+
+    // Reset all transient state before loading new meeting data
+    // Preserve playbackSpeed as a user preference
+    const savedSpeed = get().audio.playbackSpeed;
+    set({
+      job: { id: null, mode: "file", status: "idle" as JobStatus, progress: 0, pipelineStep: null as PipelineStep },
+      segments: [],
+      summary: null,
+      audio: { ...initialState.audio, playbackSpeed: savedSpeed },
+    });
+
     // Load segments from SQLite
     const rawSegments = await invoke<
       Array<{
@@ -376,6 +398,8 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
       summary: summaryToRust(summary),
     });
   },
+
+  clearHighlight: () => set({ highlightSegmentTime: null }),
 
   reset: () => {
     cancelPolling();

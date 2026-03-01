@@ -123,6 +123,10 @@
     "noSegments": "No speech detected. Check if ASR model is loaded and microphone is working.",
     "modelPathNotFound": "Model files not found on disk"
   },
+  "recording": {
+    "microphone": "Microphone",
+    "systemAudio": "System Audio"
+  },
   "processing": {
     "saving": "Saving audio...",
     "merging": "Merging audio...",

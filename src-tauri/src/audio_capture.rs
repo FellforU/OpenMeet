@@ -108,10 +108,15 @@ pub async fn list_audio_devices() -> Result<Vec<AudioDeviceInfo>, String> {
 pub async fn start_recording(
     state: State<'_, AudioCaptureState>,
     job_id: String,
+    audio_source: Option<String>,
 ) -> Result<String, String> {
     if state.is_recording.load(Ordering::SeqCst) {
         return Err("Already recording".to_string());
     }
+
+    let _source = audio_source.unwrap_or_else(|| "microphone".to_string());
+    // TODO: Use _source to select between microphone and system audio capture
+    // Currently always uses default input device (microphone)
 
     let host = cpal::default_host();
     let device = host

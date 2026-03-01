@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Mic, Loader2, Pencil, Save, X } from "lucide-react";
 import { toast } from "sonner";
@@ -28,10 +28,54 @@ export function TranscriptPanel() {
   const { t } = useTranslation("workspace");
   const segments = useTranscriptionStore((s) => s.segments);
   const status = useTranscriptionStore((s) => s.job.status);
+  const pipelineStep = useTranscriptionStore((s) => s.job.pipelineStep);
+  const progress = useTranscriptionStore((s) => s.job.progress);
+  const highlightSegmentTime = useTranscriptionStore((s) => s.highlightSegmentTime);
+  const clearHighlight = useTranscriptionStore((s) => s.clearHighlight);
   const updateSegmentSpeaker = useTranscriptionStore((s) => s.updateSegmentSpeaker);
 
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState("");
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Scroll to and highlight segment when highlightSegmentTime changes
+  useEffect(() => {
+    if (highlightSegmentTime === null || segments.length === 0) return;
+
+    // Find the segment closest to the target time
+    let bestSeg: Segment | null = null;
+    let bestDist = Infinity;
+    for (const seg of segments) {
+      const dist = Math.abs(seg.start - highlightSegmentTime);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestSeg = seg;
+      }
+    }
+
+    if (!bestSeg) return;
+
+    setHighlightedId(bestSeg.id);
+
+    // Scroll to the segment element
+    requestAnimationFrame(() => {
+      const el = scrollContainerRef.current?.querySelector(
+        `[data-segment-id="${bestSeg!.id}"]`
+      );
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
+
+    // Clear highlight after 3 seconds
+    const timer = setTimeout(() => {
+      setHighlightedId(null);
+      clearHighlight();
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, [highlightSegmentTime, segments, clearHighlight]);
 
   const speakerRanges = useMemo(() => {
     const ranges = new Map<number, { start: number; end: number }>();
@@ -140,6 +184,17 @@ export function TranscriptPanel() {
     );
   }
 
+  const isProcessing = status === "running" || status === "post_processing";
+
+  // Pipeline step display name
+  const stepLabels: Record<string, string> = {
+    transcribing: t("transcript.step.transcribing"),
+    itn: t("transcript.step.itn"),
+    punctuation: t("transcript.step.punctuation"),
+    diarizing: t("transcript.step.diarizing"),
+    summarizing: t("transcript.step.summarizing"),
+  };
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-end px-4 py-2">
@@ -150,20 +205,55 @@ export function TranscriptPanel() {
           </Button>
         )}
       </div>
-      <div className="flex-1 overflow-y-auto px-4">
+
+      {/* Prominent progress display when transcription is running */}
+      {isProcessing && (
+        <div className="mx-4 mb-3 flex flex-col items-center gap-3 rounded-lg border border-blue-200 bg-blue-50/50 p-6 dark:border-blue-900 dark:bg-blue-950/30">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+          <div className="text-center">
+            <p className="text-lg font-medium text-blue-700 dark:text-blue-300">
+              {pipelineStep ? stepLabels[pipelineStep] || t("transcript.processing") : t("transcript.processing")}
+            </p>
+            {status === "running" && progress > 0 && (
+              <p className="mt-1 text-sm text-blue-600/80 dark:text-blue-400/80">
+                {Math.round(progress)}%
+              </p>
+            )}
+          </div>
+          {status === "running" && (
+            <div className="h-1.5 w-48 overflow-hidden rounded-full bg-blue-200 dark:bg-blue-900">
+              <div
+                className="h-full rounded-full bg-blue-500 transition-all duration-500"
+                style={{ width: `${Math.max(2, Math.round(progress))}%` }}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4">
         {segments.map((seg, i) => {
           const showHeader = i === 0 || seg.speaker !== segments[i - 1].speaker;
           return (
-            <SegmentItem
+            <div
               key={seg.id}
-              segment={seg}
-              showSpeakerHeader={showHeader}
-              speakerTimeRange={showHeader ? speakerRanges.get(i) : undefined}
-              onRenameSpeaker={updateSegmentSpeaker}
-            />
+              data-segment-id={seg.id}
+              className={
+                highlightedId === seg.id
+                  ? "rounded-md bg-yellow-100 transition-colors duration-300 dark:bg-yellow-900/30"
+                  : "transition-colors duration-300"
+              }
+            >
+              <SegmentItem
+                segment={seg}
+                showSpeakerHeader={showHeader}
+                speakerTimeRange={showHeader ? speakerRanges.get(i) : undefined}
+                onRenameSpeaker={updateSegmentSpeaker}
+              />
+            </div>
           );
         })}
-        {status === "running" && (
+        {isProcessing && segments.length > 0 && (
           <div className="flex items-center gap-2 p-2 text-xs text-muted-foreground">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
             {t("transcript.transcribing")}

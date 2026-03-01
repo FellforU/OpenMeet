@@ -1,10 +1,18 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Mic, Pause, Square, Loader2 } from "lucide-react";
+import { Mic, Pause, Square, Loader2, ChevronDown, Monitor } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 import { useRecordingStore } from "../../stores/recordingStore";
 import { useEngineStore } from "../../stores/engineStore";
+import type { AudioSource } from "../../stores/recordingStore";
 
 function formatElapsed(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -22,7 +30,7 @@ const STEP_LABEL_MAP: Record<string, string> = {
 
 export function RecordButton() {
   const { t } = useTranslation();
-  const { status, elapsed, processingStep, startRecording, pauseRecording, resumeRecording, stopRecording } =
+  const { status, elapsed, processingStep, audioSource, setAudioSource, startRecording, pauseRecording, resumeRecording, stopRecording } =
     useRecordingStore();
   const { selectedEngine, selectedModelSize, selectedLanguage } =
     useEngineStore();
@@ -55,10 +63,49 @@ export function RecordButton() {
 
   if (status === "idle") {
     return (
-      <Button variant="outline" size="sm" onClick={handleStart} disabled={starting}>
-        <Mic className="mr-1.5 h-4 w-4" />
-        {starting ? t("action.starting") : t("action.record")}
-      </Button>
+      <div className="flex items-center">
+        <Button
+          variant="outline"
+          size="sm"
+          className="rounded-r-none"
+          onClick={handleStart}
+          disabled={starting}
+        >
+          {audioSource === "system" ? (
+            <Monitor className="mr-1.5 h-4 w-4" />
+          ) : (
+            <Mic className="mr-1.5 h-4 w-4" />
+          )}
+          {starting ? t("action.starting") : t("action.record")}
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-l-none border-l-0 px-1.5"
+              disabled={starting}
+            >
+              <ChevronDown className="h-3.5 w-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuRadioGroup
+              value={audioSource}
+              onValueChange={(v) => setAudioSource(v as AudioSource)}
+            >
+              <DropdownMenuRadioItem value="microphone">
+                <Mic className="mr-2 h-4 w-4" />
+                {t("recording.microphone")}
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="system">
+                <Monitor className="mr-2 h-4 w-4" />
+                {t("recording.systemAudio")}
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     );
   }
 

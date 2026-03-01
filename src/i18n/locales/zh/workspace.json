@@ -10,7 +10,15 @@
   "transcript": {
     "empty": "上传音频或开始录音以进行转录",
     "transcribing": "转录中...",
-    "editMode": "编辑模式"
+    "editMode": "编辑模式",
+    "processing": "处理中...",
+    "step": {
+      "transcribing": "正在转录",
+      "itn": "逆文本正则化",
+      "punctuation": "添加标点符号",
+      "diarizing": "说话人分离",
+      "summarizing": "生成摘要"
+    }
   },
   "summary": {
     "topic": "主题",

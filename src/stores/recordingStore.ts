@@ -17,13 +17,17 @@ type ProcessingStep =
   | "summarizing"
   | null;
 
+export type AudioSource = "microphone" | "system";
+
 interface RecordingStore {
   status: RecordingStatus;
   jobId: string | null;
   elapsed: number;
   segments: Segment[];
   processingStep: ProcessingStep;
+  audioSource: AudioSource;
 
+  setAudioSource: (source: AudioSource) => void;
   startRecording: (engine: string, modelSize: string, language: string | null) => Promise<void>;
   pauseRecording: () => Promise<void>;
   resumeRecording: () => Promise<void>;
@@ -100,6 +104,9 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
   elapsed: 0,
   segments: [],
   processingStep: null,
+  audioSource: "microphone" as AudioSource,
+
+  setAudioSource: (source) => set({ audioSource: source }),
 
   startRecording: async (engine, modelSize, language) => {
     // Auto-create a meeting if none is selected
@@ -162,7 +169,7 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
 
     // Start audio capture in Rust
     try {
-      await invoke<string>("start_recording", { jobId: job.id });
+      await invoke<string>("start_recording", { jobId: job.id, audioSource: get().audioSource });
     } catch {
       // If Tauri invoke fails (e.g., in dev browser), recording UI still works
     }

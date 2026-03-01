@@ -10,7 +10,15 @@
   "transcript": {
     "empty": "Upload audio or start recording to begin transcription",
     "transcribing": "Transcribing...",
-    "editMode": "Edit Mode"
+    "editMode": "Edit Mode",
+    "processing": "Processing...",
+    "step": {
+      "transcribing": "Transcribing",
+      "itn": "Inverse Text Normalization",
+      "punctuation": "Adding Punctuation",
+      "diarizing": "Speaker Diarization",
+      "summarizing": "Generating Summary"
+    }
   },
   "summary": {
     "topic": "Topic",

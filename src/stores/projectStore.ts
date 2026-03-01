@@ -103,6 +103,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       projects: [...state.projects, project],
       activeProjectId: project.id,
     }));
+    // Reset transcription state for the new empty meeting
+    import("./transcriptionStore").then(({ useTranscriptionStore }) => {
+      useTranscriptionStore.getState().loadProjectData(project.id);
+    });
     return project;
   },
 
