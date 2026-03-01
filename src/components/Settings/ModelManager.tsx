@@ -146,7 +146,7 @@ function VendorConfigModal({
   downloadedModels: Set<string>;
   loadedModels: Set<string>;
   loadingState: { phase: string; modelSize: string; elapsedSeconds: number; error: string | null } | null;
-  downloadState: { phase: string; modelSize: string; elapsedSeconds: number; downloadedBytes: number; totalBytes: number; error: string | null } | null;
+  downloadState: { phase: string; modelSize: string; elapsedSeconds: number; downloadedBytes: number; totalBytes: number; error: string | null; modelName: string | null } | null;
   unloadingKey: string | null;
   onDownload: (engine: string, size: string) => void;
   onCancelDownload: (engine: string) => void;
@@ -277,7 +277,12 @@ function VendorConfigModal({
                   <div className="mt-2 space-y-1">
                     <div className="flex items-center gap-2 text-xs text-blue-600">
                       <Loader2 className="h-3 w-3 animate-spin" />
-                      <span>{t("common:downloadPhase.downloading")}</span>
+                      <span>
+                        {t("common:downloadPhase.downloading")}
+                        {downloadState.modelName && (
+                          <span className="ml-1 font-medium">{downloadState.modelName}</span>
+                        )}
+                      </span>
                       <span className="text-muted-foreground">
                         {formatElapsed(downloadState.elapsedSeconds)}
                       </span>

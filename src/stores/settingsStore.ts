@@ -35,6 +35,7 @@ interface GeneralConfig {
   asrEngine: string;
   asrModelSize: string;
   modelCacheDir: string;
+  hfMirror: string;                // HuggingFace mirror URL (e.g. "https://hf-mirror.com")
 }
 
 // Parse a compound model reference like "openai/gpt-4o"
@@ -82,6 +83,7 @@ const defaultState = {
     asrEngine: "whisper",
     asrModelSize: "base",
     modelCacheDir: "",
+    hfMirror: "",
   },
   llmProviders: {
     ollama: { enabled: true, host: "http://localhost:11434", model: "qwen2.5:7b", modelByType: { LLM: "qwen2.5:7b" } },

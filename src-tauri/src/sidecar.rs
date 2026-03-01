@@ -80,6 +80,7 @@ fn find_python(project_root: &PathBuf) -> String {
 pub async fn start_asr_service(
     state: State<'_, SidecarState>,
     cache_dir: Option<String>,
+    hf_mirror: Option<String>,
 ) -> Result<String, String> {
     let mut proc_guard = state.process.lock().map_err(|e| e.to_string())?;
 
@@ -98,6 +99,13 @@ pub async fn start_asr_service(
     if let Some(ref dir) = cache_dir {
         cmd.env("HF_HUB_CACHE", dir);
         cmd.env("MODELSCOPE_CACHE", dir);
+    }
+
+    // Inject HuggingFace mirror endpoint if set
+    if let Some(ref mirror) = hf_mirror {
+        if !mirror.is_empty() {
+            cmd.env("HF_ENDPOINT", mirror);
+        }
     }
 
     let child = cmd

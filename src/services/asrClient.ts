@@ -15,19 +15,30 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return JSON.parse(resp.body);
 }
 
-export async function startAsrService(cacheDir?: string): Promise<string> {
-  return invoke<string>("start_asr_service", { cacheDir: cacheDir || null });
+export async function startAsrService(cacheDir?: string, hfMirror?: string): Promise<string> {
+  return invoke<string>("start_asr_service", {
+    cacheDir: cacheDir || null,
+    hfMirror: hfMirror || null,
+  });
 }
 
 export async function stopAsrService(): Promise<string> {
   return invoke<string>("stop_asr_service");
 }
 
-export async function restartAsrService(cacheDir?: string): Promise<string> {
+export async function restartAsrService(cacheDir?: string, hfMirror?: string): Promise<string> {
   await stopAsrService();
   // Small delay to allow process to fully terminate
   await new Promise((resolve) => setTimeout(resolve, 500));
-  return startAsrService(cacheDir);
+  return startAsrService(cacheDir, hfMirror);
+}
+
+export async function setHfMirror(url: string): Promise<{ status: string }> {
+  return fetchJson(`${ASR_BASE_URL}/config/hf-mirror`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
 }
 
 export async function checkAsrHealth(): Promise<{
@@ -184,6 +195,7 @@ export interface DownloadStatus {
   downloaded_bytes: number;
   total_bytes: number;
   error: string | null;
+  model_name: string | null;
 }
 
 export async function downloadEngineModel(

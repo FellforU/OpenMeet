@@ -5,12 +5,13 @@ Uses FunASR's CAMPPlus model for speaker embedding extraction.
 """
 
 import asyncio
-from pathlib import Path
+import logging
 from typing import Optional
 
 from asr_service.models.job import Segment
-from asr_service import config
+from asr_service.processors.model_utils import resolve_modelscope_model
 
+logger = logging.getLogger(__name__)
 
 # Model path from meeting/models/
 CAMPPLUS_MODEL_DIR = "speech_campplus_sv_zh-cn_16k-common"
@@ -24,13 +25,7 @@ class CAMPPlusDiarizer:
 
     def _resolve_model_path(self) -> Optional[str]:
         """Find local CAMPPlus model."""
-        local = config.PROJECT_ROOT / "meeting" / "models" / CAMPPLUS_MODEL_DIR
-        if local.exists():
-            return str(local)
-        models = config.MODELS_DIR / CAMPPLUS_MODEL_DIR
-        if models.exists():
-            return str(models)
-        return None
+        return resolve_modelscope_model(CAMPPLUS_MODEL_DIR)
 
     async def load(self) -> None:
         if self._model:
@@ -38,13 +33,15 @@ class CAMPPlusDiarizer:
 
         model_path = self._resolve_model_path()
         if not model_path:
-            model_path = f"iic/{CAMPPLUS_MODEL_DIR}"
+            logger.info("Speaker diarization model not found locally, skipping")
+            return
 
         def _load():
             try:
                 from funasr import AutoModel
                 return AutoModel(model=model_path, model_revision="v2.0.4")
-            except Exception:
+            except Exception as e:
+                logger.warning("Failed to load diarization model from %s: %s", model_path, e)
                 return None
 
         self._model = await asyncio.to_thread(_load)

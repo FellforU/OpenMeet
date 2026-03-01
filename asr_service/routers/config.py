@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from ..config import set_app_data_dir, set_model_cache_dir, get_lance_path, get_sqlite_path
+from ..config import set_app_data_dir, set_model_cache_dir, set_hf_mirror, get_lance_path, get_sqlite_path
 
 router = APIRouter(tags=["config"])
 
@@ -28,10 +28,15 @@ class EmbeddingConfig(BaseModel):
     api_url: str | None = None
 
 
+class HfMirrorRequest(BaseModel):
+    url: str = ""
+
+
 class ConfigRequest(BaseModel):
     app_data_dir: str
     embedding_config: EmbeddingConfig | None = None
     model_cache_dir: str | None = None
+    hf_mirror: str | None = None
 
 
 class ConfigResponse(BaseModel):
@@ -46,6 +51,10 @@ async def set_config(req: ConfigRequest):
 
     # Apply model cache directory (empty string resets to default)
     set_model_cache_dir(req.model_cache_dir or None)
+
+    # Apply HuggingFace mirror
+    if req.hf_mirror is not None:
+        set_hf_mirror(req.hf_mirror or None)
 
     # Apply embedding configuration if provided
     if req.embedding_config and _embedder_ref:
@@ -66,3 +75,10 @@ async def set_config(req: ConfigRequest):
         sqlite_path=get_sqlite_path(),
         lance_path=get_lance_path(),
     )
+
+
+@router.post("/config/hf-mirror")
+async def set_hf_mirror_endpoint(req: HfMirrorRequest):
+    """Set HuggingFace mirror URL at runtime."""
+    set_hf_mirror(req.url or None)
+    return {"status": "ok", "hf_mirror": req.url or None}

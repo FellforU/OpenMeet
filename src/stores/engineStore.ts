@@ -17,6 +17,7 @@ interface ModelDownloadState {
   downloadedBytes: number;
   totalBytes: number;
   error: string | null;
+  modelName: string | null;
 }
 
 interface EngineStore {
@@ -169,6 +170,7 @@ export const useEngineStore = create<EngineStore>((set, get) => ({
                   downloadedBytes: dlStatus.downloaded_bytes ?? 0,
                   totalBytes: dlStatus.total_bytes ?? 0,
                   error: null,
+                  modelName: dlStatus.model_name ?? null,
                 },
               },
             }));
@@ -394,6 +396,7 @@ export const useEngineStore = create<EngineStore>((set, get) => ({
           downloadedBytes: 0,
           totalBytes: 0,
           error: null,
+          modelName: null,
         },
       },
     }));
@@ -411,6 +414,7 @@ export const useEngineStore = create<EngineStore>((set, get) => ({
               downloadedBytes: 0,
               totalBytes: 0,
               error: null,
+              modelName: null,
             },
           },
         }));
@@ -429,6 +433,7 @@ export const useEngineStore = create<EngineStore>((set, get) => ({
             downloadedBytes: 0,
             totalBytes: 0,
             error: String(err),
+            modelName: null,
           },
         },
       }));
@@ -470,6 +475,7 @@ export const useEngineStore = create<EngineStore>((set, get) => ({
               downloadedBytes: status.downloaded_bytes ?? 0,
               totalBytes: status.total_bytes ?? 0,
               error: status.error,
+              modelName: status.model_name ?? currentState.modelName,
             },
           },
         }));

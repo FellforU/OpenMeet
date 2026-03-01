@@ -35,7 +35,9 @@
     "migrateConfirm": "Migrate data and change path",
     "migrating": "Migrating...",
     "migrateSuccess": "Migration complete",
-    "migrateFailed": "Migration failed: {{error}}"
+    "migrateFailed": "Migration failed: {{error}}",
+    "hfMirror": "HuggingFace Mirror",
+    "hfMirrorDesc": "Set a HuggingFace mirror URL for regions with limited access (e.g. https://hf-mirror.com)"
   },
   "llm": {
     "title": "LLM Provider Configuration",

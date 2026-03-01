@@ -40,7 +40,7 @@ export async function configureKnowledge(
     };
   }
 
-  const { modelCacheDir } = general;
+  const { modelCacheDir, hfMirror } = general;
   const resp = await tauriFetch(`${ASR_BASE_URL}/config`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -48,6 +48,7 @@ export async function configureKnowledge(
       app_data_dir: appDataDir,
       embedding_config: embeddingConfig,
       model_cache_dir: modelCacheDir || "",
+      hf_mirror: hfMirror || "",
     }),
   });
   if (resp.status < 200 || resp.status >= 300) {

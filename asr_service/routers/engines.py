@@ -123,6 +123,35 @@ class DownloadStatus(BaseModel):
     downloaded_bytes: int = 0
     total_bytes: int = 0
     error: str | None
+    model_name: str | None = None
+
+
+# Human-friendly display names for engine+model_size combos
+_MODEL_DISPLAY_NAMES: dict[str, dict[str, str]] = {
+    "whisper": {
+        "tiny": "Whisper Tiny",
+        "base": "Whisper Base",
+        "small": "Whisper Small",
+        "medium": "Whisper Medium",
+        "large-v3": "Whisper Large-v3",
+    },
+    "qwen3": {
+        "qwen3-asr-0.6B": "Qwen3-ASR-0.6B",
+        "qwen3-asr-1.7B": "Qwen3-ASR-1.7B",
+    },
+    "paraformer": {
+        "paraformer-large": "Paraformer Large",
+        "paraformer-large-vad-punc": "Paraformer Large + VAD + Punc",
+        "paraformer-large-vad-punc-spk": "Paraformer Large + VAD + Punc + Speaker",
+    },
+}
+
+
+def _get_model_display_name(engine_name: str, model_size: str | None) -> str | None:
+    if not model_size:
+        return None
+    engine_names = _MODEL_DISPLAY_NAMES.get(engine_name, {})
+    return engine_names.get(model_size)
 
 
 class ConfigureEngineRequest(BaseModel):
@@ -421,15 +450,17 @@ async def cancel_download(engine_name: str):
     started_at = status.get("started_at") if status else None
     elapsed = time.time() - started_at if started_at else 0.0
 
+    ms = status.get("model_size") if status else None
     return DownloadStatus(
         engine_name=engine_name,
-        model_size=status.get("model_size") if status else None,
+        model_size=ms,
         phase=DownloadPhase.IDLE,
         started_at=started_at,
         elapsed_seconds=round(elapsed, 1),
         downloaded_bytes=0,
         total_bytes=0,
         error=None,
+        model_name=_get_model_display_name(engine_name, ms),
     )
 
 
@@ -468,15 +499,17 @@ async def get_download_status(engine_name: str):
 
         started_at = status.get("started_at")
         elapsed = time.time() - started_at if started_at else 0.0
+        ms = status.get("model_size")
         return DownloadStatus(
             engine_name=engine_name,
-            model_size=status.get("model_size"),
+            model_size=ms,
             phase=status["phase"],
             started_at=started_at,
             elapsed_seconds=round(elapsed, 1),
             downloaded_bytes=downloaded_bytes,
             total_bytes=total_bytes,
             error=status.get("error"),
+            model_name=_get_model_display_name(engine_name, ms),
         )
 
     return DownloadStatus(

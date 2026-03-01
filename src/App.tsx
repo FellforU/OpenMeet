@@ -46,11 +46,12 @@ function App() {
         }
       }
 
-      // 2. Start ASR with correct cache dir (settings are now loaded)
+      // 2. Start ASR with correct cache dir and HF mirror (settings are now loaded)
       try {
         const { general } = useSettingsStore.getState();
         const cacheDir = general.modelCacheDir || undefined;
-        await startAsrService(cacheDir);
+        const hfMirror = general.hfMirror || undefined;
+        await startAsrService(cacheDir, hfMirror);
       } catch {
         // May already be running or in browser dev mode
       }

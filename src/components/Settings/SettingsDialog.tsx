@@ -35,7 +35,7 @@ import { ModelManager } from "./ModelManager";
 import { LLMProviderTab, LLM_PROVIDERS } from "./LLMProviderTab";
 import { SystemModelSelector } from "./SystemModelSelector";
 import { useSettingsStore } from "../../stores/settingsStore";
-import { restartAsrService } from "../../services/asrClient";
+import { restartAsrService, setHfMirror } from "../../services/asrClient";
 import logoWithText from "../../../ico/OpenMeet_1.png";
 
 interface SettingsDialogProps {
@@ -83,7 +83,8 @@ function GeneralSettings() {
     toast.success(t("general.modelCacheDir"));
     // Restart ASR service with new cache directory
     try {
-      await restartAsrService(pendingNewDir);
+      const { hfMirror } = useSettingsStore.getState().general;
+      await restartAsrService(pendingNewDir, hfMirror || undefined);
     } catch {
       toast.warning(t("general.restartAsrFailed"));
     }
@@ -101,7 +102,8 @@ function GeneralSettings() {
       toast.success(t("general.migrateSuccess") + ` (${result})`);
       // Restart ASR service with new cache directory
       try {
-        await restartAsrService(pendingNewDir);
+        const { hfMirror } = useSettingsStore.getState().general;
+        await restartAsrService(pendingNewDir, hfMirror || undefined);
       } catch {
         toast.warning(t("general.restartAsrFailed"));
       }
@@ -232,6 +234,29 @@ function GeneralSettings() {
             {t("general.defaultCachePath", { path: defaultCachePath })}
           </button>
         )}
+      </div>
+
+      {/* HuggingFace Mirror */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium">
+          {t("general.hfMirror")}
+        </label>
+        <p className="text-xs text-muted-foreground">
+          {t("general.hfMirrorDesc")}
+        </p>
+        <Input
+          value={general.hfMirror}
+          placeholder="https://hf-mirror.com"
+          className="text-xs"
+          onChange={(e) => setGeneral({ hfMirror: e.target.value })}
+          onBlur={async () => {
+            try {
+              await setHfMirror(general.hfMirror);
+            } catch {
+              // ASR service may not be running yet
+            }
+          }}
+        />
       </div>
 
       {/* Migration Confirm Dialog */}

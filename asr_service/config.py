@@ -26,6 +26,7 @@ _runtime_config = {
     "sqlite_db_path": None,
     "lance_db_path": None,
     "model_cache_dir": None,
+    "hf_mirror": None,
 }
 
 
@@ -56,3 +57,16 @@ def set_model_cache_dir(path: str | None):
 
 def get_model_cache_dir() -> str | None:
     return _runtime_config["model_cache_dir"]
+
+
+def set_hf_mirror(url: str | None):
+    """Set HuggingFace mirror endpoint. Also updates HF_ENDPOINT env var."""
+    _runtime_config["hf_mirror"] = url
+    if url:
+        os.environ["HF_ENDPOINT"] = url
+    else:
+        os.environ.pop("HF_ENDPOINT", None)
+
+
+def get_hf_mirror() -> str | None:
+    return _runtime_config.get("hf_mirror")
