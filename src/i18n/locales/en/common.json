@@ -125,7 +125,8 @@
   },
   "recording": {
     "microphone": "Microphone",
-    "systemAudio": "System Audio"
+    "systemAudio": "System Audio",
+    "mixed": "Mixed Recording"
   },
   "processing": {
     "saving": "Saving audio...",

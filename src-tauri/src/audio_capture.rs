@@ -1,26 +1,21 @@
-use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
+use std::sync::Arc;
 use tauri::{Manager, State};
 
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use crate::capture::types::{AudioSourceType, CaptureHandle, PcmBuffer};
+use crate::capture::wav;
 
 const WS_URL: &str = "ws://127.0.0.1:18090/ws/stream";
 const CHUNK_DURATION_MS: u64 = 300;
 
-/// Wrapper to make cpal::Stream usable in Tauri state.
-/// Safety: Stream is only accessed from the main thread via Mutex guards.
-struct StreamWrapper(#[allow(dead_code)] cpal::Stream);
-unsafe impl Send for StreamWrapper {}
-unsafe impl Sync for StreamWrapper {}
-
 pub struct AudioCaptureState {
     is_recording: Arc<AtomicBool>,
     is_paused: Arc<AtomicBool>,
-    stream_handle: Mutex<Option<StreamWrapper>>,
-    // Full recording buffer for WAV export
-    all_samples: Arc<Mutex<Vec<i16>>>,
+    capture_handles: Mutex<Vec<CaptureHandle>>,
+    ws_buffer: PcmBuffer,
+    all_samples: PcmBuffer,
     rec_sample_rate: Mutex<u32>,
     rec_channels: Mutex<u16>,
 }
@@ -30,8 +25,9 @@ impl AudioCaptureState {
         Self {
             is_recording: Arc::new(AtomicBool::new(false)),
             is_paused: Arc::new(AtomicBool::new(false)),
-            stream_handle: Mutex::new(None),
-            all_samples: Arc::new(Mutex::new(Vec::new())),
+            capture_handles: Mutex::new(Vec::new()),
+            ws_buffer: PcmBuffer::new(),
+            all_samples: PcmBuffer::new(),
             rec_sample_rate: Mutex::new(16000),
             rec_channels: Mutex::new(1),
         }
@@ -45,46 +41,9 @@ pub struct AudioDeviceInfo {
     pub channels: u16,
 }
 
-/// Write PCM i16 samples as a WAV file
-fn write_wav(path: &PathBuf, samples: &[i16], sample_rate: u32, channels: u16) -> Result<(), String> {
-    let data_len = (samples.len() * 2) as u32;
-    let file_len = 36 + data_len;
-    let byte_rate = sample_rate * (channels as u32) * 2;
-    let block_align = channels * 2;
-
-    let mut file = std::fs::File::create(path)
-        .map_err(|e| format!("Failed to create WAV file: {}", e))?;
-
-    // RIFF header
-    file.write_all(b"RIFF").map_err(|e| e.to_string())?;
-    file.write_all(&file_len.to_le_bytes()).map_err(|e| e.to_string())?;
-    file.write_all(b"WAVE").map_err(|e| e.to_string())?;
-
-    // fmt chunk
-    file.write_all(b"fmt ").map_err(|e| e.to_string())?;
-    file.write_all(&16u32.to_le_bytes()).map_err(|e| e.to_string())?; // chunk size
-    file.write_all(&1u16.to_le_bytes()).map_err(|e| e.to_string())?; // PCM format
-    file.write_all(&channels.to_le_bytes()).map_err(|e| e.to_string())?;
-    file.write_all(&sample_rate.to_le_bytes()).map_err(|e| e.to_string())?;
-    file.write_all(&byte_rate.to_le_bytes()).map_err(|e| e.to_string())?;
-    file.write_all(&block_align.to_le_bytes()).map_err(|e| e.to_string())?;
-    file.write_all(&16u16.to_le_bytes()).map_err(|e| e.to_string())?; // bits per sample
-
-    // data chunk
-    file.write_all(b"data").map_err(|e| e.to_string())?;
-    file.write_all(&data_len.to_le_bytes()).map_err(|e| e.to_string())?;
-
-    // PCM samples as little-endian i16
-    for sample in samples {
-        file.write_all(&sample.to_le_bytes()).map_err(|e| e.to_string())?;
-    }
-
-    file.flush().map_err(|e| e.to_string())?;
-    Ok(())
-}
-
 #[tauri::command]
 pub async fn list_audio_devices() -> Result<Vec<AudioDeviceInfo>, String> {
+    use cpal::traits::{DeviceTrait, HostTrait};
     let host = cpal::default_host();
     let devices = host
         .input_devices()
@@ -92,16 +51,137 @@ pub async fn list_audio_devices() -> Result<Vec<AudioDeviceInfo>, String> {
 
     let mut result = Vec::new();
     for device in devices {
-        let name = device.name().unwrap_or_else(|_| "Unknown".to_string());
+        let name = device.description().map(|d| d.name().to_string()).unwrap_or_else(|_| "Unknown".to_string());
         if let Ok(config) = device.default_input_config() {
             result.push(AudioDeviceInfo {
                 name,
-                sample_rate: config.sample_rate().0,
+                sample_rate: config.sample_rate(),
                 channels: config.channels(),
             });
         }
     }
     Ok(result)
+}
+
+/// Start a capture stream based on the audio source type.
+/// Returns (handles, sample_rate, channels).
+fn start_capture(
+    source: AudioSourceType,
+    is_paused: Arc<AtomicBool>,
+    ws_buffer: PcmBuffer,
+    all_buffer: PcmBuffer,
+) -> Result<(Vec<CaptureHandle>, u32, u16), String> {
+    match source {
+        AudioSourceType::Microphone => {
+            let (handle, sr, ch) =
+                crate::capture::mic::start_mic_capture(is_paused, ws_buffer, all_buffer)?;
+            Ok((vec![handle], sr, ch))
+        }
+        AudioSourceType::System => {
+            start_system_capture(is_paused, ws_buffer, all_buffer)
+        }
+        AudioSourceType::Mixed => {
+            start_mixed_capture(is_paused, ws_buffer, all_buffer)
+        }
+    }
+}
+
+/// Platform-dispatched system audio capture (mono)
+fn start_system_capture(
+    is_paused: Arc<AtomicBool>,
+    ws_buffer: PcmBuffer,
+    all_buffer: PcmBuffer,
+) -> Result<(Vec<CaptureHandle>, u32, u16), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let (handle, sr, ch) =
+            crate::capture::system_windows::start_system_capture(is_paused, ws_buffer, all_buffer)?;
+        return Ok((vec![handle], sr, ch));
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let (handle, sr, ch) =
+            crate::capture::system_macos::start_system_capture(is_paused, ws_buffer, all_buffer)?;
+        return Ok((vec![handle], sr, ch));
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let (handle, sr, ch) =
+            crate::capture::system_linux::start_system_capture(is_paused, ws_buffer, all_buffer)?;
+        return Ok((vec![handle], sr, ch));
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        Err("System audio capture is not supported on this platform".to_string())
+    }
+}
+
+/// Mixed mode: mic (ch0) + system (ch1) interleaved to stereo
+fn start_mixed_capture(
+    is_paused: Arc<AtomicBool>,
+    ws_buffer: PcmBuffer,
+    all_buffer: PcmBuffer,
+) -> Result<(Vec<CaptureHandle>, u32, u16), String> {
+    // Separate buffers for mic and system
+    let mic_raw = PcmBuffer::new();
+    let sys_raw = PcmBuffer::new();
+
+    let (mic_handle, sr, _) =
+        crate::capture::mic::start_mic_capture(is_paused.clone(), mic_raw.clone(), mic_raw.clone())?;
+
+    let sys_result = start_system_capture(is_paused.clone(), sys_raw.clone(), sys_raw.clone());
+    let sys_handles = match sys_result {
+        Ok((handles, _, _)) => handles,
+        Err(e) => {
+            eprintln!("System audio unavailable in mixed mode: {}", e);
+            // Degrade: mic-only, still mono
+            return Ok((vec![mic_handle], sr, 1));
+        }
+    };
+
+    // Spawn interleaver thread: reads from mic_raw + sys_raw, writes stereo to ws_buffer + all_buffer
+    let is_paused_clone = is_paused;
+    let is_rec = Arc::new(AtomicBool::new(true));
+    let is_rec_clone = is_rec.clone();
+
+    std::thread::spawn(move || {
+        let interval = std::time::Duration::from_millis(50);
+        while is_rec_clone.load(Ordering::SeqCst) {
+            std::thread::sleep(interval);
+            if is_paused_clone.load(Ordering::SeqCst) {
+                continue;
+            }
+
+            let mic_samples = mic_raw.drain();
+            let sys_samples = sys_raw.drain();
+
+            if mic_samples.is_empty() && sys_samples.is_empty() {
+                continue;
+            }
+
+            // Interleave: [mic0, sys0, mic1, sys1, ...]
+            let len = mic_samples.len().max(sys_samples.len());
+            let mut stereo = Vec::with_capacity(len * 2);
+            for i in 0..len {
+                let m = mic_samples.get(i).copied().unwrap_or(0);
+                let s = sys_samples.get(i).copied().unwrap_or(0);
+                stereo.push(m);
+                stereo.push(s);
+            }
+
+            ws_buffer.push_samples(&stereo);
+            all_buffer.push_samples(&stereo);
+        }
+    });
+
+    let mut handles = vec![mic_handle];
+    handles.extend(sys_handles);
+    // Store is_rec flag so interleaver stops when recording stops
+    handles.push(CaptureHandle::new(is_rec));
+    Ok((handles, sr, 2)) // stereo
 }
 
 #[tauri::command]
@@ -114,21 +194,19 @@ pub async fn start_recording(
         return Err("Already recording".to_string());
     }
 
-    let _source = audio_source.unwrap_or_else(|| "microphone".to_string());
-    // TODO: Use _source to select between microphone and system audio capture
-    // Currently always uses default input device (microphone)
+    let source = AudioSourceType::from_str_opt(audio_source.as_deref());
 
-    let host = cpal::default_host();
-    let device = host
-        .default_input_device()
-        .ok_or_else(|| "No input device available".to_string())?;
+    // Clear buffers
+    state.ws_buffer.clear();
+    state.all_samples.clear();
 
-    let config = device
-        .default_input_config()
-        .map_err(|e| format!("Failed to get input config: {}", e))?;
-
-    let sample_rate = config.sample_rate().0;
-    let channels = config.channels();
+    // Start capture
+    let (handles, sample_rate, channels) = start_capture(
+        source,
+        state.is_paused.clone(),
+        state.ws_buffer.clone(),
+        state.all_samples.clone(),
+    )?;
 
     // Store recording parameters
     if let Ok(mut sr) = state.rec_sample_rate.lock() {
@@ -138,60 +216,18 @@ pub async fn start_recording(
         *ch = channels;
     }
 
-    // Clear the full recording buffer
-    if let Ok(mut all) = state.all_samples.lock() {
-        all.clear();
-    }
-
-    // PCM buffer for WebSocket streaming
-    let pcm_buffer: Arc<Mutex<Vec<i16>>> = Arc::new(Mutex::new(Vec::new()));
-    let pcm_buffer_clone = pcm_buffer.clone();
-
-    let is_paused = state.is_paused.clone();
-    let all_samples = state.all_samples.clone();
-
-    // Build input stream that accumulates PCM samples
-    let stream = device
-        .build_input_stream(
-            &config.into(),
-            move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                if is_paused.load(Ordering::SeqCst) {
-                    return;
-                }
-                // Convert f32 samples to i16 PCM
-                let samples: Vec<i16> = data.iter().map(|&s| (s * 32767.0) as i16).collect();
-                // Accumulate for WebSocket streaming
-                if let Ok(mut buf) = pcm_buffer_clone.lock() {
-                    buf.extend_from_slice(&samples);
-                }
-                // Accumulate for full recording WAV export
-                if let Ok(mut all) = all_samples.lock() {
-                    all.extend_from_slice(&samples);
-                }
-            },
-            move |err| {
-                eprintln!("Audio capture error: {}", err);
-            },
-            None,
-        )
-        .map_err(|e| format!("Failed to build input stream: {}", e))?;
-
-    stream
-        .play()
-        .map_err(|e| format!("Failed to start stream: {}", e))?;
-
     state.is_recording.store(true, Ordering::SeqCst);
     state.is_paused.store(false, Ordering::SeqCst);
 
-    // Store stream handle
-    if let Ok(mut guard) = state.stream_handle.lock() {
-        *guard = Some(StreamWrapper(stream));
+    // Store capture handles
+    if let Ok(mut guard) = state.capture_handles.lock() {
+        *guard = handles;
     }
 
-    // Spawn background task to send chunks via WebSocket
+    // Spawn WebSocket sender task
     let is_rec = state.is_recording.clone();
     let is_pau = state.is_paused.clone();
-    let buf = pcm_buffer.clone();
+    let buf = state.ws_buffer.clone();
 
     tokio::spawn(async move {
         use futures_util::SinkExt;
@@ -206,8 +242,6 @@ pub async fn start_recording(
             Ok(conn) => conn,
             Err(e) => {
                 eprintln!("WebSocket connection failed: {}", e);
-                // Do NOT set is_recording=false here — audio capture should
-                // continue so the WAV file is still saved when the user stops.
                 return;
             }
         };
@@ -220,19 +254,12 @@ pub async fn start_recording(
                 continue;
             }
 
-            let chunk: Vec<u8> = if let Ok(mut buffer) = buf.lock() {
-                let samples: Vec<i16> = buffer.drain(..).collect();
-                // Convert i16 to little-endian bytes
-                samples.iter().flat_map(|s| s.to_le_bytes()).collect()
-            } else {
-                continue;
-            };
-
-            if chunk.is_empty() {
+            let samples = buf.drain();
+            if samples.is_empty() {
                 continue;
             }
 
-            // Send as binary WebSocket frame
+            let chunk: Vec<u8> = samples.iter().flat_map(|s| s.to_le_bytes()).collect();
             let msg = tokio_tungstenite::tungstenite::Message::Binary(chunk.into());
             if ws_stream.send(msg).await.is_err() {
                 eprintln!("WebSocket send failed, stopping");
@@ -240,14 +267,13 @@ pub async fn start_recording(
             }
         }
 
-        // Send close frame
         let close = tokio_tungstenite::tungstenite::Message::Close(None);
         let _ = ws_stream.send(close).await;
     });
 
     Ok(format!(
-        "Recording started: {}Hz, {} channels",
-        sample_rate, channels
+        "Recording started: {}Hz, {} channels, source={:?}",
+        sample_rate, channels, source
     ))
 }
 
@@ -256,32 +282,22 @@ pub async fn stop_recording(
     app: tauri::AppHandle,
     state: State<'_, AudioCaptureState>,
 ) -> Result<String, String> {
-    // Always attempt to stop and save — even if is_recording was cleared
-    // (e.g. by a WebSocket failure), samples may still have been captured.
     state.is_recording.store(false, Ordering::SeqCst);
     state.is_paused.store(false, Ordering::SeqCst);
 
-    // Drop the stream to stop capture
-    if let Ok(mut guard) = state.stream_handle.lock() {
-        *guard = None;
+    // Drop all capture handles to stop streams
+    if let Ok(mut guard) = state.capture_handles.lock() {
+        guard.clear();
     }
 
-    // Get recording parameters
     let sample_rate = state.rec_sample_rate.lock().map(|sr| *sr).unwrap_or(16000);
     let channels = state.rec_channels.lock().map(|ch| *ch).unwrap_or(1);
 
-    // Extract all recorded samples
-    let samples: Vec<i16> = if let Ok(mut all) = state.all_samples.lock() {
-        std::mem::take(&mut *all)
-    } else {
-        Vec::new()
-    };
-
+    let samples = state.all_samples.drain();
     if samples.is_empty() {
         return Ok(String::new());
     }
 
-    // Create recordings directory under app data dir
     let data_dir = app
         .path()
         .app_data_dir()
@@ -290,16 +306,13 @@ pub async fn stop_recording(
     std::fs::create_dir_all(&recordings_dir)
         .map_err(|e| format!("Failed to create recordings dir: {}", e))?;
 
-    // Generate filename with timestamp
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
     let filename = format!("{}.wav", timestamp);
     let wav_path = recordings_dir.join(&filename);
 
-    // Write WAV file
-    write_wav(&wav_path, &samples, sample_rate, channels)?;
+    wav::write_wav(&wav_path, &samples, sample_rate, channels)?;
 
-    let path_str = wav_path.to_string_lossy().to_string();
-    Ok(path_str)
+    Ok(wav_path.to_string_lossy().to_string())
 }
 
 #[tauri::command]
@@ -328,23 +341,6 @@ pub async fn read_audio_file(path: String) -> Result<String, String> {
     Ok(base64::engine::general_purpose::STANDARD.encode(&data))
 }
 
-/// Read PCM i16 samples from a WAV file (skipping the 44-byte header)
-fn read_wav_samples(path: &PathBuf) -> Result<(Vec<i16>, u32, u16), String> {
-    let data = std::fs::read(path)
-        .map_err(|e| format!("Failed to read WAV file: {}", e))?;
-    if data.len() < 44 {
-        return Err("Invalid WAV file: too short".to_string());
-    }
-    let channels = u16::from_le_bytes([data[22], data[23]]);
-    let sample_rate = u32::from_le_bytes([data[24], data[25], data[26], data[27]]);
-    let pcm_data = &data[44..];
-    let samples: Vec<i16> = pcm_data
-        .chunks_exact(2)
-        .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
-        .collect();
-    Ok((samples, sample_rate, channels))
-}
-
 #[tauri::command]
 pub async fn merge_wav_files(paths: Vec<String>) -> Result<String, String> {
     if paths.is_empty() {
@@ -355,18 +351,16 @@ pub async fn merge_wav_files(paths: Vec<String>) -> Result<String, String> {
     }
 
     let first_path = PathBuf::from(&paths[0]);
-    let (mut all_samples, sample_rate, channels) = read_wav_samples(&first_path)?;
+    let (mut all_samples, sample_rate, channels) = wav::read_wav_samples(&first_path)?;
 
     for p in &paths[1..] {
         let path = PathBuf::from(p);
-        let (samples, _, _) = read_wav_samples(&path)?;
+        let (samples, _, _) = wav::read_wav_samples(&path)?;
         all_samples.extend_from_slice(&samples);
     }
 
-    // Write merged WAV to the first file's location (overwrite)
-    write_wav(&first_path, &all_samples, sample_rate, channels)?;
+    wav::write_wav(&first_path, &all_samples, sample_rate, channels)?;
 
-    // Remove subsequent files
     for p in &paths[1..] {
         std::fs::remove_file(p).ok();
     }

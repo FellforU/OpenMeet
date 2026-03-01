@@ -73,6 +73,11 @@ export function RecordButton() {
         >
           {audioSource === "system" ? (
             <Monitor className="mr-1.5 h-4 w-4" />
+          ) : audioSource === "mixed" ? (
+            <>
+              <Mic className="mr-0.5 h-4 w-4" />
+              <Monitor className="mr-1.5 h-4 w-4" />
+            </>
           ) : (
             <Mic className="mr-1.5 h-4 w-4" />
           )}
@@ -101,6 +106,11 @@ export function RecordButton() {
               <DropdownMenuRadioItem value="system">
                 <Monitor className="mr-2 h-4 w-4" />
                 {t("recording.systemAudio")}
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="mixed">
+                <Mic className="mr-2 h-4 w-4" />
+                <Monitor className="mr-2 h-4 w-4 -ml-2" />
+                {t("recording.mixed")}
               </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
           </DropdownMenuContent>

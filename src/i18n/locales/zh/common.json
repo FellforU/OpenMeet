@@ -125,7 +125,8 @@
   },
   "recording": {
     "microphone": "麦克风",
-    "systemAudio": "系统音频"
+    "systemAudio": "系统音频",
+    "mixed": "混合录制"
   },
   "processing": {
     "saving": "保存音频中...",

@@ -1,4 +1,5 @@
 mod audio_capture;
+mod capture;
 mod crypto;
 mod database;
 mod sidecar;

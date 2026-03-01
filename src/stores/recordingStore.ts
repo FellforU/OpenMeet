@@ -17,7 +17,7 @@ type ProcessingStep =
   | "summarizing"
   | null;
 
-export type AudioSource = "microphone" | "system";
+export type AudioSource = "microphone" | "system" | "mixed";
 
 interface RecordingStore {
   status: RecordingStatus;
