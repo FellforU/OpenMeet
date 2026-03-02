@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File
 from fastapi.responses import PlainTextResponse, JSONResponse
 from pydantic import BaseModel
 from typing import Optional
@@ -8,6 +8,7 @@ import shutil
 from pathlib import Path
 
 from asr_service.models.job import TranscriptionJob, JobStatus
+from asr_service.services.post_processing import PostProcessingPipeline
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -147,6 +148,50 @@ async def get_job_result(job_id: str):
         ],
         summary=job.summary,
     )
+
+
+ALLOWED_AUDIO_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".mp4", ".mkv"}
+
+
+@router.post("/{job_id}/post-process", response_model=JobResponse)
+async def post_process_job(job_id: str, audio_path: Optional[str] = Query(None)):
+    """Trigger post-processing on a completed streaming job.
+
+    Runs: ITN → Punctuation → Diarization (if audio_path provided)
+    Transitions: COMPLETED → POST_PROCESSING → READY
+    """
+    manager = get_manager()
+    job = manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status != JobStatus.COMPLETED:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Job must be COMPLETED, current status: {job.status.value}",
+        )
+
+    # Validate and set audio_path for diarization
+    if audio_path:
+        import os
+        resolved = os.path.realpath(audio_path)
+        if not os.path.isfile(resolved):
+            raise HTTPException(status_code=400, detail="Audio file not found")
+        ext = os.path.splitext(resolved)[1].lower()
+        if ext not in ALLOWED_AUDIO_EXTENSIONS:
+            raise HTTPException(status_code=400, detail="Invalid audio file type")
+        job.audio_path = resolved
+
+    pipeline = PostProcessingPipeline()
+    try:
+        await pipeline.run(job)  # COMPLETED → POST_PROCESSING → READY
+    except Exception as e:
+        # Reset job status so it can be retried
+        job.status = JobStatus.COMPLETED
+        raise HTTPException(status_code=500, detail=f"Post-processing failed: {str(e)}")
+    finally:
+        await pipeline.close()
+
+    return _job_to_response(job)
 
 
 @router.put("/{job_id}/pause", response_model=JobResponse)

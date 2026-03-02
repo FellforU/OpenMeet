@@ -1,12 +1,13 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Mic, Loader2, Pencil, Save, X } from "lucide-react";
+import { Mic, Loader2, Pencil, Save, X, Radio } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { SegmentItem } from "./SegmentItem";
 import { MilkdownEditor } from "../Editor";
 import { useTranscriptionStore } from "../../stores/transcriptionStore";
+import { useRecordingStore } from "../../stores/recordingStore";
 import { useProjectStore } from "../../stores/projectStore";
 import type { Segment } from "../../types";
 
@@ -33,6 +34,8 @@ export function TranscriptPanel() {
   const highlightSegmentTime = useTranscriptionStore((s) => s.highlightSegmentTime);
   const clearHighlight = useTranscriptionStore((s) => s.clearHighlight);
   const updateSegmentSpeaker = useTranscriptionStore((s) => s.updateSegmentSpeaker);
+
+  const isRecording = useRecordingStore((s) => s.status === "recording");
 
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState("");
@@ -76,6 +79,22 @@ export function TranscriptPanel() {
 
     return () => clearTimeout(timer);
   }, [highlightSegmentTime, segments, clearHighlight]);
+
+  // Auto-scroll to bottom during recording when new segments arrive
+  useEffect(() => {
+    if (!isRecording || segments.length === 0) return;
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    // Only auto-scroll if user is near the bottom (within 100px)
+    const isNearBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+    if (isNearBottom) {
+      // Use rAF to ensure the new segment's DOM node is rendered first
+      requestAnimationFrame(() => {
+        container.scrollTop = container.scrollHeight;
+      });
+    }
+  }, [segments.length, isRecording]);
 
   const speakerRanges = useMemo(() => {
     const ranges = new Map<number, { start: number; end: number }>();
@@ -151,6 +170,20 @@ export function TranscriptPanel() {
     setEditText("");
   };
 
+  // Empty state: recording but no segments yet
+  if (segments.length === 0 && isRecording) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
+        <div className="relative">
+          <Mic className="h-10 w-10" />
+          <span className="absolute -right-1 -top-1 h-3 w-3 animate-pulse rounded-full bg-red-500" />
+        </div>
+        <p className="text-sm">{t("transcript.waitingForSegments")}</p>
+      </div>
+    );
+  }
+
+  // Empty state: idle with no segments
   if (segments.length === 0 && status === "idle") {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
@@ -198,7 +231,7 @@ export function TranscriptPanel() {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-end px-4 py-2">
-        {segments.length > 0 && (
+        {segments.length > 0 && !isRecording && (
           <Button variant="outline" size="sm" onClick={handleStartEdit}>
             <Pencil className="mr-1.5 h-4 w-4" />
             {t("common:action.edit")}
@@ -260,6 +293,14 @@ export function TranscriptPanel() {
           </div>
         )}
       </div>
+
+      {/* Live recording indicator at the bottom */}
+      {isRecording && segments.length > 0 && (
+        <div className="flex items-center gap-2 border-t px-4 py-2 text-xs text-red-600 dark:text-red-400">
+          <Radio className="h-3.5 w-3.5 animate-pulse" />
+          {t("transcript.liveRecording")}
+        </div>
+      )}
     </div>
   );
 }

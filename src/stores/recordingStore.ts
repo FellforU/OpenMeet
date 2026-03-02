@@ -7,6 +7,7 @@ import * as api from "../services/asrClient";
 import { loadAudioUrl } from "../services/audioLoader";
 import { useTranscriptionStore } from "./transcriptionStore";
 import { useProjectStore } from "./projectStore";
+import { tauriFetch } from "../services/httpProxy";
 import { generateMeetingTitle, generateMeetingSummary } from "../services/llmClient";
 import type { Segment } from "../types";
 
@@ -17,6 +18,7 @@ type ProcessingStep =
   | "loading"
   | "loadingModel"
   | "titling"
+  | "diarizing"
   | "summarizing"
   | null;
 
@@ -26,7 +28,8 @@ interface RecordingStore {
   status: RecordingStatus;
   jobId: string | null;
   elapsed: number;
-  segments: Segment[];
+  streamSegmentCount: number;
+  segmentCountAtStart: number;
   processingStep: ProcessingStep;
   audioSource: AudioSource;
 
@@ -35,7 +38,6 @@ interface RecordingStore {
   pauseRecording: () => Promise<void>;
   resumeRecording: () => Promise<void>;
   stopRecording: () => Promise<void>;
-  addSegment: (segment: Segment) => void;
   reset: () => void;
 }
 
@@ -68,7 +70,8 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
   status: "idle",
   jobId: null,
   elapsed: 0,
-  segments: [],
+  streamSegmentCount: 0,
+  segmentCountAtStart: 0,
   processingStep: null,
   audioSource: "microphone" as AudioSource,
 
@@ -127,7 +130,16 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
       language,
     });
 
-    set({ jobId: job.id, status: "recording", elapsed: 0, segments: [] });
+    // Record how many segments already exist (for first-recording detection)
+    const existingCount = useTranscriptionStore.getState().segments.length;
+
+    set({
+      jobId: job.id,
+      status: "recording",
+      elapsed: 0,
+      streamSegmentCount: 0,
+      segmentCountAtStart: existingCount,
+    });
 
     // Start elapsed timer
     clearElapsedTimer();
@@ -136,26 +148,33 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
     }, 1000);
 
     // Listen for streaming segments from Rust via Tauri events
-    // (Rust WS reads segment JSON from ASR service and emits "stream-segment" events)
+    // Write directly to transcriptionStore for immediate UI display
     cleanupSegmentListener();
     unlistenSegment = await listen<string>("stream-segment", (event) => {
       try {
         const data = JSON.parse(event.payload);
         if (data.type === "segment") {
+          const count = get().streamSegmentCount;
           const segment: Segment = {
-            id: `seg-${data.index}`,
+            id: `stream-${count}`,
             start: data.start,
             end: data.end,
             text: data.text,
             speaker: data.speaker || null,
             confidence: data.confidence || null,
           };
-          get().addSegment(segment);
+          useTranscriptionStore.getState().addStreamSegment(segment);
+          set({ streamSegmentCount: count + 1 });
         }
       } catch {
         // Ignore parse errors
       }
     });
+
+    // Start auto-persist timer (saves segments to SQLite every 30s for crash recovery)
+    if (activeProjectId) {
+      useTranscriptionStore.getState().startAutoPersist(activeProjectId);
+    }
 
     // Start audio capture in Rust (also opens WS to ASR service)
     try {
@@ -213,21 +232,23 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
     clearElapsedTimer();
     cleanupSegmentListener();
 
-    const { segments, jobId, elapsed: recordedSeconds } = get();
-    set({ status: "idle", jobId: null, elapsed: 0, segments: [], processingStep: "saving" });
+    // Stop auto-persist
+    useTranscriptionStore.getState().stopAutoPersist();
+
+    // Capture values before clearing state — these are used later in the flow
+    const capturedJobId = get().jobId;
+    const recordedSeconds = get().elapsed;
+    const capturedSegmentCountAtStart = get().segmentCountAtStart;
+    const capturedStreamCount = get().streamSegmentCount;
+    set({ status: "idle", jobId: null, elapsed: 0, streamSegmentCount: 0, processingStep: "saving" });
 
     const activeProjectId = useProjectStore.getState().activeProjectId;
-    const transcriptionStore = useTranscriptionStore.getState();
-    const existingSegments = transcriptionStore.segments;
+    const segments = useTranscriptionStore.getState().segments;
+    const isFirstRecording = capturedSegmentCountAtStart === 0;
 
-    // Sync segments to transcription store — append if segments already exist
+    // Mark transcription as completed
     if (segments.length > 0) {
-      if (existingSegments.length > 0) {
-        transcriptionStore.appendSegments(segments);
-      } else {
-        transcriptionStore.setSegments(segments);
-      }
-      transcriptionStore.setJobStatus("completed");
+      useTranscriptionStore.getState().setJobStatus("completed");
 
       // Persist segments to SQLite
       if (activeProjectId) {
@@ -284,6 +305,39 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
       }
     }
 
+    // Run post-processing (ITN + punctuation + speaker diarization) if we have a job and audio
+    if (capturedJobId && audioPath && capturedStreamCount > 0) {
+      set({ processingStep: "diarizing" });
+      try {
+        await api.postProcessJob(capturedJobId, audioPath);
+        // Fetch updated segments with speaker labels
+        const result = await tauriFetch(
+          `http://127.0.0.1:18090/jobs/${capturedJobId}/result`,
+          { method: "GET" }
+        );
+        if (result.status >= 200 && result.status < 300) {
+          const data = JSON.parse(result.body);
+          const updatedSegments: Segment[] = data.segments.map(
+            (s: { start: number; end: number; text: string; speaker: string | null; confidence: number | null }, i: number) => ({
+              id: `seg-${i}`,
+              start: s.start,
+              end: s.end,
+              text: s.text,
+              speaker: s.speaker || null,
+              confidence: s.confidence || null,
+            })
+          );
+          useTranscriptionStore.getState().setSegments(updatedSegments);
+          // Re-persist updated segments with speaker labels
+          if (activeProjectId) {
+            await useTranscriptionStore.getState().persistSegments(activeProjectId);
+          }
+        }
+      } catch {
+        // Diarization failure is non-fatal, continue with unlabeled segments
+      }
+    }
+
     // Load audio file for playback
     if (audioPath) {
       set({ processingStep: "loading" });
@@ -298,13 +352,14 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
     }
 
     // Auto-generate AI title for the active meeting (only first recording)
-    if (activeProjectId && segments.length > 0 && existingSegments.length === 0) {
+    const titleSegments = useTranscriptionStore.getState().segments;
+    if (activeProjectId && titleSegments.length > 0 && isFirstRecording) {
       set({ processingStep: "titling" });
       const activeProject = useProjectStore.getState().projects.find(
         (p) => p.id === activeProjectId
       );
       if (activeProject && !activeProject.isFolder) {
-        const transcriptText = segments.map((s) => s.text).join(" ");
+        const transcriptText = titleSegments.map((s) => s.text).join(" ");
         try {
           const title = await generateMeetingTitle(activeProject.createdAt, transcriptText);
           await useProjectStore.getState().updateProject(activeProjectId, { title });
@@ -335,18 +390,22 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
     set({ processingStep: null });
 
     // Cancel the ASR job in background
-    if (jobId) {
-      api.cancelJob(jobId).catch(() => {});
+    if (capturedJobId) {
+      api.cancelJob(capturedJobId).catch(() => {});
     }
-  },
-
-  addSegment: (segment) => {
-    set({ segments: [...get().segments, segment] });
   },
 
   reset: () => {
     clearElapsedTimer();
     cleanupSegmentListener();
-    set({ status: "idle", jobId: null, elapsed: 0, segments: [], processingStep: null });
+    useTranscriptionStore.getState().stopAutoPersist();
+    set({
+      status: "idle",
+      jobId: null,
+      elapsed: 0,
+      streamSegmentCount: 0,
+      segmentCountAtStart: 0,
+      processingStep: null,
+    });
   },
 }));

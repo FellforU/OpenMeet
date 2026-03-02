@@ -122,6 +122,7 @@
     "titleGenerateFailed": "Failed to generate title",
     "summaryFailed": "Summary generation failed: {{message}}",
     "noSegments": "No speech detected. Check if ASR model is loaded and microphone is working.",
+    "switchDuringRecording": "Please stop recording before switching meetings",
     "modelPathNotFound": "Model files not found on disk"
   },
   "recording": {
@@ -135,7 +136,8 @@
     "loading": "Loading audio...",
     "loadingModel": "Loading model...",
     "titling": "Generating title...",
-    "summarizing": "Generating summary..."
+    "summarizing": "Generating summary...",
+    "diarizing": "Identifying speakers..."
   },
   "loadPhase": {
     "idle": "Idle",

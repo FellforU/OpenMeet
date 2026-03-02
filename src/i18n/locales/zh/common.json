@@ -122,6 +122,7 @@
     "titleGenerateFailed": "标题生成失败",
     "summaryFailed": "摘要生成失败：{{message}}",
     "noSegments": "未检测到语音。请检查 ASR 模型是否已加载，麦克风是否正常工作。",
+    "switchDuringRecording": "录制进行中，请先停止录制再切换会议",
     "modelPathNotFound": "模型文件未找到"
   },
   "recording": {
@@ -135,7 +136,8 @@
     "loading": "加载音频中...",
     "loadingModel": "加载模型中...",
     "titling": "生成标题中...",
-    "summarizing": "生成摘要中..."
+    "summarizing": "生成摘要中...",
+    "diarizing": "识别说话人中..."
   },
   "loadPhase": {
     "idle": "空闲",

@@ -12,6 +12,8 @@
     "transcribing": "转录中...",
     "editMode": "编辑模式",
     "processing": "处理中...",
+    "waitingForSegments": "正在录制，等待转录文本...",
+    "liveRecording": "实时转录中",
     "step": {
       "transcribing": "正在转录",
       "itn": "逆文本正则化",

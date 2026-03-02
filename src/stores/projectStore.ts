@@ -1,5 +1,8 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
+import i18n from "../i18n";
+import { useRecordingStore } from "./recordingStore";
 import type { Project } from "../types";
 
 interface ProjectStore {
@@ -131,6 +134,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   setActiveProject: (id: string) => {
+    // Guard: prevent switching during recording
+    const recStatus = useRecordingStore.getState().status;
+    if (recStatus === "recording" || recStatus === "paused") {
+      toast.warning(i18n.t("common:error.switchDuringRecording"));
+      return;
+    }
     set({ activeProjectId: id });
     // Lazy-import to avoid circular dependency
     import("./transcriptionStore").then(({ useTranscriptionStore }) => {

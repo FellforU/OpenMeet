@@ -99,6 +99,18 @@ export async function cancelJob(jobId: string): Promise<JobResponse> {
   });
 }
 
+export async function postProcessJob(
+  jobId: string,
+  audioPath?: string
+): Promise<JobResponse> {
+  const params = audioPath
+    ? `?audio_path=${encodeURIComponent(audioPath)}`
+    : "";
+  return fetchJson(`${ASR_BASE_URL}/jobs/${jobId}/post-process${params}`, {
+    method: "POST",
+  });
+}
+
 export interface EngineInfo {
   name: string;
   supported_languages: string[];

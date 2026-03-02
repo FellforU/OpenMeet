@@ -12,6 +12,8 @@
     "transcribing": "Transcribing...",
     "editMode": "Edit Mode",
     "processing": "Processing...",
+    "waitingForSegments": "Recording, waiting for transcription...",
+    "liveRecording": "Live transcribing",
     "step": {
       "transcribing": "Transcribing",
       "itn": "Inverse Text Normalization",
