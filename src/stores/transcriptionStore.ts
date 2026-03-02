@@ -7,10 +7,12 @@ import { tauriFetch } from "../services/httpProxy";
 import { indexProject } from "../services/knowledgeClient";
 import { generateMeetingTitle, generateMeetingSummary } from "../services/llmClient";
 
-// Polling timer reference for cleanup
+// Polling timer reference and abort flag for cleanup
 let pollTimeoutId: ReturnType<typeof setTimeout> | null = null;
+let pollAborted = false;
 
 function cancelPolling() {
+  pollAborted = true;
   if (pollTimeoutId) {
     clearTimeout(pollTimeoutId);
     pollTimeoutId = null;
@@ -40,7 +42,7 @@ interface TranscriptionStore {
 
   setAudioFile: (filePath: string, objectUrl: string) => void;
   startTranscription: (engine: string, modelSize: string, language: string | null) => Promise<void>;
-  pollJobStatus: (jobId: string) => Promise<void>;
+  pollJobStatus: (jobId: string, projectId?: string) => Promise<void>;
   setSegments: (segments: Segment[]) => void;
   appendSegments: (newSegments: Segment[]) => void;
   setJobStatus: (status: JobStatus) => void;
@@ -224,16 +226,28 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
       method: "POST",
     });
 
-    // Start polling
-    get().pollJobStatus(jobResp.id);
+    // Start polling — capture project ID so results persist to the correct project
+    // even if the user switches meetings during transcription
+    const { useProjectStore } = await import("./projectStore");
+    const targetProjectId = useProjectStore.getState().activeProjectId;
+    get().pollJobStatus(jobResp.id, targetProjectId || undefined);
   },
 
-  pollJobStatus: async (jobId) => {
+  pollJobStatus: async (jobId, projectId) => {
     cancelPolling();
+    pollAborted = false;
+
+    // Capture project ID at polling start time so results persist to the
+    // correct project even if the user switches meetings during transcription
+    const targetProjectId = projectId || null;
 
     const poll = async () => {
+      if (pollAborted) return;
+
       try {
         const jobResp = await api.getJob(jobId);
+        if (pollAborted) return;
+
         set({
           job: {
             ...get().job,
@@ -245,6 +259,8 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
         if (jobResp.status === "completed" || jobResp.status === "ready") {
           // Fetch results
           const resp = await tauriFetch(`http://127.0.0.1:18090/jobs/${jobId}/result`, { method: "GET" });
+          if (pollAborted) return;
+
           if (resp.status >= 200 && resp.status < 300) {
             const data = JSON.parse(resp.body);
             const hadExistingSegments = get().segments.length > 0;
@@ -254,34 +270,47 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
                 ...s,
               })
             );
-            set({ segments });
 
-            // Persist segments to SQLite
+            // Persist segments to SQLite using the captured project ID
+            if (targetProjectId) {
+              // Save to DB first (even if user switched meetings)
+              await invoke("db_save_segments", {
+                projectId: targetProjectId,
+                segments: segments.map(segmentToRust),
+              });
+              indexProject(targetProjectId).catch(() => {});
+            }
+
+            // Only update UI state if user is still on the same meeting
             const { useProjectStore } = await import("./projectStore");
-            const { useSettingsStore } = await import("./settingsStore");
-            const activeProjectId = useProjectStore.getState().activeProjectId;
-            if (activeProjectId) {
-              get().persistSegments(activeProjectId).catch(() => {});
+            const currentProjectId = useProjectStore.getState().activeProjectId;
+            const isStillOnSameProject = currentProjectId === targetProjectId;
+
+            if (isStillOnSameProject) {
+              set({ segments });
             }
 
             // Auto-generate summary using frontend LLM client
+            const { useSettingsStore } = await import("./settingsStore");
             const autoSummary = useSettingsStore.getState().general.autoSummary;
-            if (autoSummary && activeProjectId && segments.length > 0) {
+            if (autoSummary && targetProjectId && segments.length > 0) {
               try {
-                set({ job: { ...get().job, pipelineStep: "summarizing" } });
+                if (isStillOnSameProject) {
+                  set({ job: { ...get().job, pipelineStep: "summarizing" } });
+                }
 
                 // Generate title for first-time transcription of non-folder meetings
                 if (!hadExistingSegments) {
                   const activeProject = useProjectStore.getState().projects.find(
-                    (p) => p.id === activeProjectId
+                    (p) => p.id === targetProjectId
                   );
                   if (activeProject && !activeProject.isFolder) {
                     const transcriptText = segments.map((s) => s.text).join(" ");
                     try {
                       const title = await generateMeetingTitle(activeProject.createdAt, transcriptText);
-                      await useProjectStore.getState().updateProject(activeProjectId, { title });
+                      await useProjectStore.getState().updateProject(targetProjectId, { title });
                     } catch {
-                      toast.warning("标题生成失败，请手动设置");
+                      if (isStillOnSameProject) toast.warning("标题生成失败，请手动设置");
                     }
                   }
                 }
@@ -291,12 +320,16 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
                   .map((s) => (s.speaker ? `[${s.speaker}] ${s.text}` : s.text))
                   .join("\n");
                 const summary = await generateMeetingSummary(transcriptText);
-                set({ summary });
-                await get().persistSummary(activeProjectId);
+                if (isStillOnSameProject) {
+                  set({ summary });
+                }
+                await get().persistSummary(targetProjectId);
               } catch {
-                toast.warning("摘要生成失败，请检查 LLM 配置");
+                if (isStillOnSameProject) toast.warning("摘要生成失败，请检查 LLM 配置");
               } finally {
-                set({ job: { ...get().job, pipelineStep: null } });
+                if (isStillOnSameProject) {
+                  set({ job: { ...get().job, pipelineStep: null } });
+                }
               }
             }
           }
@@ -314,10 +347,14 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
         }
 
         // Continue polling
-        pollTimeoutId = setTimeout(() => poll(), 1000);
+        if (!pollAborted) {
+          pollTimeoutId = setTimeout(() => poll(), 1000);
+        }
       } catch {
         // Retry on network error
-        pollTimeoutId = setTimeout(() => poll(), 2000);
+        if (!pollAborted) {
+          pollTimeoutId = setTimeout(() => poll(), 2000);
+        }
       }
     };
 
