@@ -132,6 +132,7 @@
     "saving": "Saving audio...",
     "merging": "Merging audio...",
     "loading": "Loading audio...",
+    "loadingModel": "Loading model...",
     "titling": "Generating title...",
     "summarizing": "Generating summary..."
   },

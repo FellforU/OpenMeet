@@ -41,7 +41,7 @@ impl SCStreamOutputTrait for AudioHandler {
                 };
                 let samples: Vec<i16> = float_samples
                     .iter()
-                    .map(|&s| (s * 32767.0) as i16)
+                    .map(|&s| (s.clamp(-1.0, 1.0) * 32767.0) as i16)
                     .collect();
                 self.ws_buffer.push_samples(&samples);
                 self.all_buffer.push_samples(&samples);

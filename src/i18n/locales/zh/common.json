@@ -132,6 +132,7 @@
     "saving": "保存音频中...",
     "merging": "合并音频中...",
     "loading": "加载音频中...",
+    "loadingModel": "加载模型中...",
     "titling": "生成标题中...",
     "summarizing": "生成摘要中..."
   },

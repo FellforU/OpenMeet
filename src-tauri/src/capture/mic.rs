@@ -30,7 +30,10 @@ pub fn start_mic_capture(
                 if is_paused.load(Ordering::SeqCst) {
                     return;
                 }
-                let samples: Vec<i16> = data.iter().map(|&s| (s * 32767.0) as i16).collect();
+                let samples: Vec<i16> = data
+                    .iter()
+                    .map(|&s| (s.clamp(-1.0, 1.0) * 32767.0) as i16)
+                    .collect();
                 ws_buffer.push_samples(&samples);
                 all_buffer.push_samples(&samples);
             },

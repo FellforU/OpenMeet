@@ -125,14 +125,17 @@ fn start_mixed_capture(
     ws_buffer: PcmBuffer,
     all_buffer: PcmBuffer,
 ) -> Result<(Vec<CaptureHandle>, u32, u16), String> {
-    // Separate buffers for mic and system
+    // Separate raw buffers for mic and system — one buffer each to avoid double-push.
+    // The interleaver thread reads from these and writes stereo to ws_buffer + all_buffer.
     let mic_raw = PcmBuffer::new();
+    let mic_discard = PcmBuffer::new(); // unused second param
     let sys_raw = PcmBuffer::new();
+    let sys_discard = PcmBuffer::new(); // unused second param
 
     let (mic_handle, sr, _) =
-        crate::capture::mic::start_mic_capture(is_paused.clone(), mic_raw.clone(), mic_raw.clone())?;
+        crate::capture::mic::start_mic_capture(is_paused.clone(), mic_raw.clone(), mic_discard)?;
 
-    let sys_result = start_system_capture(is_paused.clone(), sys_raw.clone(), sys_raw.clone());
+    let sys_result = start_system_capture(is_paused.clone(), sys_raw.clone(), sys_discard);
     let sys_handles = match sys_result {
         Ok((handles, _, _)) => handles,
         Err(e) => {

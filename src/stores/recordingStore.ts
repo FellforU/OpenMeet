@@ -13,6 +13,7 @@ type ProcessingStep =
   | "saving"
   | "merging"
   | "loading"
+  | "loadingModel"
   | "titling"
   | "summarizing"
   | null;
@@ -109,6 +110,30 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
   setAudioSource: (source) => set({ audioSource: source }),
 
   startRecording: async (engine, modelSize, language) => {
+    // Ensure ASR model is loaded before recording starts
+    set({ processingStep: "loadingModel" });
+    try {
+      const loadResp = await api.loadEngineModel(engine, modelSize);
+      if (loadResp.status === "loading") {
+        // Poll until model is ready
+        const MAX_WAIT_MS = 300_000; // 5 minutes
+        const POLL_MS = 1_000;
+        const start = Date.now();
+        while (Date.now() - start < MAX_WAIT_MS) {
+          await new Promise((r) => setTimeout(r, POLL_MS));
+          const status = await api.getLoadStatus(engine);
+          if (status.phase === "ready") break;
+          if (status.phase === "error") {
+            throw new Error(status.error || "Model load failed");
+          }
+        }
+      }
+    } catch (err) {
+      set({ processingStep: null });
+      throw err;
+    }
+    set({ processingStep: null });
+
     // Auto-create a meeting if none is selected
     let activeProjectId = useProjectStore.getState().activeProjectId;
     if (!activeProjectId) {

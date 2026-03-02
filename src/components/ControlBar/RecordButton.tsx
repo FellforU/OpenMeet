@@ -24,6 +24,7 @@ const STEP_LABEL_MAP: Record<string, string> = {
   saving: "processing.saving",
   merging: "processing.merging",
   loading: "processing.loading",
+  loadingModel: "processing.loadingModel",
   titling: "processing.titling",
   summarizing: "processing.summarizing",
 };

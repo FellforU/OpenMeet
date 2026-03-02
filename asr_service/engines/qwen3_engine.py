@@ -90,8 +90,10 @@ class Qwen3Engine:
         QwenASR = _ensure_qwen3asr()
         model_id = MODEL_MAP[model_size]
         cache_dir = str(_get_hf_cache())
-        # Use local files only when the model is already downloaded
-        use_local = self.is_model_downloaded(model_size)
+        # When model is already downloaded, pass local snapshot path directly
+        # so both AutoModel and AutoProcessor load offline without network requests
+        local_path = self.get_model_path(model_size) if self.is_model_downloaded(model_size) else None
+        model_ref = local_path or model_id
 
         def _load():
             import torch
@@ -99,11 +101,10 @@ class Qwen3Engine:
             kwargs = {
                 "dtype": dtype,
                 "device_map": "auto",
-                "cache_dir": cache_dir,
             }
-            if use_local:
-                kwargs["local_files_only"] = True
-            return QwenASR.from_pretrained(model_id, **kwargs)
+            if not local_path:
+                kwargs["cache_dir"] = cache_dir
+            return QwenASR.from_pretrained(model_ref, **kwargs)
 
         self._model = await asyncio.to_thread(_load)
         self._model_size = model_size
