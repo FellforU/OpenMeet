@@ -107,7 +107,8 @@
   "upload": {
     "title": "上传音频文件",
     "dragHint": "拖拽文件到此处，或点击浏览",
-    "browse": "选择文件"
+    "browse": "选择文件",
+    "unsupportedFormat": "不支持的文件格式，请使用 MP3、WAV、M4A、FLAC、OGG、MP4 或 MKV 文件"
   },
   "error": {
     "title": "出了点问题",

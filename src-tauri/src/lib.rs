@@ -102,6 +102,18 @@ async fn pick_folder() -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
+async fn pick_audio_file() -> Result<Option<String>, String> {
+    let handle = rfd::AsyncFileDialog::new()
+        .add_filter(
+            "Audio/Video",
+            &["mp3", "wav", "m4a", "mp4", "mkv", "flac", "ogg", "webm", "aac"],
+        )
+        .pick_file()
+        .await;
+    Ok(handle.map(|h| h.path().to_string_lossy().to_string()))
+}
+
+#[tauri::command]
 async fn save_file_dialog(
     default_name: String,
     filters: Vec<(String, Vec<String>)>,
@@ -241,6 +253,7 @@ pub fn run() {
             open_url,
             reveal_file,
             pick_folder,
+            pick_audio_file,
             save_file_dialog,
             write_text_file,
             write_binary_file,

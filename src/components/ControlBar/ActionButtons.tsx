@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { Upload } from "lucide-react";
 import { toast } from "sonner";
@@ -6,6 +6,7 @@ import { Button } from "../ui/button";
 import { useTranscriptionStore } from "../../stores/transcriptionStore";
 import { useProjectStore } from "../../stores/projectStore";
 import { useEngineStore } from "../../stores/engineStore";
+import { loadAudioUrl } from "../../services/audioLoader";
 import { RecordButton } from "./RecordButton";
 import { UploadDialog } from "./UploadDialog";
 
@@ -18,20 +19,37 @@ export function ActionButtons() {
     useEngineStore();
   const [uploadOpen, setUploadOpen] = useState(false);
 
-  const handleFileSelected = (file: File) => {
-    const objectUrl = URL.createObjectURL(file);
-    const filePath = (file as unknown as { path?: string }).path || file.name;
-    setAudioFile(filePath, objectUrl);
+  const handleFileSelected = useCallback(
+    async (filePath: string) => {
+      const objectUrl = await loadAudioUrl(filePath);
+      if (!objectUrl) {
+        toast.error(t("error.audioLoadFailed"));
+        return;
+      }
 
-    if (activeProjectId) {
-      updateProject(activeProjectId, { audioPath: filePath });
-    }
+      setAudioFile(filePath, objectUrl);
 
-    toast.success(t("toast.fileLoaded", { name: file.name }));
+      if (activeProjectId) {
+        updateProject(activeProjectId, { audioPath: filePath });
+      }
 
-    const lang = selectedLanguage === "auto" ? null : selectedLanguage;
-    startTranscription(selectedEngine, selectedModelSize, lang);
-  };
+      const fileName = filePath.split(/[/\\]/).pop() ?? filePath;
+      toast.success(t("toast.fileLoaded", { name: fileName }));
+
+      const lang = selectedLanguage === "auto" ? null : selectedLanguage;
+      startTranscription(selectedEngine, selectedModelSize, lang);
+    },
+    [
+      t,
+      setAudioFile,
+      activeProjectId,
+      updateProject,
+      selectedEngine,
+      selectedModelSize,
+      selectedLanguage,
+      startTranscription,
+    ]
+  );
 
   return (
     <div className="flex items-center gap-2">

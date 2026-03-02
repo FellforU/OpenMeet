@@ -107,7 +107,8 @@
   "upload": {
     "title": "Upload Audio File",
     "dragHint": "Drag & drop a file here, or click to browse",
-    "browse": "Choose File"
+    "browse": "Choose File",
+    "unsupportedFormat": "Unsupported file format. Please use MP3, WAV, M4A, FLAC, OGG, MP4 or MKV."
   },
   "error": {
     "title": "Something went wrong",
