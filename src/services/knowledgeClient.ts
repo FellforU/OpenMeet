@@ -40,14 +40,14 @@ export async function configureKnowledge(
     };
   }
 
-  const { modelCacheDir, hfMirror } = general;
+  const { cacheDir, hfMirror } = general;
   const resp = await tauriFetch(`${ASR_BASE_URL}/config`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       app_data_dir: appDataDir,
       embedding_config: embeddingConfig,
-      model_cache_dir: modelCacheDir || "",
+      cache_dir: cacheDir || "",
       hf_mirror: hfMirror || "",
     }),
   });

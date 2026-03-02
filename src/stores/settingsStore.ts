@@ -34,7 +34,7 @@ interface GeneralConfig {
   exportFormat: "markdown" | "txt" | "json";
   asrEngine: string;
   asrModelSize: string;
-  modelCacheDir: string;
+  cacheDir: string;                 // Root cache directory for models, audio, attachments, etc.
   hfMirror: string;                // HuggingFace mirror URL (e.g. "https://hf-mirror.com")
 }
 
@@ -82,7 +82,7 @@ const defaultState = {
     exportFormat: "markdown" as const,
     asrEngine: "whisper",
     asrModelSize: "base",
-    modelCacheDir: "",
+    cacheDir: "",
     hfMirror: "",
   },
   llmProviders: {
@@ -198,6 +198,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         }
 
         const mergedGeneral = { ...defaultState.general, ...data.general };
+
+        // Migrate: old modelCacheDir → new cacheDir
+        if (!mergedGeneral.cacheDir && data.general?.modelCacheDir) {
+          mergedGeneral.cacheDir = data.general.modelCacheDir;
+        }
 
         // Migrate: old provider-level defaults → new compound key defaults
         if (!mergedGeneral.defaultLLMModel && mergedGeneral.defaultLLMProvider) {

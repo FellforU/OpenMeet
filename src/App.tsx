@@ -27,7 +27,7 @@ function App() {
     let cancelled = false;
 
     async function init() {
-      // 1. Load settings first — ASR startup depends on modelCacheDir
+      // 1. Load settings first — ASR startup depends on cacheDir
       try {
         await migrateFromLocalStorage();
         await useProjectStore.getState().loadProjects();
@@ -49,7 +49,7 @@ function App() {
       // 2. Start ASR with correct cache dir and HF mirror (settings are now loaded)
       try {
         const { general } = useSettingsStore.getState();
-        const cacheDir = general.modelCacheDir || undefined;
+        const cacheDir = general.cacheDir || undefined;
         const hfMirror = general.hfMirror || undefined;
         await startAsrService(cacheDir, hfMirror);
       } catch {

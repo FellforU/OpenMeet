@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from ..config import set_app_data_dir, set_model_cache_dir, set_hf_mirror, get_lance_path, get_sqlite_path
+from ..config import set_app_data_dir, set_cache_dir, set_hf_mirror, get_lance_path, get_sqlite_path
 
 router = APIRouter(tags=["config"])
 
@@ -35,7 +35,7 @@ class HfMirrorRequest(BaseModel):
 class ConfigRequest(BaseModel):
     app_data_dir: str
     embedding_config: EmbeddingConfig | None = None
-    model_cache_dir: str | None = None
+    cache_dir: str | None = None
     hf_mirror: str | None = None
 
 
@@ -49,8 +49,8 @@ class ConfigResponse(BaseModel):
 async def set_config(req: ConfigRequest):
     set_app_data_dir(req.app_data_dir)
 
-    # Apply model cache directory (empty string resets to default)
-    set_model_cache_dir(req.model_cache_dir or None)
+    # Apply cache directory (empty string resets to default)
+    set_cache_dir(req.cache_dir or None)
 
     # Apply HuggingFace mirror
     if req.hf_mirror is not None:

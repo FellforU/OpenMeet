@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::Mutex;
 use tauri::State;
@@ -95,10 +95,13 @@ pub async fn start_asr_service(
     cmd.args(["-m", "asr_service.main"])
         .current_dir(&project_root);
 
-    // Inject cache env vars if custom path is set
+    // Inject cache env vars — models go into {cache_dir}/models subdirectory
     if let Some(ref dir) = cache_dir {
-        cmd.env("HF_HUB_CACHE", dir);
-        cmd.env("MODELSCOPE_CACHE", dir);
+        let models_dir = Path::new(dir).join("models");
+        let models_str = models_dir.to_string_lossy().to_string();
+        cmd.env("HF_HUB_CACHE", &models_str);
+        cmd.env("MODELSCOPE_CACHE", &models_str);
+        cmd.env("OPENMEET_CACHE_DIR", dir);
     }
 
     // Inject HuggingFace mirror endpoint if set

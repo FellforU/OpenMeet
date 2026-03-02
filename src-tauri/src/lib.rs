@@ -172,18 +172,10 @@ async fn migrate_cache_dir(from: String, to: String) -> Result<String, String> {
 
 #[tauri::command]
 fn get_default_cache_dir() -> String {
-    // Respect HF env vars, matching Python huggingface_hub priority
-    if let Ok(cache) = std::env::var("HF_HUB_CACHE") {
-        return cache;
-    }
-    if let Ok(home) = std::env::var("HF_HOME") {
-        return format!("{}/hub", home);
-    }
     dirs::home_dir()
         .unwrap_or_default()
         .join(".cache")
-        .join("huggingface")
-        .join("hub")
+        .join("openmeet")
         .to_string_lossy()
         .to_string()
 }

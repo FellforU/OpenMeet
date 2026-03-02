@@ -67,7 +67,7 @@ function GeneralSettings() {
       const picked = await invoke<string | null>("pick_folder");
       if (!picked) return;
 
-      const oldDir = general.modelCacheDir || defaultCachePath;
+      const oldDir = general.cacheDir || defaultCachePath;
       if (picked === oldDir) return;
 
       setPendingNewDir(picked);
@@ -75,12 +75,12 @@ function GeneralSettings() {
     } catch {
       // User cancelled or dialog unavailable
     }
-  }, [general.modelCacheDir, defaultCachePath]);
+  }, [general.cacheDir, defaultCachePath]);
 
   const handleMigrateSkip = useCallback(async () => {
     setMigrateOpen(false);
-    await setGeneral({ modelCacheDir: pendingNewDir });
-    toast.success(t("general.modelCacheDir"));
+    await setGeneral({ cacheDir: pendingNewDir });
+    toast.success(t("general.cacheDir"));
     // Restart ASR service with new cache directory
     try {
       const { hfMirror } = useSettingsStore.getState().general;
@@ -91,14 +91,14 @@ function GeneralSettings() {
   }, [pendingNewDir, setGeneral, t]);
 
   const handleMigrateConfirm = useCallback(async () => {
-    const from = general.modelCacheDir || defaultCachePath;
+    const from = general.cacheDir || defaultCachePath;
     setMigrating(true);
     try {
       const result = await invoke<string>("migrate_cache_dir", {
         from,
         to: pendingNewDir,
       });
-      await setGeneral({ modelCacheDir: pendingNewDir });
+      await setGeneral({ cacheDir: pendingNewDir });
       toast.success(t("general.migrateSuccess") + ` (${result})`);
       // Restart ASR service with new cache directory
       try {
@@ -113,17 +113,17 @@ function GeneralSettings() {
       setMigrating(false);
       setMigrateOpen(false);
     }
-  }, [general.modelCacheDir, defaultCachePath, pendingNewDir, setGeneral, t]);
+  }, [general.cacheDir, defaultCachePath, pendingNewDir, setGeneral, t]);
 
   const handleOpenFolder = useCallback(() => {
-    const dir = general.modelCacheDir || defaultCachePath;
+    const dir = general.cacheDir || defaultCachePath;
     if (dir) {
       invoke("reveal_file", { path: dir }).catch(() => {});
     }
-  }, [general.modelCacheDir, defaultCachePath]);
+  }, [general.cacheDir, defaultCachePath]);
 
   const handleClearCacheDir = useCallback(async () => {
-    await setGeneral({ modelCacheDir: "" });
+    await setGeneral({ cacheDir: "" });
   }, [setGeneral]);
 
   return (
@@ -204,18 +204,18 @@ function GeneralSettings() {
         </Select>
       </div>
 
-      {/* Model Cache Directory */}
+      {/* Cache Directory */}
       <div className="space-y-2">
         <label className="text-sm font-medium">
-          {t("general.modelCacheDir")}
+          {t("general.cacheDir")}
         </label>
         <p className="text-xs text-muted-foreground">
-          {t("general.modelCacheDirDesc")}
+          {t("general.cacheDirDesc")}
         </p>
         <div className="flex items-center gap-2">
           <Input
             readOnly
-            value={general.modelCacheDir}
+            value={general.cacheDir}
             placeholder={defaultCachePath ? t("general.defaultCachePath", { path: defaultCachePath }) : ""}
             className="flex-1 text-xs"
           />
@@ -226,7 +226,7 @@ function GeneralSettings() {
             <FolderOpen className="h-4 w-4" />
           </Button>
         </div>
-        {general.modelCacheDir && (
+        {general.cacheDir && (
           <button
             onClick={handleClearCacheDir}
             className="text-xs text-muted-foreground underline hover:text-foreground"
@@ -268,7 +268,7 @@ function GeneralSettings() {
               <div className="space-y-2">
                 <p>{t("general.migrateCacheDesc")}</p>
                 <div className="rounded-md bg-muted p-3 text-xs font-mono space-y-1">
-                  <p><span className="font-semibold">{t("general.migrateFrom")}:</span> {general.modelCacheDir || defaultCachePath}</p>
+                  <p><span className="font-semibold">{t("general.migrateFrom")}:</span> {general.cacheDir || defaultCachePath}</p>
                   <p><span className="font-semibold">{t("general.migrateTo")}:</span> {pendingNewDir}</p>
                 </div>
               </div>
