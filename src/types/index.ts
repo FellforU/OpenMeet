@@ -38,6 +38,7 @@ export type JobStatus =
   | "ready";
 
 export type PipelineStep =
+  | "loading_model"
   | "transcribing"
   | "itn"
   | "punctuation"

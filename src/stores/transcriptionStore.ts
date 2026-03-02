@@ -189,6 +189,23 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
     // Cancel any existing polling
     cancelPolling();
 
+    // Ensure ASR model is loaded before starting transcription
+    set({ job: { ...get().job, status: "running" as JobStatus, pipelineStep: "loading_model" as PipelineStep } });
+    const loadResp = await api.loadEngineModel(engine, modelSize);
+    if (loadResp.status === "loading") {
+      const MAX_WAIT_MS = 300_000;
+      const POLL_MS = 1_000;
+      const start = Date.now();
+      while (Date.now() - start < MAX_WAIT_MS) {
+        await new Promise((r) => setTimeout(r, POLL_MS));
+        const status = await api.getLoadStatus(engine);
+        if (status.phase === "ready") break;
+        if (status.phase === "error") {
+          throw new Error(status.error || "Model load failed");
+        }
+      }
+    }
+
     const jobResp = await api.createJob({
       mode: "file",
       engine,
@@ -242,6 +259,10 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
 
         if (jobResp.status === "cancelled" || jobResp.error) {
           pollTimeoutId = null;
+          if (jobResp.error) {
+            const { toast } = await import("sonner");
+            toast.error(jobResp.error);
+          }
           return;
         }
 

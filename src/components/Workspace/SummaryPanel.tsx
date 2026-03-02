@@ -34,28 +34,54 @@ interface SummaryPanelProps {
   onJumpToTranscript?: (time: number) => void;
 }
 
+/** Find the longest common substring length between two strings. */
+function longestCommonSubstr(a: string, b: string): number {
+  if (!a || !b) return 0;
+  // Sliding window approach — avoid O(n*m) DP for potentially long texts
+  const short = a.length <= b.length ? a : b;
+  const long = a.length <= b.length ? b : a;
+  let best = 0;
+  for (let len = Math.min(short.length, 20); len > best; len--) {
+    for (let i = 0; i <= short.length - len; i++) {
+      if (long.includes(short.slice(i, i + len))) {
+        best = len;
+        break;
+      }
+    }
+  }
+  return best;
+}
+
 function findSegmentTime(
   summaryText: string,
   segments: Segment[]
 ): number | null {
   if (!segments.length) return null;
 
-  // Extract Chinese word groups (2-4 chars) and English words as keywords
-  const chineseWords = summaryText.match(/[\u4e00-\u9fa5]{2,4}/g) || [];
+  const summaryLower = summaryText.toLowerCase();
+
+  // Extract longer phrases (4+ Chinese chars) and English words (4+ chars) for better specificity
+  const chinesePhrases = summaryLower.match(/[\u4e00-\u9fa5]{4,}/g) || [];
   const englishWords =
-    summaryText.match(/[a-zA-Z]{3,}/g)?.map((w) => w.toLowerCase()) || [];
-  const keywords = [...new Set([...chineseWords, ...englishWords])];
-  if (keywords.length === 0) return null;
+    summaryLower.match(/[a-zA-Z]{4,}/g) || [];
+  const keywords = [...new Set([...chinesePhrases, ...englishWords])];
 
   let bestScore = 0;
   let bestTime: number | null = null;
 
   for (const seg of segments) {
-    let score = 0;
     const segLower = seg.text.toLowerCase();
+
+    // Score 1: keyword match count (weighted by keyword length)
+    let kwScore = 0;
     for (const kw of keywords) {
-      if (segLower.includes(kw.toLowerCase())) score++;
+      if (segLower.includes(kw)) kwScore += kw.length;
     }
+
+    // Score 2: longest common substring for direct text similarity
+    const lcs = longestCommonSubstr(summaryLower, segLower);
+
+    const score = kwScore + lcs * 2;
     if (score > bestScore) {
       bestScore = score;
       bestTime = seg.start;

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Mic, Pause, Square, Loader2, ChevronDown, Monitor } from "lucide-react";
+import { Mic, Pause, Square, Loader2, ChevronDown, Monitor, AudioLines } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
 import {
@@ -75,10 +75,7 @@ export function RecordButton() {
           {audioSource === "system" ? (
             <Monitor className="mr-1.5 h-4 w-4" />
           ) : audioSource === "mixed" ? (
-            <>
-              <Mic className="mr-0.5 h-4 w-4" />
-              <Monitor className="mr-1.5 h-4 w-4" />
-            </>
+            <AudioLines className="mr-1.5 h-4 w-4" />
           ) : (
             <Mic className="mr-1.5 h-4 w-4" />
           )}
@@ -109,8 +106,7 @@ export function RecordButton() {
                 {t("recording.systemAudio")}
               </DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="mixed">
-                <Mic className="mr-2 h-4 w-4" />
-                <Monitor className="mr-2 h-4 w-4 -ml-2" />
+                <AudioLines className="mr-2 h-4 w-4" />
                 {t("recording.mixed")}
               </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
