@@ -36,6 +36,7 @@ interface GeneralConfig {
   asrEngine: string;
   asrModelSize: string;
   cacheDir: string;                 // Root cache directory for models, audio, attachments, etc.
+  enableHfMirror: boolean;         // Whether to use HuggingFace mirror for model downloads
   hfMirror: string;                // HuggingFace mirror URL (e.g. "https://hf-mirror.com")
 }
 
@@ -85,6 +86,7 @@ const defaultState = {
     asrEngine: "whisper",
     asrModelSize: "base",
     cacheDir: "",
+    enableHfMirror: false,
     hfMirror: "",
   },
   llmProviders: {

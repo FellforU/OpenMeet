@@ -80,8 +80,8 @@ function GeneralSettings() {
     toast.success(t("general.cacheDir"));
     // Restart ASR service with new cache directory
     try {
-      const { hfMirror } = useSettingsStore.getState().general;
-      await restartAsrService(pendingNewDir, hfMirror || undefined);
+      const g = useSettingsStore.getState().general;
+      await restartAsrService(pendingNewDir, (g.enableHfMirror && g.hfMirror) || undefined);
     } catch {
       toast.warning(t("general.restartAsrFailed"));
     }
@@ -207,25 +207,42 @@ function GeneralSettings() {
 
       {/* HuggingFace Mirror */}
       <div className="space-y-2">
-        <label className="text-sm font-medium">
-          {t("general.hfMirror")}
-        </label>
-        <p className="text-xs text-muted-foreground">
-          {t("general.hfMirrorDesc")}
-        </p>
-        <Input
-          value={general.hfMirror}
-          placeholder="https://hf-mirror.com"
-          className="text-xs"
-          onChange={(e) => setGeneral({ hfMirror: e.target.value })}
-          onBlur={async () => {
-            try {
-              await setHfMirror(general.hfMirror);
-            } catch {
-              // ASR service may not be running yet
-            }
-          }}
-        />
+        <div className="flex items-center justify-between">
+          <div>
+            <label className="text-sm font-medium">
+              {t("general.hfMirror")}
+            </label>
+            <p className="text-xs text-muted-foreground">
+              {t("general.hfMirrorDesc")}
+            </p>
+          </div>
+          <Switch
+            checked={general.enableHfMirror}
+            onCheckedChange={async (v) => {
+              await setGeneral({ enableHfMirror: v });
+              try {
+                await setHfMirror(v ? general.hfMirror : "");
+              } catch {
+                // ASR service may not be running yet
+              }
+            }}
+          />
+        </div>
+        {general.enableHfMirror && (
+          <Input
+            value={general.hfMirror}
+            placeholder="https://hf-mirror.com"
+            className="text-xs"
+            onChange={(e) => setGeneral({ hfMirror: e.target.value })}
+            onBlur={async () => {
+              try {
+                await setHfMirror(general.hfMirror);
+              } catch {
+                // ASR service may not be running yet
+              }
+            }}
+          />
+        )}
       </div>
 
       {/* Migration Confirm Dialog */}

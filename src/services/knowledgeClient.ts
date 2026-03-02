@@ -63,7 +63,7 @@ export async function configureKnowledge(
     }
   }
 
-  const { cacheDir, hfMirror } = general;
+  const { cacheDir, enableHfMirror, hfMirror } = general;
   const resp = await tauriFetch(`${ASR_BASE_URL}/config`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -72,7 +72,7 @@ export async function configureKnowledge(
       embedding_config: embeddingConfig,
       rerank_config: rerankConfig,
       cache_dir: cacheDir || "",
-      hf_mirror: hfMirror || "",
+      hf_mirror: (enableHfMirror && hfMirror) || "",
     }),
   });
   if (resp.status < 200 || resp.status >= 300) {

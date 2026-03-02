@@ -37,8 +37,8 @@
     "migrating": "正在迁移...",
     "migrateSuccess": "迁移完成",
     "migrateFailed": "迁移失败: {{error}}",
-    "hfMirror": "HuggingFace 镜像",
-    "hfMirrorDesc": "设置 HuggingFace 镜像地址，解决国内访问超时问题（如 https://hf-mirror.com）"
+    "hfMirror": "启用 HuggingFace 镜像",
+    "hfMirrorDesc": "使用镜像地址下载模型，解决国内访问 HuggingFace 超时问题"
   },
   "llm": {
     "title": "LLM 提供商配置",
