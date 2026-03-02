@@ -12,6 +12,9 @@ import { generateMeetingTitle, generateMeetingSummary } from "../services/llmCli
 let pollTimeoutId: ReturnType<typeof setTimeout> | null = null;
 let pollAborted = false;
 
+// Auto-persist timer for crash recovery during recording
+let autoPersistTimerId: ReturnType<typeof setInterval> | null = null;
+
 function cancelPolling() {
   pollAborted = true;
   if (pollTimeoutId) {
@@ -59,6 +62,9 @@ interface TranscriptionStore {
   toggleActionItem: (index: number) => void;
   setPipelineStep: (step: PipelineStep) => void;
   loadProjectData: (projectId: string) => Promise<void>;
+  addStreamSegment: (segment: Segment) => void;
+  startAutoPersist: (projectId: string) => void;
+  stopAutoPersist: () => void;
   persistSegments: (projectId: string) => Promise<void>;
   cancelTranscription: () => void;
   persistSummary: (projectId: string) => Promise<void>;
@@ -157,44 +163,50 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
     // Cancel any existing polling
     cancelPolling();
 
-    // Ensure ASR model is loaded before starting transcription
-    set({ job: { ...get().job, status: "running" as JobStatus, pipelineStep: "loading_model" as PipelineStep } });
-    const loadResp = await api.loadEngineModel(engine, modelSize);
-    if (loadResp.status === "loading") {
-      const MAX_WAIT_MS = 300_000;
-      const POLL_MS = 1_000;
-      const start = Date.now();
-      while (Date.now() - start < MAX_WAIT_MS) {
-        await new Promise((r) => setTimeout(r, POLL_MS));
-        const status = await api.getLoadStatus(engine);
-        if (status.phase === "ready") break;
-        if (status.phase === "error") {
-          throw new Error(status.error || "Model load failed");
+    try {
+      // Ensure ASR model is loaded before starting transcription
+      set({ job: { ...get().job, status: "running" as JobStatus, pipelineStep: "loading_model" as PipelineStep } });
+      const loadResp = await api.loadEngineModel(engine, modelSize);
+      if (loadResp.status === "loading") {
+        const MAX_WAIT_MS = 300_000;
+        const POLL_MS = 1_000;
+        const start = Date.now();
+        while (Date.now() - start < MAX_WAIT_MS) {
+          await new Promise((r) => setTimeout(r, POLL_MS));
+          const status = await api.getLoadStatus(engine);
+          if (status.phase === "ready") break;
+          if (status.phase === "error") {
+            throw new Error(status.error || "Model load failed");
+          }
         }
       }
+
+      const jobResp = await api.createJob({
+        mode: "file",
+        engine,
+        model_size: modelSize,
+        language,
+      });
+
+      set({
+        job: { ...get().job, id: jobResp.id, status: "running", progress: 0 },
+      });
+
+      // Start transcription with file path
+      await tauriFetch(`http://127.0.0.1:18090/jobs/${jobResp.id}/start?audio_path=${encodeURIComponent(audio.filePath)}`, {
+        method: "POST",
+      });
+
+      // Start polling — capture project ID so results persist to the correct project
+      // even if the user switches meetings during transcription
+      const { useProjectStore } = await import("./projectStore");
+      const targetProjectId = useProjectStore.getState().activeProjectId;
+      get().pollJobStatus(jobResp.id, targetProjectId || undefined);
+    } catch (err) {
+      // Reset job status so UI doesn't stay stuck in "running" state
+      set({ job: { ...get().job, status: "idle" as JobStatus, progress: 0, pipelineStep: null as PipelineStep } });
+      throw err;
     }
-
-    const jobResp = await api.createJob({
-      mode: "file",
-      engine,
-      model_size: modelSize,
-      language,
-    });
-
-    set({
-      job: { ...get().job, id: jobResp.id, status: "running", progress: 0 },
-    });
-
-    // Start transcription with file path
-    await tauriFetch(`http://127.0.0.1:18090/jobs/${jobResp.id}/start?audio_path=${encodeURIComponent(audio.filePath)}`, {
-      method: "POST",
-    });
-
-    // Start polling — capture project ID so results persist to the correct project
-    // even if the user switches meetings during transcription
-    const { useProjectStore } = await import("./projectStore");
-    const targetProjectId = useProjectStore.getState().activeProjectId;
-    get().pollJobStatus(jobResp.id, targetProjectId || undefined);
   },
 
   pollJobStatus: async (jobId, projectId) => {
@@ -225,78 +237,111 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
           const resp = await tauriFetch(`http://127.0.0.1:18090/jobs/${jobId}/result`, { method: "GET" });
           if (pollAborted) return;
 
-          if (resp.status >= 200 && resp.status < 300) {
-            const data = JSON.parse(resp.body);
-            const hadExistingSegments = get().segments.length > 0;
-            const segments: Segment[] = data.segments.map(
-              (s: { start: number; end: number; text: string; speaker: string | null; confidence: number | null }, i: number) => ({
-                id: `seg-${i}`,
-                ...s,
-              })
-            );
+          if (resp.status < 200 || resp.status >= 300) {
+            // Result fetch failed — show error and stop polling
+            toast.error(`转录结果获取失败 (HTTP ${resp.status})`);
+            set({ job: { ...get().job, status: "idle" as JobStatus, progress: 0, pipelineStep: null as PipelineStep } });
+            pollTimeoutId = null;
+            return;
+          }
 
-            // Persist segments to SQLite using the captured project ID
-            if (targetProjectId) {
-              // Save to DB first (even if user switched meetings)
-              await invoke("db_save_segments", {
-                projectId: targetProjectId,
-                segments: segments.map(segmentToRust),
-              });
-              indexProject(targetProjectId).catch(() => {});
-            }
+          let data: { segments?: unknown[] };
+          try {
+            data = JSON.parse(resp.body);
+          } catch {
+            toast.error("转录结果解析失败");
+            set({ job: { ...get().job, status: "idle" as JobStatus, progress: 0, pipelineStep: null as PipelineStep } });
+            pollTimeoutId = null;
+            return;
+          }
 
-            // Only update UI state if user is still on the same meeting
-            const { useProjectStore } = await import("./projectStore");
-            const currentProjectId = useProjectStore.getState().activeProjectId;
-            const isStillOnSameProject = currentProjectId === targetProjectId;
+          const existingSegments = get().segments;
+          const hadExistingSegments = existingSegments.length > 0;
+          type RawSeg = { start: number; end: number; text: string; speaker: string | null; confidence: number | null };
+          const rawSegments = (Array.isArray(data?.segments) ? data.segments : []) as RawSeg[];
+          const segments: Segment[] = rawSegments.map((s, i) => ({
+            id: `seg-${i}`,
+            ...s,
+          }));
 
-            if (isStillOnSameProject) {
-              set({ segments });
-            }
+          // If regeneration produced empty results but we had segments, keep old ones
+          if (segments.length === 0 && hadExistingSegments) {
+            toast.warning("重新转录未检测到语音，已保留原有转录内容");
+            set({ job: { ...get().job, status: "idle" as JobStatus, progress: 0, pipelineStep: null as PipelineStep } });
+            pollTimeoutId = null;
+            return;
+          }
 
-            // Auto-generate summary using frontend LLM client
-            const { useSettingsStore } = await import("./settingsStore");
-            const autoSummary = useSettingsStore.getState().general.autoSummary;
-            if (autoSummary && targetProjectId && segments.length > 0) {
-              try {
-                if (isStillOnSameProject) {
-                  set({ job: { ...get().job, pipelineStep: "summarizing" } });
-                }
+          // Warn if transcription produced no results
+          if (segments.length === 0) {
+            toast.warning("转录完成，但未检测到语音内容");
+          }
 
-                // Generate title for first-time transcription of non-folder meetings
-                if (!hadExistingSegments) {
-                  const activeProject = useProjectStore.getState().projects.find(
-                    (p) => p.id === targetProjectId
-                  );
-                  if (activeProject && !activeProject.isFolder) {
-                    const transcriptText = segments.map((s) => s.text).join(" ");
-                    try {
-                      const title = await generateMeetingTitle(activeProject.createdAt, transcriptText);
-                      await useProjectStore.getState().updateProject(targetProjectId, { title });
-                    } catch {
-                      if (isStillOnSameProject) toast.warning("标题生成失败，请手动设置");
-                    }
+          // Persist segments to SQLite using the captured project ID
+          if (targetProjectId) {
+            // Save to DB first (even if user switched meetings)
+            await invoke("db_save_segments", {
+              projectId: targetProjectId,
+              segments: segments.map(segmentToRust),
+            });
+            indexProject(targetProjectId).catch(() => {});
+          }
+
+          // Only update UI state if user is still on the same meeting
+          const { useProjectStore } = await import("./projectStore");
+          const currentProjectId = useProjectStore.getState().activeProjectId;
+          const isStillOnSameProject = currentProjectId === targetProjectId;
+
+          if (isStillOnSameProject) {
+            set({ segments });
+          }
+
+          // Auto-generate summary using frontend LLM client
+          const { useSettingsStore } = await import("./settingsStore");
+          const autoSummary = useSettingsStore.getState().general.autoSummary;
+          if (autoSummary && targetProjectId && segments.length > 0) {
+            try {
+              if (isStillOnSameProject) {
+                set({ job: { ...get().job, pipelineStep: "summarizing" } });
+              }
+
+              // Generate title for first-time transcription of non-folder meetings
+              if (!hadExistingSegments) {
+                const activeProject = useProjectStore.getState().projects.find(
+                  (p) => p.id === targetProjectId
+                );
+                if (activeProject && !activeProject.isFolder) {
+                  const transcriptText = segments.map((s) => s.text).join(" ");
+                  try {
+                    const title = await generateMeetingTitle(activeProject.createdAt, transcriptText);
+                    await useProjectStore.getState().updateProject(targetProjectId, { title });
+                  } catch {
+                    if (isStillOnSameProject) toast.warning("标题生成失败，请手动设置");
                   }
                 }
+              }
 
-                // Generate summary
-                const transcriptText = segments
-                  .map((s) => (s.speaker ? `[${s.speaker}] ${s.text}` : s.text))
-                  .join("\n");
-                const summary = await generateMeetingSummary(transcriptText);
-                if (isStillOnSameProject) {
-                  set({ summary });
-                }
-                await get().persistSummary(targetProjectId);
-              } catch {
-                if (isStillOnSameProject) toast.warning("摘要生成失败，请检查 LLM 配置");
-              } finally {
-                if (isStillOnSameProject) {
-                  set({ job: { ...get().job, pipelineStep: null } });
-                }
+              // Generate summary
+              const transcriptText = segments
+                .map((s) => (s.speaker ? `[${s.speaker}] ${s.text}` : s.text))
+                .join("\n");
+              const summary = await generateMeetingSummary(transcriptText);
+              if (isStillOnSameProject) {
+                set({ summary });
+              }
+              await get().persistSummary(targetProjectId);
+            } catch {
+              if (isStillOnSameProject) toast.warning("摘要生成失败，请检查 LLM 配置");
+            } finally {
+              if (isStillOnSameProject) {
+                set({ job: { ...get().job, pipelineStep: null } });
               }
             }
           }
+
+          // Reset job status to idle unconditionally — the job is global state
+          // and a stale non-idle status blocks future transcription operations
+          set({ job: { ...get().job, status: "idle" as JobStatus, pipelineStep: null as PipelineStep } });
           pollTimeoutId = null;
           return;
         }
@@ -304,9 +349,10 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
         if (jobResp.status === "cancelled" || jobResp.error) {
           pollTimeoutId = null;
           if (jobResp.error) {
-            const { toast } = await import("sonner");
             toast.error(jobResp.error);
           }
+          // Reset job status so UI shows proper idle state
+          set({ job: { ...get().job, status: "idle" as JobStatus, progress: 0, pipelineStep: null as PipelineStep } });
           return;
         }
 
@@ -446,6 +492,28 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
       if (objectUrl) {
         get().setAudioFile(project.audioPath, objectUrl);
       }
+    }
+  },
+
+  addStreamSegment: (segment) => {
+    set({ segments: [...get().segments, segment] });
+  },
+
+  startAutoPersist: (projectId) => {
+    if (autoPersistTimerId) clearInterval(autoPersistTimerId);
+    autoPersistTimerId = setInterval(async () => {
+      try {
+        await get().persistSegments(projectId);
+      } catch {
+        // Ignore persist errors during recording — will retry next interval
+      }
+    }, 30_000);
+  },
+
+  stopAutoPersist: () => {
+    if (autoPersistTimerId) {
+      clearInterval(autoPersistTimerId);
+      autoPersistTimerId = null;
     }
   },
 
