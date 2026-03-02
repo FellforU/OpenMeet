@@ -15,10 +15,12 @@ from asr_service.knowledge.sqlite_reader import SQLiteReader
 from asr_service.knowledge.indexer import Indexer
 from asr_service.knowledge.mcp_tools import MCPTools
 from asr_service.knowledge.rag import RAGPipeline
+from asr_service.knowledge.reranker import Reranker
 from asr_service.services.ollama_client import OllamaClient
 from asr_service.config import get_lance_path, get_sqlite_path
 
 _embedder = Embedder()
+_reranker = Reranker()
 _ollama = OllamaClient()
 _knowledge_initialized = False
 _last_embedding_dimension: int | None = None
@@ -42,7 +44,7 @@ async def init_knowledge():
     store = VectorStore(lance_path, dimension=dimension)
     reader = SQLiteReader(sqlite_path)
     indexer = Indexer(_embedder, store, reader)
-    mcp_tools = MCPTools(_embedder, store, reader)
+    mcp_tools = MCPTools(_embedder, store, reader, _reranker)
     rag = RAGPipeline(mcp_tools, _ollama)
 
     index_router.set_indexer(indexer)
@@ -53,6 +55,7 @@ async def init_knowledge():
 
 config_router.set_knowledge_initializer(init_knowledge)
 config_router.set_embedder(_embedder)
+config_router.set_reranker(_reranker)
 
 
 @asynccontextmanager

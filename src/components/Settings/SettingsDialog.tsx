@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
-import { Settings, BrainCircuit, Mic, Info, FolderOpen, Loader2 } from "lucide-react";
+import { Settings, BrainCircuit, Mic, Info, FolderOpen, Loader2, BookOpenText } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -32,7 +32,8 @@ import {
 } from "../ui/select";
 import { Badge } from "../ui/badge";
 import { ModelManager } from "./ModelManager";
-import { LLMProviderTab, LLM_PROVIDERS } from "./LLMProviderTab";
+import { KnowledgeSettings } from "./KnowledgeSettings";
+import { LLMProviderTab } from "./LLMProviderTab";
 import { SystemModelSelector } from "./SystemModelSelector";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { restartAsrService, setHfMirror } from "../../services/asrClient";
@@ -46,10 +47,6 @@ interface SettingsDialogProps {
 function GeneralSettings() {
   const { t } = useTranslation("settings");
   const { general, setGeneral } = useSettingsStore();
-
-  const hasRerankProviders = LLM_PROVIDERS.some((p) =>
-    p.supportedTypes.includes("RERANK")
-  );
 
   const [defaultCachePath, setDefaultCachePath] = useState("");
   const [migrateOpen, setMigrateOpen] = useState(false);
@@ -141,34 +138,6 @@ function GeneralSettings() {
           modelType="LLM"
         />
       </div>
-      <div className="space-y-2">
-        <label className="text-sm font-medium">
-          {t("general.defaultEmbeddingModel")}
-        </label>
-        <p className="text-xs text-muted-foreground">
-          {t("general.defaultEmbeddingModelDesc")}
-        </p>
-        <SystemModelSelector
-          value={general.defaultEmbeddingModel}
-          onChange={(v) => setGeneral({ defaultEmbeddingModel: v })}
-          modelType="EMBEDDING"
-        />
-      </div>
-      {hasRerankProviders && (
-        <div className="space-y-2">
-          <label className="text-sm font-medium">
-            {t("general.defaultRerankModel")}
-          </label>
-          <p className="text-xs text-muted-foreground">
-            {t("general.defaultRerankModelDesc")}
-          </p>
-          <SystemModelSelector
-            value={general.defaultRerankModel}
-            onChange={(v) => setGeneral({ defaultRerankModel: v })}
-            modelType="RERANK"
-          />
-        </div>
-      )}
       <div className="flex items-center justify-between">
         <div>
           <label className="text-sm font-medium">
@@ -341,6 +310,10 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
               <Mic className="h-3.5 w-3.5" />
               {t("tabs.asrModels")}
             </TabsTrigger>
+            <TabsTrigger value="knowledge" className="gap-1.5">
+              <BookOpenText className="h-3.5 w-3.5" />
+              {t("tabs.knowledge")}
+            </TabsTrigger>
             <TabsTrigger value="about" className="gap-1.5">
               <Info className="h-3.5 w-3.5" />
               {t("tabs.about")}
@@ -355,6 +328,9 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
             </TabsContent>
             <TabsContent value="asr" className="max-h-[480px] overflow-y-auto">
               <ModelManager />
+            </TabsContent>
+            <TabsContent value="knowledge" className="max-h-[480px] overflow-y-auto">
+              <KnowledgeSettings />
             </TabsContent>
             <TabsContent value="about" className="max-h-[480px] overflow-y-auto">
               <AboutSection />

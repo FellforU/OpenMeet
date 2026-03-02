@@ -36,31 +36,36 @@ def classify_question(question: str) -> str:
 class RAGPipeline:
     """RAG pipeline that uses MCP tools for context retrieval."""
 
-    def __init__(self, mcp_tools: MCPTools, ollama: OllamaClient):
+    def __init__(self, mcp_tools: MCPTools, ollama: Optional[OllamaClient] = None):
         self._tools = mcp_tools
         self._ollama = ollama
 
-    async def answer(
+    @staticmethod
+    def _serialize_sources(sources: list[dict]) -> list[dict]:
+        """Serialize source references for API responses."""
+        return [
+            {
+                "project_id": s["project_id"],
+                "project_title": s.get("project_title", ""),
+                "source_type": s["source_type"],
+                "text": s["text"][:100],
+                "metadata": s.get("metadata", {}),
+            }
+            for s in sources
+        ]
+
+    async def _retrieve_context(
         self,
         question: str,
         project_id: Optional[str] = None,
         context_scope: str = "all",
-        model: str = "qwen2.5:7b",
-    ) -> AsyncIterator[dict]:
-        """Answer a question using RAG. Yields streaming events.
-
-        Events:
-          {"type": "context", "data": {...}}    - retrieved context
-          {"type": "token", "text": "..."}      - LLM token
-          {"type": "sources", "sources": [...]} - source references
-          {"type": "done"}                      - stream complete
-        """
+    ) -> tuple[str, str, list[dict]]:
+        """Retrieve context for a question. Returns (question_type, context_text, sources)."""
         q_type = classify_question(question)
         project_ids = [project_id] if project_id and context_scope == "current" else None
 
-        # Retrieve context based on question type
         context_text = ""
-        sources = []
+        sources: list[dict] = []
 
         if q_type == "stats":
             result = await self._tools.invoke("get_meeting_stats", {"project_ids": project_ids})
@@ -73,7 +78,6 @@ class RAGPipeline:
         elif q_type == "speaker":
             result = await self._tools.invoke("get_speaker_analysis", {"project_ids": project_ids})
             context_text = f"发言人分析：\n{json.dumps(result, ensure_ascii=False, indent=2)}"
-            # Also do a semantic search for specific speaker quotes
             search_result = await self._tools.invoke(
                 "search_knowledge_base",
                 {"query": question, "project_ids": project_ids, "top_k": 3},
@@ -97,6 +101,43 @@ class RAGPipeline:
             else:
                 context_text = "未找到相关内容。"
 
+        return q_type, context_text, sources
+
+    async def retrieve(
+        self,
+        question: str,
+        project_id: Optional[str] = None,
+        context_scope: str = "all",
+    ) -> dict:
+        """Retrieve context without calling LLM. For use by /chat/context endpoint."""
+        q_type, context_text, sources = await self._retrieve_context(
+            question, project_id, context_scope
+        )
+        return {
+            "question_type": q_type,
+            "context_text": context_text,
+            "sources": self._serialize_sources(sources),
+        }
+
+    async def answer(
+        self,
+        question: str,
+        project_id: Optional[str] = None,
+        context_scope: str = "all",
+        model: str = "qwen2.5:7b",
+    ) -> AsyncIterator[dict]:
+        """Answer a question using RAG. Yields streaming events.
+
+        Events:
+          {"type": "context", "data": {...}}    - retrieved context
+          {"type": "token", "text": "..."}      - LLM token
+          {"type": "sources", "sources": [...]} - source references
+          {"type": "done"}                      - stream complete
+        """
+        q_type, context_text, sources = await self._retrieve_context(
+            question, project_id, context_scope
+        )
+
         # Yield context event
         yield {"type": "context", "data": {"question_type": q_type, "context_preview": context_text[:200]}}
 
@@ -109,30 +150,24 @@ class RAGPipeline:
 请基于上下文信息回答问题。"""
 
         # Stream LLM response
-        try:
-            async for token in self._ollama.generate_stream(
-                prompt=prompt,
-                model=model,
-                system=SYSTEM_PROMPT,
-            ):
-                yield {"type": "token", "text": token}
-        except Exception as e:
-            yield {"type": "token", "text": f"\n\n[LLM 调用失败: {e}]"}
+        if self._ollama:
+            try:
+                async for token in self._ollama.generate_stream(
+                    prompt=prompt,
+                    model=model,
+                    system=SYSTEM_PROMPT,
+                ):
+                    yield {"type": "token", "text": token}
+            except Exception as e:
+                yield {"type": "token", "text": f"\n\n[LLM 调用失败: {e}]"}
+        else:
+            yield {"type": "token", "text": "[LLM 未配置，请使用前端 Chat]"}
 
         # Yield sources
         if sources:
             yield {
                 "type": "sources",
-                "sources": [
-                    {
-                        "project_id": s["project_id"],
-                        "project_title": s.get("project_title", ""),
-                        "source_type": s["source_type"],
-                        "text": s["text"][:100],
-                        "metadata": s.get("metadata", {}),
-                    }
-                    for s in sources
-                ],
+                "sources": self._serialize_sources(sources),
             }
 
         yield {"type": "done"}

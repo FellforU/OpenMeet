@@ -211,6 +211,113 @@ export async function fetchModelList(
   return (data.data || []).map((m: { id: string }) => m.id).sort();
 }
 
+/**
+ * Generate chat completion tokens from user-configured LLM provider.
+ *
+ * Note: tauriFetch buffers the entire HTTP response before returning, so tokens
+ * are parsed from the already-complete body. The AsyncGenerator interface allows
+ * progressive UI updates during parsing but does NOT provide true SSE streaming.
+ * True streaming requires Tauri-level streaming IPC support (future improvement).
+ */
+export async function* generateChatStream(
+  systemPrompt: string,
+  userPrompt: string
+): AsyncGenerator<string> {
+  const { general, llmProviders } = useSettingsStore.getState();
+
+  // Resolve provider and model from compound key
+  let providerKey: string;
+  let modelOverride: string | undefined;
+
+  const modelRef = general.defaultLLMModel;
+  if (modelRef && modelRef.includes("/")) {
+    const parsed = parseModelRef(modelRef);
+    providerKey = parsed.provider;
+    modelOverride = parsed.model;
+  } else {
+    providerKey = general.defaultLLMProvider;
+  }
+
+  const config = llmProviders[providerKey];
+  if (!config?.enabled) {
+    throw new Error(`LLM provider "${providerKey}" is not enabled`);
+  }
+
+  const endpoint = PROVIDER_ENDPOINTS[providerKey];
+  if (!endpoint) {
+    throw new Error(`Unknown LLM provider: ${providerKey}`);
+  }
+
+  if (endpoint.isOllama) {
+    const host = config.host || "http://localhost:11434";
+    const model = modelOverride || resolveModel(config, "LLM", "qwen2.5:7b");
+    const resp = await tauriFetch(`${host}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        prompt: userPrompt,
+        system: systemPrompt,
+        stream: true,
+      }),
+    });
+    if (resp.status !== 200) {
+      throw new Error(`Ollama error: HTTP ${resp.status}`);
+    }
+    // Ollama streaming: newline-delimited JSON {"response": "token"}
+    for (const line of resp.body.split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        const obj = JSON.parse(line);
+        if (obj.response) {
+          yield obj.response;
+        }
+      } catch {
+        // Skip malformed lines
+      }
+    }
+  } else {
+    const apiKey = config.apiKey;
+    if (!apiKey) {
+      throw new Error(`API key not configured for "${providerKey}"`);
+    }
+    const model = modelOverride || resolveModel(config, "LLM", providerKey);
+    const resp = await tauriFetch(endpoint.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        stream: true,
+      }),
+    });
+    if (resp.status !== 200) {
+      throw new Error(`LLM API error: HTTP ${resp.status}`);
+    }
+    // OpenAI-compatible SSE: data: {"choices":[{"delta":{"content":"token"}}]}
+    for (const line of resp.body.split("\n")) {
+      if (!line.startsWith("data: ")) continue;
+      const payload = line.slice(6).trim();
+      if (payload === "[DONE]") break;
+      try {
+        const obj = JSON.parse(payload);
+        const content = obj.choices?.[0]?.delta?.content;
+        if (content) {
+          yield content;
+        }
+      } catch {
+        // Skip malformed SSE lines
+      }
+    }
+  }
+}
+
 export async function generateMeetingTitle(
   _createdAt: string,
   transcriptText: string

@@ -9,6 +9,7 @@ router = APIRouter(tags=["config"])
 
 _knowledge_initializer = None
 _embedder_ref = None
+_reranker_ref = None
 
 
 def set_knowledge_initializer(fn):
@@ -19,6 +20,11 @@ def set_knowledge_initializer(fn):
 def set_embedder(embedder):
     global _embedder_ref
     _embedder_ref = embedder
+
+
+def set_reranker(reranker):
+    global _reranker_ref
+    _reranker_ref = reranker
 
 
 class EmbeddingConfig(BaseModel):
@@ -35,6 +41,7 @@ class HfMirrorRequest(BaseModel):
 class ConfigRequest(BaseModel):
     app_data_dir: str
     embedding_config: EmbeddingConfig | None = None
+    rerank_config: EmbeddingConfig | None = None
     cache_dir: str | None = None
     hf_mirror: str | None = None
 
@@ -64,6 +71,16 @@ async def set_config(req: ConfigRequest):
             model_name=ec.model,
             api_key=ec.api_key,
             api_url=ec.api_url,
+        )
+
+    # Apply rerank configuration if provided
+    if req.rerank_config and _reranker_ref:
+        rc = req.rerank_config
+        _reranker_ref.configure(
+            provider=rc.provider,
+            model_name=rc.model,
+            api_key=rc.api_key,
+            api_url=rc.api_url,
         )
 
     # Initialize knowledge modules if not already

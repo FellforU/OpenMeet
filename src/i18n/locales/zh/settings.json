@@ -4,6 +4,7 @@
     "general": "通用",
     "llmModels": "LLM 模型",
     "asrModels": "ASR 模型",
+    "knowledge": "知识库",
     "about": "关于"
   },
   "general": {
@@ -133,6 +134,12 @@
     "notDownloaded": "请先下载模型",
     "activate": "加载",
     "activateDesc": "设为默认并加载到内存"
+  },
+  "knowledge": {
+    "title": "知识库配置",
+    "subtitle": "配置用于知识检索和问答的 Embedding 和 Rerank 模型",
+    "enableRerank": "启用 Rerank 重排序",
+    "enableRerankDesc": "搜索结果送入 LLM 前通过 Rerank 模型重排序，提升回答质量"
   },
   "about": {
     "description": "本地优先的 AI 会议转录工具。基于 Tauri 2.x、React 19、FastAPI、Ollama 构建。",

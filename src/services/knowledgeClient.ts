@@ -16,6 +16,12 @@ const EMBEDDING_ENDPOINTS: Record<string, string> = {
   volcengine: "https://ark.cn-beijing.volces.com/api/v3/embeddings",
 };
 
+// Map provider keys to Cohere-compatible rerank API endpoints
+const RERANK_ENDPOINTS: Record<string, string> = {
+  qwen: "https://dashscope.aliyuncs.com/compatible-mode/v1/rerank",
+  siliconflow: "https://api.siliconflow.cn/v1/rerank",
+};
+
 export async function configureKnowledge(
   appDataDir: string
 ): Promise<{ status: string; sqlite_path: string | null; lance_path: string | null }> {
@@ -40,6 +46,23 @@ export async function configureKnowledge(
     };
   }
 
+  // Build rerank configuration from settings
+  let rerankConfig: Record<string, unknown> | undefined;
+  if (general.enableRerank) {
+    const rerankRef = general.defaultRerankModel;
+    if (rerankRef) {
+      const { provider, model } = parseModelRef(rerankRef);
+      const providerCfg = llmProviders[provider];
+      const apiUrl = RERANK_ENDPOINTS[provider] ?? "";
+      rerankConfig = {
+        provider,
+        model,
+        api_key: providerCfg?.apiKey || null,
+        api_url: apiUrl || null,
+      };
+    }
+  }
+
   const { cacheDir, hfMirror } = general;
   const resp = await tauriFetch(`${ASR_BASE_URL}/config`, {
     method: "POST",
@@ -47,6 +70,7 @@ export async function configureKnowledge(
     body: JSON.stringify({
       app_data_dir: appDataDir,
       embedding_config: embeddingConfig,
+      rerank_config: rerankConfig,
       cache_dir: cacheDir || "",
       hf_mirror: hfMirror || "",
     }),

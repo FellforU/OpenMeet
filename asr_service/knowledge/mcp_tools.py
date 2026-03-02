@@ -4,6 +4,7 @@ import json
 from typing import Optional
 
 from .embedder import Embedder
+from .reranker import Reranker
 from .vector_store import VectorStore
 from .sqlite_reader import SQLiteReader
 
@@ -88,10 +89,12 @@ class MCPTools:
         embedder: Embedder,
         vector_store: VectorStore,
         sqlite_reader: SQLiteReader,
+        reranker: Optional[Reranker] = None,
     ):
         self._embedder = embedder
         self._store = vector_store
         self._reader = sqlite_reader
+        self._reranker = reranker
 
     async def invoke(self, name: str, arguments: dict) -> dict:
         """Invoke a tool by name with arguments."""
@@ -114,8 +117,11 @@ class MCPTools:
         if not query:
             return {"error": "query is required"}
 
+        # Fetch more candidates when reranking is available
+        fetch_k = top_k * 3 if (self._reranker and self._reranker.is_configured()) else top_k
+
         query_vector = await self._embedder.embed_query(query)
-        results = await self._store.search(query_vector, top_k=top_k, project_ids=project_ids)
+        results = await self._store.search(query_vector, top_k=fetch_k, project_ids=project_ids)
 
         # Enrich with project titles
         enriched = []
@@ -132,6 +138,16 @@ class MCPTools:
                     "metadata": metadata,
                 }
             )
+
+        # Rerank if configured
+        if self._reranker and self._reranker.is_configured() and enriched:
+            docs = [r["text"] for r in enriched]
+            reranked = await self._reranker.rerank(query, docs, top_k=top_k)
+            enriched = [
+                {**enriched[r["index"]], "score": r["relevance_score"]}
+                for r in reranked
+                if r["index"] < len(enriched)
+            ]
 
         return {"results": enriched}
 

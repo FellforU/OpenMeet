@@ -1,13 +1,9 @@
 import { create } from "zustand";
-import { sendChatMessage } from "../services/chatClient";
+import { fetchChatContext } from "../services/chatClient";
+import { generateChatStream } from "../services/llmClient";
+import type { ChatSource as ServiceChatSource } from "../services/chatClient";
 
-export interface ChatSource {
-  project_id: string;
-  project_title: string;
-  source_type: string;
-  text: string;
-  metadata: Record<string, unknown>;
-}
+export type ChatSource = ServiceChatSource;
 
 export interface ChatMessage {
   id: string;
@@ -29,6 +25,15 @@ interface ChatStore {
   setOpen: (open: boolean) => void;
   toggleOpen: () => void;
 }
+
+const SYSTEM_PROMPT = `你是 OpenMeet 的 AI 助手，负责基于会议数据回答用户问题。
+
+请遵循以下规则：
+1. 只基于提供的上下文信息回答，不要编造内容
+2. 如果上下文中没有相关信息，明确告知用户
+3. 引用来源时标注会议名称和时间
+4. 回答简洁清晰，使用中文
+5. 对于统计类问题，给出准确的数字`;
 
 let messageCounter = 0;
 
@@ -69,22 +74,39 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     });
 
     try {
+      // Step 1: Fetch retrieval context from ASR service
       const pid = context === "current" ? projectId : undefined;
-      for await (const event of sendChatMessage(question, context, pid)) {
+      const ctxResult = await fetchChatContext(question, context, pid);
+
+      // Step 2: Build prompt with context
+      const userPrompt = `上下文信息：
+${ctxResult.context_text}
+
+用户问题：${question}
+
+请基于上下文信息回答问题。`;
+
+      // Step 3: Stream LLM response using user-configured provider
+      for await (const token of generateChatStream(SYSTEM_PROMPT, userPrompt)) {
         const { messages } = get();
         const last = messages[messages.length - 1];
         if (!last || last.id !== assistantId) break;
 
-        if (event.type === "token" && event.text) {
+        const updated: ChatMessage = {
+          ...last,
+          content: last.content + token,
+        };
+        set({ messages: [...messages.slice(0, -1), updated] });
+      }
+
+      // Step 4: Attach sources
+      if (ctxResult.sources.length > 0) {
+        const { messages } = get();
+        const last = messages[messages.length - 1];
+        if (last && last.id === assistantId) {
           const updated: ChatMessage = {
             ...last,
-            content: last.content + event.text,
-          };
-          set({ messages: [...messages.slice(0, -1), updated] });
-        } else if (event.type === "sources" && event.sources) {
-          const updated: ChatMessage = {
-            ...last,
-            sources: event.sources,
+            sources: ctxResult.sources,
           };
           set({ messages: [...messages.slice(0, -1), updated] });
         }

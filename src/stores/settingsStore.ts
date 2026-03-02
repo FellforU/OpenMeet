@@ -30,6 +30,7 @@ interface GeneralConfig {
   defaultLLMModel: string;         // compound key "provider/model"
   defaultEmbeddingModel: string;   // compound key "provider/model"
   defaultRerankModel: string;      // compound key "provider/model"
+  enableRerank: boolean;           // Enable rerank reordering before LLM
   autoSummary: boolean;
   exportFormat: "markdown" | "txt" | "json";
   asrEngine: string;
@@ -78,6 +79,7 @@ const defaultState = {
     defaultLLMModel: "",
     defaultEmbeddingModel: "",
     defaultRerankModel: "",
+    enableRerank: false,
     autoSummary: true,
     exportFormat: "markdown" as const,
     asrEngine: "whisper",

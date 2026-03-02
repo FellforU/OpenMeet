@@ -1,9 +1,10 @@
 """Chat endpoint with SSE streaming for RAG-based Q&A."""
 
 import json
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 router = APIRouter(tags=["chat"])
@@ -33,6 +34,26 @@ class ChatRequest(BaseModel):
     model: str = "qwen2.5:7b"
 
 
+class ContextRequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=2000)
+    context: Literal["current", "all"] = "all"
+    project_id: str | None = None
+
+
+class ChatSourceItem(BaseModel):
+    project_id: str
+    project_title: str = ""
+    source_type: str
+    text: str
+    metadata: dict = {}
+
+
+class ContextResponse(BaseModel):
+    question_type: str
+    context_text: str
+    sources: list[ChatSourceItem]
+
+
 @router.post("/chat")
 async def chat(req: ChatRequest):
     pipeline = _get_pipeline()
@@ -51,3 +72,15 @@ async def chat(req: ChatRequest):
             }
 
     return EventSourceResponse(event_generator())
+
+
+@router.post("/chat/context", response_model=ContextResponse)
+async def chat_context(req: ContextRequest):
+    """Retrieve context for a question without calling LLM."""
+    pipeline = _get_pipeline()
+    result = await pipeline.retrieve(
+        question=req.question,
+        project_id=req.project_id,
+        context_scope=req.context,
+    )
+    return ContextResponse(**result)
