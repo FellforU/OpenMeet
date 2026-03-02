@@ -371,15 +371,16 @@ export const useEngineStore = create<EngineStore>((set, get) => ({
 
   cancelModelLoad: async (engineName) => {
     get().stopPolling(engineName);
+    // Clear UI state immediately so cancel feels responsive
+    set((state) => {
+      const { [engineName]: _, ...rest } = state.loadingStates;
+      return { loadingStates: rest };
+    });
     try {
       await api.cancelLoad(engineName);
     } catch {
       // Best effort cancel
     }
-    set((state) => {
-      const { [engineName]: _, ...rest } = state.loadingStates;
-      return { loadingStates: rest };
-    });
     await get().fetchEngines();
   },
 
@@ -442,15 +443,18 @@ export const useEngineStore = create<EngineStore>((set, get) => ({
 
   cancelModelDownload: async (engineName) => {
     get().stopDownloadPolling(engineName);
+    // Clear UI state immediately so cancel feels responsive
+    set((state) => {
+      const { [engineName]: _, ...rest } = state.downloadStates;
+      return { downloadStates: rest };
+    });
+    // Notify backend (best effort — the underlying download thread will
+    // eventually finish but its result is discarded)
     try {
       await api.cancelDownload(engineName);
     } catch {
       // Best effort cancel
     }
-    set((state) => {
-      const { [engineName]: _, ...rest } = state.downloadStates;
-      return { downloadStates: rest };
-    });
     await get().fetchEngines();
   },
 

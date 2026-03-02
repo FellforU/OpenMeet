@@ -1,5 +1,9 @@
+import logging
 import os
+import shutil
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # Base directories
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -49,13 +53,63 @@ def get_lance_path() -> str | None:
     return _runtime_config["lance_db_path"]
 
 
+def _migrate_legacy_cache(root: Path):
+    """Move model directories from root level into models/ subdirectory.
+
+    Before the cacheDir refactor (commit 13c1e51), modelCacheDir pointed
+    directly at the HuggingFace / ModelScope cache root.  After the refactor,
+    cacheDir is a general-purpose root and models live under {cacheDir}/models/.
+    This function detects and migrates legacy model dirs so that previously
+    downloaded models are found by the engines.
+    """
+    if not root.exists():
+        return
+
+    models_dir = root / CACHE_SUBDIR_MODELS
+    models_dir.mkdir(parents=True, exist_ok=True)
+
+    known_subdirs = {CACHE_SUBDIR_MODELS, CACHE_SUBDIR_AUDIO, CACHE_SUBDIR_ATTACHMENTS}
+    migrated = 0
+
+    for item in root.iterdir():
+        if item.name in known_subdirs:
+            continue
+        should_move = False
+
+        # HuggingFace cache dirs: models--org--name
+        if item.is_dir() and item.name.startswith("models--"):
+            should_move = True
+        # ModelScope org dir used by Paraformer
+        elif item.is_dir() and item.name == "iic":
+            should_move = True
+
+        if should_move:
+            target = models_dir / item.name
+            if not target.exists():
+                try:
+                    shutil.move(str(item), str(target))
+                    migrated += 1
+                except OSError as e:
+                    logger.warning("Failed to migrate legacy model dir %s: %s", item, e)
+
+    if migrated > 0:
+        logger.info("Migrated %d legacy model directories into %s", migrated, models_dir)
+
+
 def set_cache_dir(path: str | None):
     """Set root cache directory. Model env vars point to the models/ subdirectory."""
     _runtime_config["cache_dir"] = path
     if path:
-        models_dir = str(Path(path) / CACHE_SUBDIR_MODELS)
-        os.environ["HF_HUB_CACHE"] = models_dir
-        os.environ["MODELSCOPE_CACHE"] = models_dir
+        root = Path(path)
+        models_dir = root / CACHE_SUBDIR_MODELS
+        models_dir.mkdir(parents=True, exist_ok=True)
+
+        # Migrate legacy model dirs from root into the models/ subdirectory
+        _migrate_legacy_cache(root)
+
+        models_str = str(models_dir)
+        os.environ["HF_HUB_CACHE"] = models_str
+        os.environ["MODELSCOPE_CACHE"] = models_str
     else:
         os.environ.pop("HF_HUB_CACHE", None)
         os.environ.pop("MODELSCOPE_CACHE", None)

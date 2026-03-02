@@ -148,8 +148,18 @@ class Qwen3Engine:
 
     def is_model_downloaded(self, model_size: str) -> bool:
         """Check if model exists in HuggingFace cache with actual model files."""
+        import logging
+        _log = logging.getLogger(__name__)
         cache_dir = self._get_hf_cache_dir(model_size)
         snapshots_dir = cache_dir / "snapshots"
+        _log.info("Qwen3 model check: %s → cache_dir=%s, exists=%s, snapshots_exists=%s",
+                  model_size, cache_dir, cache_dir.exists(), snapshots_dir.exists())
+        if cache_dir.exists():
+            try:
+                children = list(cache_dir.iterdir())
+                _log.info("  cache_dir children: %s", [c.name for c in children])
+            except OSError:
+                pass
         if not snapshots_dir.exists():
             return False
         try:
@@ -159,6 +169,7 @@ class Qwen3Engine:
                 # Verify snapshot has actual model files (config.json, *.safetensors, etc.)
                 has_config = (snapshot / "config.json").exists()
                 has_weights = any(snapshot.glob("*.safetensors")) or any(snapshot.glob("*.bin"))
+                _log.info("  snapshot %s: config=%s, weights=%s", snapshot.name, has_config, has_weights)
                 if has_config or has_weights:
                     return True
             return False

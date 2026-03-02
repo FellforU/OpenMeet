@@ -165,10 +165,19 @@ async def _build_engine_info(engine) -> EngineInfo:
     if hasattr(engine, "is_model_downloaded"):
         for size in caps.model_sizes:
             try:
-                if engine.is_model_downloaded(size):
+                result = engine.is_model_downloaded(size)
+                if result:
                     downloaded.append(size)
-            except Exception:
-                pass
+                else:
+                    logger.debug(
+                        "Model detection: %s/%s not found (cache_dir=%s)",
+                        caps.name, size,
+                        getattr(engine, "_get_cache_dir", lambda: "N/A")()
+                        if hasattr(engine, "_get_cache_dir")
+                        else "N/A",
+                    )
+            except Exception as e:
+                logger.warning("Model detection error: %s/%s: %s", caps.name, size, e)
     return EngineInfo(
         name=caps.name,
         supported_languages=caps.supported_languages,
@@ -342,14 +351,11 @@ async def cancel_load(engine_name: str):
     if not engine:
         raise HTTPException(404, f"Engine '{engine_name}' not found")
 
-    # Cancel the asyncio task if running
+    # Cancel the asyncio task if running.
+    # Do NOT await — load_model runs in a thread that cannot be interrupted.
     task = _loading_tasks.pop(engine_name, None)
     if task and not task.done():
         task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
 
     status = _loading_status.get(engine_name)
     if status and status["phase"] in (LoadPhase.PREPARING, LoadPhase.LOADING):
@@ -433,14 +439,12 @@ async def cancel_download(engine_name: str):
     if not engine:
         raise HTTPException(404, f"Engine '{engine_name}' not found")
 
-    # Cancel the asyncio task if running
+    # Cancel the asyncio task if running.
+    # Do NOT await the task — the underlying download thread (asyncio.to_thread)
+    # cannot be interrupted, so awaiting would block until the download completes.
     task = _download_tasks.pop(engine_name, None)
     if task and not task.done():
         task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
 
     status = _download_status.get(engine_name)
     if status and status["phase"] == DownloadPhase.DOWNLOADING:

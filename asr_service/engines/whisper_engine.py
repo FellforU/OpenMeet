@@ -93,13 +93,18 @@ class WhisperEngine:
 
     def is_model_downloaded(self, model_size: str) -> bool:
         """Check if model files exist in HuggingFace cache."""
+        import logging
+        _log = logging.getLogger(__name__)
         try:
             cache_dir = self._get_cache_dir()
-            faster_whisper.download_model(
+            _log.info("Whisper model check: %s → cache_dir=%s", model_size, cache_dir)
+            path = faster_whisper.download_model(
                 model_size, local_files_only=True, cache_dir=cache_dir
             )
+            _log.info("  found at: %s", path)
             return True
-        except Exception:
+        except Exception as e:
+            _log.info("  not found: %s", e)
             return False
 
     def get_model_path(self, model_size: str) -> str | None:
