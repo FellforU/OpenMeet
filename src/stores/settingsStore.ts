@@ -208,6 +208,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
           mergedGeneral.cacheDir = data.general.modelCacheDir;
         }
 
+        // Migrate: if hfMirror was set but enableHfMirror doesn't exist, auto-enable
+        if (mergedGeneral.hfMirror && data.general?.enableHfMirror === undefined) {
+          mergedGeneral.enableHfMirror = true;
+        }
+
         // Migrate: old provider-level defaults → new compound key defaults
         if (!mergedGeneral.defaultLLMModel && mergedGeneral.defaultLLMProvider) {
           const provider = mergedGeneral.defaultLLMProvider;

@@ -36,7 +36,7 @@ import { KnowledgeSettings } from "./KnowledgeSettings";
 import { LLMProviderTab } from "./LLMProviderTab";
 import { SystemModelSelector } from "./SystemModelSelector";
 import { useSettingsStore } from "../../stores/settingsStore";
-import { restartAsrService, setHfMirror } from "../../services/asrClient";
+import { restartAsrService } from "../../services/asrClient";
 import logoWithText from "../../../ico/OpenMeet_1.png";
 
 interface SettingsDialogProps {
@@ -220,8 +220,13 @@ function GeneralSettings() {
             checked={general.enableHfMirror}
             onCheckedChange={async (v) => {
               await setGeneral({ enableHfMirror: v });
+              // Restart ASR service so HF_ENDPOINT env var takes effect for downloads
               try {
-                await setHfMirror(v ? general.hfMirror : "");
+                const g = useSettingsStore.getState().general;
+                await restartAsrService(
+                  g.cacheDir || undefined,
+                  (v && g.hfMirror) || undefined,
+                );
               } catch {
                 // ASR service may not be running yet
               }
@@ -236,7 +241,11 @@ function GeneralSettings() {
             onChange={(e) => setGeneral({ hfMirror: e.target.value })}
             onBlur={async () => {
               try {
-                await setHfMirror(general.hfMirror);
+                const g = useSettingsStore.getState().general;
+                await restartAsrService(
+                  g.cacheDir || undefined,
+                  g.hfMirror || undefined,
+                );
               } catch {
                 // ASR service may not be running yet
               }
