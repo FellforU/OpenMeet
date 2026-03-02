@@ -153,13 +153,12 @@ export function SummaryPanel({ onJumpToTranscript }: SummaryPanelProps) {
   const setSummary = useTranscriptionStore((s) => s.setSummary);
   const toggleActionItem = useTranscriptionStore((s) => s.toggleActionItem);
   const segments = useTranscriptionStore((s) => s.segments);
-  const status = useTranscriptionStore((s) => s.job.status);
   const pipelineStep = useTranscriptionStore((s) => s.job.pipelineStep);
 
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState("");
 
-  if (status === "post_processing" && pipelineStep === "summarizing") {
+  if (pipelineStep === "summarizing") {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
         <Loader2 className="h-8 w-8 animate-spin" />

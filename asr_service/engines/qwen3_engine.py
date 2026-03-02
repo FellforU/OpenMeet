@@ -93,18 +93,35 @@ class Qwen3Engine:
         # When model is already downloaded, pass local snapshot path directly
         # so both AutoModel and AutoProcessor load offline without network requests
         local_path = self.get_model_path(model_size) if self.is_model_downloaded(model_size) else None
-        model_ref = local_path or model_id
 
         def _load():
+            import logging
             import torch
-            dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
-            kwargs = {
-                "dtype": dtype,
-                "device_map": "auto",
-            }
-            if not local_path:
-                kwargs["cache_dir"] = cache_dir
-            return QwenASR.from_pretrained(model_ref, **kwargs)
+
+            logger = logging.getLogger(__name__)
+            has_cuda = torch.cuda.is_available()
+            dtype = torch.bfloat16 if has_cuda else torch.float32
+
+            kwargs: dict = {"dtype": dtype}
+            # Only use device_map="auto" when GPU is available.
+            # On CPU-only machines it's unnecessary and can trigger accelerate's
+            # mmap loading path which fails with [Errno 22] on Windows symlinks.
+            if has_cuda:
+                kwargs["device_map"] = "auto"
+
+            # Strategy 1: load from local snapshot path (offline, no network)
+            if local_path:
+                try:
+                    return QwenASR.from_pretrained(local_path, **kwargs)
+                except OSError as e:
+                    logger.warning(
+                        "Failed to load from local path %s: %s, falling back to model_id",
+                        local_path, e, exc_info=True,
+                    )
+
+            # Strategy 2: load via model_id with cache_dir (HuggingFace resolves path)
+            kwargs["cache_dir"] = cache_dir
+            return QwenASR.from_pretrained(model_id, **kwargs)
 
         self._model = await asyncio.to_thread(_load)
         self._model_size = model_size

@@ -2,7 +2,25 @@
   "permissions": {
     "allow": [
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(gh issue:*)",
+      "Bash(gh auth:*)",
+      "Bash(gh api:*)",
+      "Bash(cd /home/yuchen_wu_trusone_com/projects/openMeet/src-tauri && cargo check 2>&1)",
+      "WebSearch",
+      "WebFetch(domain:docs.rs)",
+      "Bash(head:*)",
+      "Bash(echo Pillow not found:*)",
+      "Bash(pip install:*)",
+      "Bash(pip3 install:*)",
+      "Bash(python3:*)",
+      "Bash(source:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx vite:*)",
+      "Bash(cargo check:*)",
+      "Bash(git status:*)",
+      "Bash(find:*)",
+      "Bash(npm uninstall:*)"
     ]
   }
 }

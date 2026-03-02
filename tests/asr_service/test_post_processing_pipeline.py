@@ -1,7 +1,6 @@
 """Tests for the PostProcessingPipeline."""
 
-import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -32,7 +31,7 @@ def pipeline():
 
 
 def test_pipeline_init(pipeline):
-    assert pipeline._ollama_client is not None
+    assert isinstance(pipeline, PostProcessingPipeline)
 
 
 @pytest.mark.asyncio
@@ -40,8 +39,7 @@ async def test_run_sets_post_processing_status(pipeline, job):
     """Pipeline should transition job to POST_PROCESSING then READY."""
     with patch.object(pipeline, "_run_diarization", new_callable=AsyncMock) as mock_diar, \
          patch.object(pipeline, "_run_punctuation", new_callable=AsyncMock) as mock_punc, \
-         patch.object(pipeline, "_run_itn", new_callable=AsyncMock) as mock_itn, \
-         patch.object(pipeline, "_run_summary", new_callable=AsyncMock) as mock_summary:
+         patch.object(pipeline, "_run_itn", new_callable=AsyncMock) as mock_itn:
 
         mock_diar.return_value = job.segments
         mock_punc.return_value = job.segments
@@ -54,7 +52,7 @@ async def test_run_sets_post_processing_status(pipeline, job):
 
 @pytest.mark.asyncio
 async def test_run_calls_processors_in_order(pipeline, job):
-    """Pipeline should call processors: ITN → Punctuation → Diarization → Summary."""
+    """Pipeline should call processors: ITN → Punctuation → Diarization."""
     call_order = []
 
     async def mock_itn(segs, lang):
@@ -69,17 +67,13 @@ async def test_run_calls_processors_in_order(pipeline, job):
         call_order.append("diarization")
         return segs
 
-    async def mock_summary(j):
-        call_order.append("summary")
-
     with patch.object(pipeline, "_run_itn", side_effect=mock_itn), \
          patch.object(pipeline, "_run_punctuation", side_effect=mock_punc), \
-         patch.object(pipeline, "_run_diarization", side_effect=mock_diar), \
-         patch.object(pipeline, "_run_summary", side_effect=mock_summary):
+         patch.object(pipeline, "_run_diarization", side_effect=mock_diar):
 
         await pipeline.run(job)
 
-    assert call_order == ["itn", "punctuation", "diarization", "summary"]
+    assert call_order == ["itn", "punctuation", "diarization"]
 
 
 @pytest.mark.asyncio
@@ -95,8 +89,7 @@ async def test_run_handles_error_gracefully(pipeline, job):
     """Pipeline should set READY even on partial failure."""
     with patch.object(pipeline, "_run_itn", new_callable=AsyncMock, side_effect=Exception("ITN failed")), \
          patch.object(pipeline, "_run_punctuation", new_callable=AsyncMock) as mock_punc, \
-         patch.object(pipeline, "_run_diarization", new_callable=AsyncMock) as mock_diar, \
-         patch.object(pipeline, "_run_summary", new_callable=AsyncMock):
+         patch.object(pipeline, "_run_diarization", new_callable=AsyncMock) as mock_diar:
 
         mock_punc.return_value = job.segments
         mock_diar.return_value = job.segments
@@ -105,33 +98,6 @@ async def test_run_handles_error_gracefully(pipeline, job):
 
     # Should still reach READY despite ITN failure
     assert job.status == JobStatus.READY
-
-
-@pytest.mark.asyncio
-async def test_generate_summary_with_ollama(pipeline, job):
-    """Summary generation should call Ollama and store result."""
-    mock_response = json.dumps({
-        "topic": "Project kickoff meeting",
-        "conclusions": ["We will start on Monday"],
-        "action_items": [{"action": "Prepare docs", "owner": "Alice", "deadline": "Friday"}],
-        "discussion": "The team discussed project timelines.",
-    })
-
-    with patch.object(pipeline._ollama_client, "is_available", new_callable=AsyncMock, return_value=True), \
-         patch.object(pipeline._ollama_client, "generate", new_callable=AsyncMock, return_value=mock_response):
-        await pipeline._run_summary(job)
-
-    assert job.summary is not None
-    assert "topic" in job.summary
-
-
-@pytest.mark.asyncio
-async def test_summary_handles_ollama_unavailable(pipeline, job):
-    """Summary should be skipped if Ollama is unavailable."""
-    with patch.object(pipeline._ollama_client, "is_available", new_callable=AsyncMock, return_value=False):
-        await pipeline._run_summary(job)
-
-    assert job.summary is None
 
 
 @pytest.mark.asyncio
@@ -144,10 +110,15 @@ async def test_pipeline_updates_segments(pipeline, job):
 
     with patch.object(pipeline, "_run_itn", new_callable=AsyncMock, return_value=job.segments), \
          patch.object(pipeline, "_run_punctuation", new_callable=AsyncMock, return_value=job.segments), \
-         patch.object(pipeline, "_run_diarization", new_callable=AsyncMock, return_value=processed), \
-         patch.object(pipeline, "_run_summary", new_callable=AsyncMock):
+         patch.object(pipeline, "_run_diarization", new_callable=AsyncMock, return_value=processed):
 
         await pipeline.run(job)
 
     assert job.segments[0].speaker == "Speaker_1"
     assert job.segments[1].speaker == "Speaker_2"
+
+
+@pytest.mark.asyncio
+async def test_close_is_noop(pipeline):
+    """close() should be a no-op."""
+    await pipeline.close()
