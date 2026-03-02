@@ -1,9 +1,11 @@
 import { create } from "zustand";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import type { Segment, JobStatus, PipelineStep, Summary } from "../types";
 import * as api from "../services/asrClient";
 import { tauriFetch } from "../services/httpProxy";
 import { indexProject } from "../services/knowledgeClient";
+import { generateMeetingTitle, generateMeetingSummary } from "../services/llmClient";
 
 // Polling timer reference for cleanup
 let pollTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -138,7 +140,7 @@ function summaryFromRust(r: {
 async function loadAudioUrl(audioPath: string): Promise<string | null> {
   // 1. Try Tauri asset protocol (zero-copy, fast)
   try {
-    const assetUrl = convertFileSrc(audioPath);
+    const assetUrl = convertFileSrc(audioPath) + `?t=${Date.now()}`;
     const ok = await new Promise<boolean>((resolve) => {
       const probe = new Audio();
       probe.onloadedmetadata = () => {
@@ -245,13 +247,58 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
           const resp = await tauriFetch(`http://127.0.0.1:18090/jobs/${jobId}/result`, { method: "GET" });
           if (resp.status >= 200 && resp.status < 300) {
             const data = JSON.parse(resp.body);
+            const hadExistingSegments = get().segments.length > 0;
             const segments: Segment[] = data.segments.map(
               (s: { start: number; end: number; text: string; speaker: string | null; confidence: number | null }, i: number) => ({
                 id: `seg-${i}`,
                 ...s,
               })
             );
-            set({ segments, summary: data.summary || null });
+            set({ segments });
+
+            // Persist segments to SQLite
+            const { useProjectStore } = await import("./projectStore");
+            const { useSettingsStore } = await import("./settingsStore");
+            const activeProjectId = useProjectStore.getState().activeProjectId;
+            if (activeProjectId) {
+              get().persistSegments(activeProjectId).catch(() => {});
+            }
+
+            // Auto-generate summary using frontend LLM client
+            const autoSummary = useSettingsStore.getState().general.autoSummary;
+            if (autoSummary && activeProjectId && segments.length > 0) {
+              try {
+                set({ job: { ...get().job, pipelineStep: "summarizing" } });
+
+                // Generate title for first-time transcription of non-folder meetings
+                if (!hadExistingSegments) {
+                  const activeProject = useProjectStore.getState().projects.find(
+                    (p) => p.id === activeProjectId
+                  );
+                  if (activeProject && !activeProject.isFolder) {
+                    const transcriptText = segments.map((s) => s.text).join(" ");
+                    try {
+                      const title = await generateMeetingTitle(activeProject.createdAt, transcriptText);
+                      await useProjectStore.getState().updateProject(activeProjectId, { title });
+                    } catch {
+                      toast.warning("标题生成失败，请手动设置");
+                    }
+                  }
+                }
+
+                // Generate summary
+                const transcriptText = segments
+                  .map((s) => (s.speaker ? `[${s.speaker}] ${s.text}` : s.text))
+                  .join("\n");
+                const summary = await generateMeetingSummary(transcriptText);
+                set({ summary });
+                await get().persistSummary(activeProjectId);
+              } catch {
+                toast.warning("摘要生成失败，请检查 LLM 配置");
+              } finally {
+                set({ job: { ...get().job, pipelineStep: null } });
+              }
+            }
           }
           pollTimeoutId = null;
           return;

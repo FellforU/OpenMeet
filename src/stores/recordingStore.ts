@@ -69,7 +69,7 @@ const t = (key: string, opts?: Record<string, string>) =>
 async function loadAudioUrl(audioPath: string): Promise<string | null> {
   // 1. Try Tauri asset protocol (zero-copy, fast)
   try {
-    const assetUrl = convertFileSrc(audioPath);
+    const assetUrl = convertFileSrc(audioPath) + `?t=${Date.now()}`;
     const ok = await new Promise<boolean>((resolve) => {
       const probe = new Audio();
       probe.onloadedmetadata = () => {
@@ -322,6 +322,8 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
     // Load audio file for playback
     if (audioPath) {
       set({ processingStep: "loading" });
+      // Force audio player to reload by resetting audio state first
+      useTranscriptionStore.getState().setAudioFile("", "");
       const loaded = await loadAudioUrl(audioPath);
       if (loaded) {
         useTranscriptionStore.getState().setAudioFile(audioPath, loaded);

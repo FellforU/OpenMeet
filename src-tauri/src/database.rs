@@ -340,7 +340,7 @@ pub fn db_delete_project(
         .filter_map(|r| r.ok())
         .collect();
 
-    // Delete disk files
+    // Delete attachment disk files
     for path in &paths {
         let _ = std::fs::remove_file(path);
     }
@@ -349,6 +349,34 @@ pub fn db_delete_project(
     let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let attachments_dir = app_data.join("attachments").join(&id);
     let _ = std::fs::remove_dir_all(&attachments_dir);
+
+    // Collect and delete audio files for all projects being removed
+    let mut audio_stmt = conn
+        .prepare(
+            "SELECT audio_path FROM projects WHERE id IN (
+                WITH RECURSIVE descendants(id) AS (
+                    SELECT ?1
+                    UNION ALL
+                    SELECT p.id FROM projects p JOIN descendants d ON p.parent_id = d.id
+                )
+                SELECT id FROM descendants
+            ) AND audio_path IS NOT NULL",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let audio_paths: Vec<String> = audio_stmt
+        .query_map(params![id], |row| row.get(0))
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    for audio_path in &audio_paths {
+        let _ = std::fs::remove_file(audio_path);
+        // Clean up empty parent directory (e.g. recordings/)
+        if let Some(parent) = std::path::Path::new(audio_path).parent() {
+            let _ = std::fs::remove_dir(parent); // only succeeds if empty
+        }
+    }
 
     // CASCADE will handle segments, summaries, attachments, notes
     conn.execute("DELETE FROM projects WHERE id = ?1", params![id])

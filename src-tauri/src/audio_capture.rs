@@ -18,6 +18,7 @@ pub struct AudioCaptureState {
     all_samples: PcmBuffer,
     rec_sample_rate: Mutex<u32>,
     rec_channels: Mutex<u16>,
+    ws_channels: Mutex<u16>,
 }
 
 impl AudioCaptureState {
@@ -30,6 +31,7 @@ impl AudioCaptureState {
             all_samples: PcmBuffer::new(),
             rec_sample_rate: Mutex::new(16000),
             rec_channels: Mutex::new(1),
+            ws_channels: Mutex::new(1),
         }
     }
 }
@@ -145,7 +147,9 @@ fn start_mixed_capture(
         }
     };
 
-    // Spawn interleaver thread: reads from mic_raw + sys_raw, writes stereo to ws_buffer + all_buffer
+    // Spawn interleaver thread: reads from mic_raw + sys_raw
+    // WS buffer gets mic-only mono (for better ASR accuracy)
+    // All buffer gets interleaved stereo with attenuated system audio (for WAV recording)
     let is_paused_clone = is_paused;
     let is_rec = Arc::new(AtomicBool::new(true));
     let is_rec_clone = is_rec.clone();
@@ -165,17 +169,21 @@ fn start_mixed_capture(
                 continue;
             }
 
-            // Interleave: [mic0, sys0, mic1, sys1, ...]
+            // WS buffer: mic only (mono) for better ASR accuracy
+            if !mic_samples.is_empty() {
+                ws_buffer.push_samples(&mic_samples);
+            }
+
+            // Recording buffer: interleaved stereo [mic, sys_attenuated, ...]
             let len = mic_samples.len().max(sys_samples.len());
             let mut stereo = Vec::with_capacity(len * 2);
             for i in 0..len {
                 let m = mic_samples.get(i).copied().unwrap_or(0);
                 let s = sys_samples.get(i).copied().unwrap_or(0);
+                let s_attenuated = ((s as f32) * 0.3) as i16; // System audio attenuation
                 stereo.push(m);
-                stereo.push(s);
+                stereo.push(s_attenuated);
             }
-
-            ws_buffer.push_samples(&stereo);
             all_buffer.push_samples(&stereo);
         }
     });
@@ -219,6 +227,12 @@ pub async fn start_recording(
         *ch = channels;
     }
 
+    // In mixed mode, WS sends mic-only mono while recording is stereo
+    let ws_ch = if source == AudioSourceType::Mixed { 1 } else { channels };
+    if let Ok(mut wc) = state.ws_channels.lock() {
+        *wc = ws_ch;
+    }
+
     state.is_recording.store(true, Ordering::SeqCst);
     state.is_paused.store(false, Ordering::SeqCst);
 
@@ -238,7 +252,7 @@ pub async fn start_recording(
 
         let ws_url = format!(
             "{}?job_id={}&sample_rate={}&channels={}",
-            WS_URL, job_id, sample_rate, channels
+            WS_URL, job_id, sample_rate, ws_ch
         );
         let connect_result = connect_async(&ws_url).await;
         let (mut ws_stream, _) = match connect_result {
