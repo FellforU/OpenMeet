@@ -147,9 +147,12 @@ class ParaformerEngine:
         cache_dir = str(self._get_modelscope_cache())
 
         def _load():
+            import torch
+
             kwargs: dict = {
                 "model": model_path,
                 "disable_update": True,
+                "device": "cuda" if torch.cuda.is_available() else "cpu",
             }
             # Resolve sub-model paths (VAD, punctuation, speaker)
             for key, model_id in sub_deps.items():
@@ -167,6 +170,12 @@ class ParaformerEngine:
             del self._model
             self._model = None
             self._model_size = None
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
 
     def is_loaded(self) -> bool:
         return self._model is not None

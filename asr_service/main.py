@@ -58,9 +58,33 @@ config_router.set_embedder(_embedder)
 config_router.set_reranker(_reranker)
 
 
+def _log_gpu_info():
+    """Log GPU/CUDA diagnostic information at startup."""
+    import logging
+    logger = logging.getLogger(__name__)
+    try:
+        import torch
+        logger.info("PyTorch %s, CUDA compiled: %s", torch.__version__, torch.version.cuda)
+        if torch.cuda.is_available():
+            for i in range(torch.cuda.device_count()):
+                props = torch.cuda.get_device_properties(i)
+                logger.info(
+                    "GPU %d: %s (%.1f GB VRAM)",
+                    i, torch.cuda.get_device_name(i), props.total_mem / 1024**3,
+                )
+        else:
+            logger.warning(
+                "CUDA not available — all models will run on CPU. "
+                "Check NVIDIA driver and PyTorch CUDA version compatibility."
+            )
+    except ImportError:
+        logger.warning("PyTorch not installed — GPU acceleration unavailable")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
+    _log_gpu_info()
     manager = JobManager()
     jobs.set_manager(manager)
     engines.set_manager(manager)

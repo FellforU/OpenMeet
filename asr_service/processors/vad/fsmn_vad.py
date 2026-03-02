@@ -34,8 +34,10 @@ class FSMNVadProcessor:
 
         def _load():
             try:
+                import torch
                 from funasr import AutoModel
-                return AutoModel(model=model_path)
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                return AutoModel(model=model_path, device=device)
             except Exception as e:
                 logger.warning("Failed to load VAD model from %s: %s", model_path, e)
                 return None

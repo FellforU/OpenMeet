@@ -38,8 +38,10 @@ class CAMPPlusDiarizer:
 
         def _load():
             try:
+                import torch
                 from funasr import AutoModel
-                return AutoModel(model=model_path, model_revision="v2.0.4")
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                return AutoModel(model=model_path, model_revision="v2.0.4", device=device)
             except Exception as e:
                 logger.warning("Failed to load diarization model from %s: %s", model_path, e)
                 return None

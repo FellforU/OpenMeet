@@ -76,6 +76,29 @@ fn find_python(project_root: &PathBuf) -> String {
     }
 }
 
+/// Run GPU auto-detection and install CUDA PyTorch if needed.
+/// This runs before the ASR service starts so torch imports get the CUDA version.
+fn run_gpu_setup(python: &str, project_root: &Path) {
+    eprintln!("[sidecar] Running GPU setup...");
+    match Command::new(python)
+        .args(["-m", "asr_service.gpu_setup"])
+        .current_dir(project_root)
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .status()
+    {
+        Ok(status) => {
+            let code = status.code().unwrap_or(-1);
+            match code {
+                0 => eprintln!("[sidecar] GPU setup: no changes needed"),
+                1 => eprintln!("[sidecar] GPU setup: CUDA PyTorch installed"),
+                _ => eprintln!("[sidecar] GPU setup: completed with code {}", code),
+            }
+        }
+        Err(e) => eprintln!("[sidecar] GPU setup failed (non-fatal): {}", e),
+    }
+}
+
 #[tauri::command]
 pub async fn start_asr_service(
     state: State<'_, SidecarState>,
@@ -90,6 +113,9 @@ pub async fn start_asr_service(
 
     let project_root = find_project_root()?;
     let python = find_python(&project_root);
+
+    // Auto-detect GPU and install CUDA PyTorch before starting the service
+    run_gpu_setup(&python, &project_root);
 
     let mut cmd = Command::new(&python);
     cmd.args(["-m", "asr_service.main"])
