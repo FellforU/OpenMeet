@@ -19,10 +19,11 @@ def _gpu_info() -> dict:
             info["gpus"] = []
             for i in range(torch.cuda.device_count()):
                 props = torch.cuda.get_device_properties(i)
+                vram = getattr(props, "total_memory", None) or getattr(props, "total_mem", 0)
                 info["gpus"].append({
                     "index": i,
                     "name": torch.cuda.get_device_name(i),
-                    "vram_total_gb": round(props.total_mem / 1024**3, 1),
+                    "vram_total_gb": round(vram / 1024**3, 1),
                     "vram_allocated_gb": round(torch.cuda.memory_allocated(i) / 1024**3, 2),
                 })
         return info

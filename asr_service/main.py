@@ -68,9 +68,10 @@ def _log_gpu_info():
         if torch.cuda.is_available():
             for i in range(torch.cuda.device_count()):
                 props = torch.cuda.get_device_properties(i)
+                vram = getattr(props, "total_memory", None) or getattr(props, "total_mem", 0)
                 logger.info(
                     "GPU %d: %s (%.1f GB VRAM)",
-                    i, torch.cuda.get_device_name(i), props.total_mem / 1024**3,
+                    i, torch.cuda.get_device_name(i), vram / 1024**3,
                 )
         else:
             logger.warning(
