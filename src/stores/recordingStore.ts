@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import i18n from "../i18n";
 import * as api from "../services/asrClient";
@@ -38,7 +39,7 @@ interface RecordingStore {
 }
 
 let elapsedTimer: ReturnType<typeof setInterval> | null = null;
-let wsConnection: WebSocket | null = null;
+let unlistenSegment: UnlistenFn | null = null;
 
 function clearElapsedTimer() {
   if (elapsedTimer) {
@@ -47,10 +48,10 @@ function clearElapsedTimer() {
   }
 }
 
-function closeWebSocket() {
-  if (wsConnection) {
-    wsConnection.close();
-    wsConnection = null;
+function cleanupSegmentListener() {
+  if (unlistenSegment) {
+    unlistenSegment();
+    unlistenSegment = null;
   }
 }
 
@@ -170,12 +171,12 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
       set({ elapsed: get().elapsed + 1 });
     }, 1000);
 
-    // Connect to WebSocket for receiving segments
-    const wsUrl = `ws://127.0.0.1:18090/ws/stream?job_id=${job.id}&sample_rate=16000&channels=1`;
-    wsConnection = new WebSocket(wsUrl);
-    wsConnection.onmessage = (event) => {
+    // Listen for streaming segments from Rust via Tauri events
+    // (Rust WS reads segment JSON from ASR service and emits "stream-segment" events)
+    cleanupSegmentListener();
+    unlistenSegment = await listen<string>("stream-segment", (event) => {
       try {
-        const data = JSON.parse(event.data);
+        const data = JSON.parse(event.payload);
         if (data.type === "segment") {
           const segment: Segment = {
             id: `seg-${data.index}`,
@@ -190,9 +191,9 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
       } catch {
         // Ignore parse errors
       }
-    };
+    });
 
-    // Start audio capture in Rust
+    // Start audio capture in Rust (also opens WS to ASR service)
     try {
       await invoke<string>("start_recording", { jobId: job.id, audioSource: get().audioSource });
     } catch {
@@ -246,7 +247,7 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
 
   stopRecording: async () => {
     clearElapsedTimer();
-    closeWebSocket();
+    cleanupSegmentListener();
 
     const { segments, jobId, elapsed: recordedSeconds } = get();
     set({ status: "idle", jobId: null, elapsed: 0, segments: [], processingStep: "saving" });
@@ -381,7 +382,7 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
 
   reset: () => {
     clearElapsedTimer();
-    closeWebSocket();
+    cleanupSegmentListener();
     set({ status: "idle", jobId: null, elapsed: 0, segments: [], processingStep: null });
   },
 }));

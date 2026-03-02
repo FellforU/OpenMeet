@@ -18,7 +18,8 @@ def segments():
 
 @pytest.fixture
 def job(segments):
-    job = TranscriptionJob(engine="whisper", language="en")
+    """Job with a non-punctuated engine (paraformer) so punctuation step runs."""
+    job = TranscriptionJob(engine="paraformer", language="en")
     job.status = JobStatus.COMPLETED
     job.segments = segments
     job.audio_path = "/tmp/test.wav"
@@ -116,6 +117,40 @@ async def test_pipeline_updates_segments(pipeline, job):
 
     assert job.segments[0].speaker == "Speaker_1"
     assert job.segments[1].speaker == "Speaker_2"
+
+
+@pytest.mark.asyncio
+async def test_skips_punctuation_for_whisper(pipeline, segments):
+    """Pipeline should skip punctuation for engines that already produce punctuation."""
+    job = TranscriptionJob(engine="whisper", language="en")
+    job.status = JobStatus.COMPLETED
+    job.segments = segments
+    job.audio_path = "/tmp/test.wav"
+
+    with patch.object(pipeline, "_run_itn", new_callable=AsyncMock, return_value=segments), \
+         patch.object(pipeline, "_run_punctuation", new_callable=AsyncMock) as mock_punc, \
+         patch.object(pipeline, "_run_diarization", new_callable=AsyncMock, return_value=segments):
+
+        await pipeline.run(job)
+
+    mock_punc.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_skips_punctuation_for_qwen3(pipeline, segments):
+    """Pipeline should skip punctuation for Qwen3 engine."""
+    job = TranscriptionJob(engine="qwen3", language="zh")
+    job.status = JobStatus.COMPLETED
+    job.segments = segments
+    job.audio_path = "/tmp/test.wav"
+
+    with patch.object(pipeline, "_run_itn", new_callable=AsyncMock, return_value=segments), \
+         patch.object(pipeline, "_run_punctuation", new_callable=AsyncMock) as mock_punc, \
+         patch.object(pipeline, "_run_diarization", new_callable=AsyncMock, return_value=segments):
+
+        await pipeline.run(job)
+
+    mock_punc.assert_not_called()
 
 
 @pytest.mark.asyncio

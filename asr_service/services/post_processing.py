@@ -20,10 +20,13 @@ class PostProcessingPipeline:
     def __init__(self) -> None:
         pass
 
+    # Engines that already produce punctuated output — skip CT-Transformer
+    PUNCTUATED_ENGINES = {"qwen3", "whisper"}
+
     async def run(self, job: TranscriptionJob) -> None:
         """Run the full post-processing pipeline on a completed job.
 
-        Steps: ITN → Punctuation → Diarization
+        Steps: ITN → Punctuation (if needed) → Diarization
         Each step is fault-tolerant — failure skips to next step.
         Summary generation is handled by the frontend.
         """
@@ -40,11 +43,14 @@ class PostProcessingPipeline:
         except Exception as e:
             logger.warning("ITN step failed: %s", e)
 
-        # Step 2: Punctuation restoration
-        try:
-            segments = await self._run_punctuation(segments, language)
-        except Exception as e:
-            logger.warning("Punctuation step failed: %s", e)
+        # Step 2: Punctuation restoration (skip for engines that already produce punctuation)
+        if job.engine not in self.PUNCTUATED_ENGINES:
+            try:
+                segments = await self._run_punctuation(segments, language)
+            except Exception as e:
+                logger.warning("Punctuation step failed: %s", e)
+        else:
+            logger.info("Skipping punctuation for engine '%s' (already punctuated)", job.engine)
 
         # Step 3: Speaker diarization
         try:

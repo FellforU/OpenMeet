@@ -230,6 +230,7 @@ fn start_mixed_capture(
 
 #[tauri::command]
 pub async fn start_recording(
+    app: tauri::AppHandle,
     state: State<'_, AudioCaptureState>,
     job_id: String,
     audio_source: Option<String>,
@@ -280,7 +281,8 @@ pub async fn start_recording(
     let buf = state.ws_buffer.clone();
 
     tokio::spawn(async move {
-        use futures_util::SinkExt;
+        use futures_util::{SinkExt, StreamExt};
+        use tauri::Emitter;
         use tokio_tungstenite::connect_async;
 
         let ws_url = format!(
@@ -288,7 +290,7 @@ pub async fn start_recording(
             WS_URL, job_id, sample_rate, ws_ch
         );
         let connect_result = connect_async(&ws_url).await;
-        let (mut ws_stream, _) = match connect_result {
+        let (ws_stream, _) = match connect_result {
             Ok(conn) => conn,
             Err(e) => {
                 eprintln!("WebSocket connection failed: {}", e);
@@ -296,6 +298,19 @@ pub async fn start_recording(
             }
         };
 
+        // Split WS into sender (for audio) and reader (for segment results)
+        let (mut ws_sink, mut ws_reader) = ws_stream.split();
+
+        // Reader task: forward segment JSON from ASR service to frontend via Tauri events
+        let reader_handle = tokio::spawn(async move {
+            while let Some(Ok(msg)) = ws_reader.next().await {
+                if let tokio_tungstenite::tungstenite::Message::Text(text) = msg {
+                    let _ = app.emit("stream-segment", text.to_string());
+                }
+            }
+        });
+
+        // Sender loop: push audio chunks to ASR service
         let interval = std::time::Duration::from_millis(CHUNK_DURATION_MS);
         while is_rec.load(Ordering::SeqCst) {
             tokio::time::sleep(interval).await;
@@ -311,14 +326,15 @@ pub async fn start_recording(
 
             let chunk: Vec<u8> = samples.iter().flat_map(|s| s.to_le_bytes()).collect();
             let msg = tokio_tungstenite::tungstenite::Message::Binary(chunk.into());
-            if ws_stream.send(msg).await.is_err() {
+            if ws_sink.send(msg).await.is_err() {
                 eprintln!("WebSocket send failed, stopping");
                 break;
             }
         }
 
         let close = tokio_tungstenite::tungstenite::Message::Close(None);
-        let _ = ws_stream.send(close).await;
+        let _ = ws_sink.send(close).await;
+        reader_handle.abort();
     });
 
     Ok(format!(
