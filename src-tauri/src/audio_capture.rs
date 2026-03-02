@@ -138,14 +138,20 @@ fn start_mixed_capture(
         crate::capture::mic::start_mic_capture(is_paused.clone(), mic_raw.clone(), mic_discard)?;
 
     let sys_result = start_system_capture(is_paused.clone(), sys_raw.clone(), sys_discard);
-    let sys_handles = match sys_result {
-        Ok((handles, _, _)) => handles,
+    let (sys_handles, sys_sr, sys_ch) = match sys_result {
+        Ok((handles, sys_sr, sys_ch)) => (handles, sys_sr, sys_ch),
         Err(e) => {
             eprintln!("System audio unavailable in mixed mode: {}", e);
             // Degrade: mic-only, still mono
             return Ok((vec![mic_handle], sr, 1));
         }
     };
+
+    let mic_sr = sr;
+    eprintln!(
+        "Mixed capture: mic={}Hz/1ch, sys={}Hz/{}ch",
+        mic_sr, sys_sr, sys_ch
+    );
 
     // Spawn interleaver thread: reads from mic_raw + sys_raw
     // WS buffer gets mic-only mono (for better ASR accuracy)
@@ -174,12 +180,39 @@ fn start_mixed_capture(
                 ws_buffer.push_samples(&mic_samples);
             }
 
-            // Recording buffer: interleaved stereo [mic, sys_attenuated, ...]
-            let len = mic_samples.len().max(sys_samples.len());
+            // Step 1: Down-mix system audio from multi-channel to mono
+            let sys_mono: Vec<i16> = if sys_ch > 1 {
+                sys_samples
+                    .chunks(sys_ch as usize)
+                    .map(|frame| {
+                        let sum: i32 = frame.iter().map(|&s| s as i32).sum();
+                        (sum / frame.len() as i32) as i16
+                    })
+                    .collect()
+            } else {
+                sys_samples
+            };
+
+            // Step 2: Resample system mono to match mic sample rate
+            let sys_resampled: Vec<i16> = if sys_sr != mic_sr && !sys_mono.is_empty() {
+                let ratio = sys_sr as f64 / mic_sr as f64;
+                let target_len = (sys_mono.len() as f64 / ratio).round() as usize;
+                (0..target_len)
+                    .map(|i| {
+                        let src_idx = ((i as f64) * ratio) as usize;
+                        sys_mono.get(src_idx).copied().unwrap_or(0)
+                    })
+                    .collect()
+            } else {
+                sys_mono
+            };
+
+            // Step 3: Interleave [mic, sys_attenuated] into stereo at mic sample rate
+            let len = mic_samples.len().max(sys_resampled.len());
             let mut stereo = Vec::with_capacity(len * 2);
             for i in 0..len {
                 let m = mic_samples.get(i).copied().unwrap_or(0);
-                let s = sys_samples.get(i).copied().unwrap_or(0);
+                let s = sys_resampled.get(i).copied().unwrap_or(0);
                 let s_attenuated = ((s as f32) * 0.3) as i16; // System audio attenuation
                 stereo.push(m);
                 stereo.push(s_attenuated);
