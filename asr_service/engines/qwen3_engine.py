@@ -90,16 +90,20 @@ class Qwen3Engine:
         QwenASR = _ensure_qwen3asr()
         model_id = MODEL_MAP[model_size]
         cache_dir = str(_get_hf_cache())
+        # Use local files only when the model is already downloaded
+        use_local = self.is_model_downloaded(model_size)
 
         def _load():
             import torch
             dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
-            return QwenASR.from_pretrained(
-                model_id,
-                dtype=dtype,
-                device_map="auto",
-                cache_dir=cache_dir,
-            )
+            kwargs = {
+                "dtype": dtype,
+                "device_map": "auto",
+                "cache_dir": cache_dir,
+            }
+            if use_local:
+                kwargs["local_files_only"] = True
+            return QwenASR.from_pretrained(model_id, **kwargs)
 
         self._model = await asyncio.to_thread(_load)
         self._model_size = model_size

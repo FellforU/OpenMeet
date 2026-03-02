@@ -60,12 +60,19 @@ def get_model_cache_dir() -> str | None:
 
 
 def set_hf_mirror(url: str | None):
-    """Set HuggingFace mirror endpoint. Also updates HF_ENDPOINT env var."""
+    """Set HuggingFace mirror endpoint. Also updates HF_ENDPOINT env var
+    and patches huggingface_hub's cached ENDPOINT constant."""
     _runtime_config["hf_mirror"] = url
     if url:
         os.environ["HF_ENDPOINT"] = url
     else:
         os.environ.pop("HF_ENDPOINT", None)
+    # huggingface_hub caches ENDPOINT at import time; patch the live constant
+    try:
+        import huggingface_hub.constants as hf_constants
+        hf_constants.ENDPOINT = url or "https://huggingface.co"
+    except ImportError:
+        pass
 
 
 def get_hf_mirror() -> str | None:
