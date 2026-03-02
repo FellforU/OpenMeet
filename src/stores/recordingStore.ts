@@ -317,9 +317,9 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
         );
         if (result.status >= 200 && result.status < 300) {
           const data = JSON.parse(result.body);
-          const updatedSegments: Segment[] = data.segments.map(
+          const postProcessedSegments: Segment[] = data.segments.map(
             (s: { start: number; end: number; text: string; speaker: string | null; confidence: number | null }, i: number) => ({
-              id: `seg-${i}`,
+              id: `seg-${capturedSegmentCountAtStart + i}`,
               start: s.start,
               end: s.end,
               text: s.text,
@@ -327,7 +327,11 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
               confidence: s.confidence || null,
             })
           );
-          useTranscriptionStore.getState().setSegments(updatedSegments);
+          // Merge: keep pre-existing segments, replace only current session's portion
+          const allSegments = useTranscriptionStore.getState().segments;
+          const previousSegments = allSegments.slice(0, capturedSegmentCountAtStart);
+          const mergedSegments = [...previousSegments, ...postProcessedSegments];
+          useTranscriptionStore.getState().setSegments(mergedSegments);
           // Re-persist updated segments with speaker labels
           if (activeProjectId) {
             await useTranscriptionStore.getState().persistSegments(activeProjectId);

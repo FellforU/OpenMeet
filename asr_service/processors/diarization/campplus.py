@@ -80,10 +80,15 @@ class CAMPPlusDiarizer:
 
         speaker_map = await asyncio.to_thread(_diarize)
 
+        # If diarization produced no speaker mapping, return segments unchanged
+        if not speaker_map:
+            logger.warning("Diarization produced empty speaker map, returning segments unchanged")
+            return segments
+
         # Apply speaker labels to segments
         labeled = []
         for i, seg in enumerate(segments):
-            speaker = speaker_map.get(i, f"Speaker {chr(65 + (i % 26))}")
+            speaker = speaker_map.get(i, seg.speaker)
             labeled.append(
                 Segment(
                     start=seg.start,
