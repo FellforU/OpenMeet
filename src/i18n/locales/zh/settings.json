@@ -5,7 +5,8 @@
     "llmModels": "LLM 模型",
     "asrModels": "ASR 模型",
     "knowledge": "知识库",
-    "about": "关于"
+    "about": "关于",
+    "voiceprint": "音色库"
   },
   "general": {
     "autoSummary": "自动生成摘要",
@@ -38,7 +39,9 @@
     "migrateSuccess": "迁移完成",
     "migrateFailed": "迁移失败: {{error}}",
     "hfMirror": "启用 HuggingFace 镜像",
-    "hfMirrorDesc": "使用镜像地址下载模型，解决国内访问 HuggingFace 超时问题"
+    "hfMirrorDesc": "使用镜像地址下载模型，解决国内访问 HuggingFace 超时问题",
+    "diarizationThreshold": "说话人识别阈值",
+    "diarizationThresholdDesc": "音色匹配相似度阈值，值越高越严格（推荐 65%）"
   },
   "llm": {
     "title": "LLM 提供商配置",
@@ -155,6 +158,31 @@
     "subtitle": "配置用于知识检索和问答的 Embedding 和 Rerank 模型",
     "enableRerank": "启用 Rerank 重排序",
     "enableRerankDesc": "搜索结果送入 LLM 前通过 Rerank 模型重排序，提升回答质量"
+  },
+  "voiceprint": {
+    "title": "音色库管理",
+    "subtitle": "管理已识别的说话人音色档案",
+    "empty": "暂无音色档案，录制会议后将自动创建",
+    "loading": "加载中...",
+    "name": "姓名",
+    "namePlaceholder": "输入说话人姓名",
+    "nickname": "昵称",
+    "email": "邮箱",
+    "department": "部门",
+    "titleField": "职位",
+    "note": "备注",
+    "samples": "采样",
+    "lastSeen": "最近识别",
+    "unnamed": "未命名",
+    "editTitle": "编辑音色信息",
+    "merge": "合并选中",
+    "mergeSuccess": "音色合并成功",
+    "mergeFailed": "音色合并失败",
+    "deleteConfirmTitle": "删除音色",
+    "deleteConfirmDesc": "删除后，关联的转录片段将保留文字标签但不再关联此音色。确定删除？",
+    "deleteSuccess": "音色已删除",
+    "deleteFailed": "删除失败",
+    "updateSuccess": "音色信息已更新"
   },
   "about": {
     "description": "本地优先的 AI 会议转录工具。基于 Tauri 2.x、React 19、FastAPI、Ollama 构建。",

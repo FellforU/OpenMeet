@@ -43,3 +43,4 @@ class TranscriptionJob:
     created_at: float = field(default_factory=time.time)
     error: Optional[str] = None
     summary: Optional[dict] = None
+    embeddings: list[Optional[list[float]]] = field(default_factory=list)

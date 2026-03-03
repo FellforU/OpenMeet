@@ -95,6 +95,11 @@
     "empty": "Mind map will appear after summary is generated",
     "exportXmind": "Export XMind"
   },
+  "voiceprint": {
+    "searchPlaceholder": "Search voiceprint or enter new name...",
+    "noMatch": "No matching voiceprints found",
+    "renameAs": "Rename to \"{{name}}\""
+  },
   "chat": {
     "title": "AI Assistant",
     "currentProject": "Current Meeting",

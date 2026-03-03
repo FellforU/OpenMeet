@@ -88,9 +88,37 @@ impl Database {
                 key   TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS voiceprints (
+                id            TEXT PRIMARY KEY,
+                name          TEXT NOT NULL DEFAULT '',
+                nickname      TEXT DEFAULT '',
+                email         TEXT DEFAULT '',
+                department    TEXT DEFAULT '',
+                title         TEXT DEFAULT '',
+                note          TEXT DEFAULT '',
+                avatar_path   TEXT,
+                embedding     BLOB NOT NULL,
+                sample_count  INTEGER NOT NULL DEFAULT 1,
+                model_version TEXT NOT NULL DEFAULT '',
+                created_at    TEXT NOT NULL,
+                updated_at    TEXT NOT NULL,
+                last_seen_at  TEXT
+            );
             ",
         )
         .map_err(|e| e.to_string())?;
+
+        // Migration: add voiceprint_id column to segments if not exists
+        let has_voiceprint_id: bool = conn
+            .prepare("SELECT voiceprint_id FROM segments LIMIT 0")
+            .is_ok();
+        if !has_voiceprint_id {
+            conn.execute_batch(
+                "ALTER TABLE segments ADD COLUMN voiceprint_id TEXT REFERENCES voiceprints(id);"
+            )
+            .map_err(|e| e.to_string())?;
+        }
 
         Ok(())
     }
@@ -130,6 +158,7 @@ pub struct Segment {
     pub text: String,
     pub speaker: Option<String>,
     pub confidence: Option<f64>,
+    pub voiceprint_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -413,7 +442,7 @@ pub fn db_get_segments(
     let conn = state.conn.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn
         .prepare(
-            "SELECT id, start_time, end_time, text, speaker, confidence FROM segments WHERE project_id = ?1 ORDER BY idx",
+            "SELECT id, start_time, end_time, text, speaker, confidence, voiceprint_id FROM segments WHERE project_id = ?1 ORDER BY idx",
         )
         .map_err(|e| e.to_string())?;
 
@@ -426,6 +455,7 @@ pub fn db_get_segments(
                 text: row.get(3)?,
                 speaker: row.get(4)?,
                 confidence: row.get(5)?,
+                voiceprint_id: row.get(6)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -458,8 +488,8 @@ pub fn db_save_segments(
     // Batch insert
     for (i, seg) in segments.iter().enumerate() {
         tx.execute(
-            "INSERT INTO segments (id, project_id, idx, start_time, end_time, text, speaker, confidence)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO segments (id, project_id, idx, start_time, end_time, text, speaker, confidence, voiceprint_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 seg.id,
                 project_id,
@@ -469,6 +499,7 @@ pub fn db_save_segments(
                 seg.text,
                 seg.speaker,
                 seg.confidence,
+                seg.voiceprint_id,
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -787,4 +818,493 @@ pub fn db_set_setting(
 pub fn get_app_data_dir(app: AppHandle) -> Result<String, String> {
     let path = app.path().app_data_dir().map_err(|e| e.to_string())?;
     Ok(path.to_string_lossy().to_string())
+}
+
+// ---------------------------------------------------------------------------
+// Voiceprint data structures
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct VoiceprintInfo {
+    pub id: String,
+    pub name: String,
+    pub nickname: String,
+    pub email: String,
+    pub department: String,
+    pub title: String,
+    pub note: String,
+    pub avatar_path: Option<String>,
+    pub sample_count: i32,
+    pub model_version: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub last_seen_at: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct VoiceprintMetadata {
+    pub name: Option<String>,
+    pub nickname: Option<String>,
+    pub email: Option<String>,
+    pub department: Option<String>,
+    pub title: Option<String>,
+    pub note: Option<String>,
+    pub avatar_path: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct VoiceprintMatchResult {
+    pub assignments: Vec<Option<String>>,
+    pub speaker_names: Vec<Option<String>>,
+    pub new_voiceprint_ids: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Voiceprint CRUD commands
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn voiceprint_list(state: State<DatabaseState>) -> Result<Vec<VoiceprintInfo>, String> {
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, name, nickname, email, department, title, note, avatar_path,
+                    sample_count, model_version, created_at, updated_at, last_seen_at
+             FROM voiceprints ORDER BY last_seen_at DESC NULLS LAST, updated_at DESC",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(VoiceprintInfo {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                nickname: row.get(2)?,
+                email: row.get(3)?,
+                department: row.get(4)?,
+                title: row.get(5)?,
+                note: row.get(6)?,
+                avatar_path: row.get(7)?,
+                sample_count: row.get(8)?,
+                model_version: row.get(9)?,
+                created_at: row.get(10)?,
+                updated_at: row.get(11)?,
+                last_seen_at: row.get(12)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn voiceprint_update(
+    state: State<DatabaseState>,
+    id: String,
+    metadata: VoiceprintMetadata,
+) -> Result<(), String> {
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    let now = chrono::Utc::now().to_rfc3339();
+
+    conn.execute(
+        "UPDATE voiceprints SET
+            name = COALESCE(?2, name),
+            nickname = COALESCE(?3, nickname),
+            email = COALESCE(?4, email),
+            department = COALESCE(?5, department),
+            title = COALESCE(?6, title),
+            note = COALESCE(?7, note),
+            avatar_path = COALESCE(?8, avatar_path),
+            updated_at = ?1
+         WHERE id = ?9",
+        params![
+            now,
+            metadata.name,
+            metadata.nickname,
+            metadata.email,
+            metadata.department,
+            metadata.title,
+            metadata.note,
+            metadata.avatar_path,
+            id,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn voiceprint_delete(state: State<DatabaseState>, id: String) -> Result<(), String> {
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE segments SET voiceprint_id = NULL WHERE voiceprint_id = ?1",
+        params![id],
+    )
+    .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM voiceprints WHERE id = ?1", params![id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn voiceprint_merge(
+    state: State<DatabaseState>,
+    source_id: String,
+    target_id: String,
+) -> Result<(), String> {
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+
+    let (src_emb, src_count): (Vec<u8>, i32) = tx
+        .query_row(
+            "SELECT embedding, sample_count FROM voiceprints WHERE id = ?1",
+            params![source_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|e| e.to_string())?;
+    let (tgt_emb, tgt_count): (Vec<u8>, i32) = tx
+        .query_row(
+            "SELECT embedding, sample_count FROM voiceprints WHERE id = ?1",
+            params![target_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|e| e.to_string())?;
+
+    let merged = weighted_average_embeddings(&src_emb, src_count, &tgt_emb, tgt_count);
+    let new_count = src_count + tgt_count;
+    let now = chrono::Utc::now().to_rfc3339();
+
+    tx.execute(
+        "UPDATE voiceprints SET embedding = ?1, sample_count = ?2, updated_at = ?3 WHERE id = ?4",
+        params![merged, new_count, now, target_id],
+    )
+    .map_err(|e| e.to_string())?;
+
+    tx.execute(
+        "UPDATE segments SET voiceprint_id = ?1 WHERE voiceprint_id = ?2",
+        params![target_id, source_id],
+    )
+    .map_err(|e| e.to_string())?;
+
+    tx.execute("DELETE FROM voiceprints WHERE id = ?1", params![source_id])
+        .map_err(|e| e.to_string())?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Voiceprint matching command (core algorithm)
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn voiceprint_match(
+    state: State<DatabaseState>,
+    embeddings: Vec<Option<Vec<f32>>>,
+    threshold: f64,
+) -> Result<VoiceprintMatchResult, String> {
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    let now = chrono::Utc::now().to_rfc3339();
+
+    // 1. Load all voiceprint embeddings from DB
+    let mut stmt = conn
+        .prepare("SELECT id, name, embedding, sample_count FROM voiceprints")
+        .map_err(|e| e.to_string())?;
+    let library: Vec<(String, String, Vec<u8>, i32)> = stmt
+        .query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    let threshold_f32 = threshold as f32;
+    let mut assignments: Vec<Option<String>> = vec![None; embeddings.len()];
+    let mut speaker_names: Vec<Option<String>> = vec![None; embeddings.len()];
+    let mut new_ids: Vec<String> = Vec::new();
+
+    // 2. For each embedding, find best match in library
+    let mut unmatched: Vec<(usize, Vec<f32>)> = Vec::new();
+
+    for (i, emb_opt) in embeddings.iter().enumerate() {
+        let emb = match emb_opt {
+            Some(e) => e,
+            None => continue,
+        };
+
+        let mut best_sim: f32 = -1.0;
+        let mut best_id: Option<String> = None;
+        let mut best_name: Option<String> = None;
+
+        for (vp_id, vp_name, vp_blob, _) in &library {
+            let sim = cosine_similarity_blob(emb, vp_blob);
+            if sim > best_sim {
+                best_sim = sim;
+                best_id = Some(vp_id.clone());
+                best_name = Some(vp_name.clone());
+            }
+        }
+
+        if best_sim >= threshold_f32 {
+            assignments[i] = best_id;
+            speaker_names[i] = best_name;
+        } else {
+            unmatched.push((i, emb.clone()));
+        }
+    }
+
+    // 3. Cluster unmatched embeddings
+    let clusters = greedy_cluster(&unmatched, threshold_f32);
+
+    // 4. For each cluster, create a new voiceprint entry
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+
+    let existing_unknown: i32 = tx
+        .query_row(
+            "SELECT COUNT(*) FROM voiceprints WHERE name LIKE '未知说话人%'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    for (cluster_idx, member_indices) in clusters.iter().enumerate() {
+        let vp_id = uuid::Uuid::new_v4().to_string();
+        let speaker_num = existing_unknown + cluster_idx as i32 + 1;
+        let name = format!("未知说话人 {}", speaker_num);
+
+        let avg_emb = average_embeddings(
+            &member_indices
+                .iter()
+                .map(|&mi| &unmatched[mi].1)
+                .collect::<Vec<_>>(),
+        );
+        let blob = f32_vec_to_blob(&avg_emb);
+
+        tx.execute(
+            "INSERT INTO voiceprints (id, name, embedding, sample_count, model_version, created_at, updated_at, last_seen_at)
+             VALUES (?1, ?2, ?3, ?4, '', ?5, ?5, ?5)",
+            params![vp_id, name, blob, member_indices.len() as i32, now],
+        )
+        .map_err(|e| e.to_string())?;
+
+        new_ids.push(vp_id.clone());
+
+        for &mi in member_indices {
+            let seg_idx = unmatched[mi].0;
+            assignments[seg_idx] = Some(vp_id.clone());
+            speaker_names[seg_idx] = Some(name.clone());
+        }
+    }
+
+    // 5. Update last_seen_at for matched voiceprints
+    for assignment in &assignments {
+        if let Some(vp_id) = assignment {
+            if !new_ids.contains(vp_id) {
+                tx.execute(
+                    "UPDATE voiceprints SET last_seen_at = ?1 WHERE id = ?2",
+                    params![now, vp_id],
+                )
+                .ok();
+            }
+        }
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+
+    Ok(VoiceprintMatchResult {
+        assignments,
+        speaker_names,
+        new_voiceprint_ids: new_ids,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Voiceprint passive learning command
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn voiceprint_passive_learn(
+    state: State<DatabaseState>,
+    id: String,
+    new_embedding: Vec<f32>,
+) -> Result<(), String> {
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    let now = chrono::Utc::now().to_rfc3339();
+
+    let (old_blob, count): (Vec<u8>, i32) = conn
+        .query_row(
+            "SELECT embedding, sample_count FROM voiceprints WHERE id = ?1",
+            params![id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|e| e.to_string())?;
+
+    let max_count = 100;
+
+    let updated_blob = if count >= max_count {
+        blend_embeddings(&old_blob, &new_embedding, 0.95, 0.05)
+    } else {
+        let w_old = count as f32 / (count as f32 + 1.0);
+        let w_new = 1.0 / (count as f32 + 1.0);
+        blend_embeddings(&old_blob, &new_embedding, w_old, w_new)
+    };
+
+    let new_count = (count + 1).min(max_count);
+
+    conn.execute(
+        "UPDATE voiceprints SET embedding = ?1, sample_count = ?2, updated_at = ?3 WHERE id = ?4",
+        params![updated_blob, new_count, now, id],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Voiceprint helper functions
+// ---------------------------------------------------------------------------
+
+fn cosine_similarity_blob(emb: &[f32], blob: &[u8]) -> f32 {
+    let dim = blob.len() / 4;
+    if emb.len() != dim {
+        return -1.0;
+    }
+    let mut dot: f32 = 0.0;
+    let mut norm_a: f32 = 0.0;
+    let mut norm_b: f32 = 0.0;
+    for i in 0..dim {
+        let b = f32::from_le_bytes([blob[i * 4], blob[i * 4 + 1], blob[i * 4 + 2], blob[i * 4 + 3]]);
+        dot += emb[i] * b;
+        norm_a += emb[i] * emb[i];
+        norm_b += b * b;
+    }
+    let denom = norm_a.sqrt() * norm_b.sqrt();
+    if denom < 1e-12 {
+        0.0
+    } else {
+        dot / denom
+    }
+}
+
+fn cosine_similarity_vec(a: &[f32], b: &[f32]) -> f32 {
+    let mut dot: f32 = 0.0;
+    let mut na: f32 = 0.0;
+    let mut nb: f32 = 0.0;
+    for i in 0..a.len().min(b.len()) {
+        dot += a[i] * b[i];
+        na += a[i] * a[i];
+        nb += b[i] * b[i];
+    }
+    let denom = na.sqrt() * nb.sqrt();
+    if denom < 1e-12 {
+        0.0
+    } else {
+        dot / denom
+    }
+}
+
+fn greedy_cluster(items: &[(usize, Vec<f32>)], threshold: f32) -> Vec<Vec<usize>> {
+    let mut clusters: Vec<Vec<usize>> = Vec::new();
+    let mut centroids: Vec<Vec<f32>> = Vec::new();
+
+    for (item_idx, (_, emb)) in items.iter().enumerate() {
+        let mut best_cluster = None;
+        let mut best_sim: f32 = -1.0;
+
+        for (ci, centroid) in centroids.iter().enumerate() {
+            let sim = cosine_similarity_vec(emb, centroid);
+            if sim > best_sim {
+                best_sim = sim;
+                best_cluster = Some(ci);
+            }
+        }
+
+        if best_sim >= threshold && best_cluster.is_some() {
+            let ci = best_cluster.unwrap();
+            clusters[ci].push(item_idx);
+            let members: Vec<&Vec<f32>> = clusters[ci].iter().map(|&mi| &items[mi].1).collect();
+            centroids[ci] = average_embeddings(&members);
+        } else {
+            clusters.push(vec![item_idx]);
+            centroids.push(emb.clone());
+        }
+    }
+    clusters
+}
+
+fn average_embeddings(vecs: &[&Vec<f32>]) -> Vec<f32> {
+    if vecs.is_empty() {
+        return Vec::new();
+    }
+    let dim = vecs[0].len();
+    let mut avg = vec![0.0f32; dim];
+    for v in vecs {
+        for i in 0..dim {
+            avg[i] += v[i];
+        }
+    }
+    let n = vecs.len() as f32;
+    let mut norm: f32 = 0.0;
+    for v in &mut avg {
+        *v /= n;
+        norm += *v * *v;
+    }
+    let norm = norm.sqrt().max(1e-12);
+    for v in &mut avg {
+        *v /= norm;
+    }
+    avg
+}
+
+fn f32_vec_to_blob(v: &[f32]) -> Vec<u8> {
+    v.iter().flat_map(|f| f.to_le_bytes()).collect()
+}
+
+fn weighted_average_embeddings(a: &[u8], count_a: i32, b: &[u8], count_b: i32) -> Vec<u8> {
+    let dim = a.len() / 4;
+    let total = (count_a + count_b) as f32;
+    let wa = count_a as f32 / total;
+    let wb = count_b as f32 / total;
+
+    let mut floats = Vec::with_capacity(dim);
+    let mut norm_sq: f32 = 0.0;
+    for i in 0..dim {
+        let va = f32::from_le_bytes([a[i * 4], a[i * 4 + 1], a[i * 4 + 2], a[i * 4 + 3]]);
+        let vb = f32::from_le_bytes([b[i * 4], b[i * 4 + 1], b[i * 4 + 2], b[i * 4 + 3]]);
+        let v = va * wa + vb * wb;
+        floats.push(v);
+        norm_sq += v * v;
+    }
+
+    let norm = norm_sq.sqrt().max(1e-12);
+    let mut result = Vec::with_capacity(a.len());
+    for v in floats {
+        result.extend_from_slice(&(v / norm).to_le_bytes());
+    }
+    result
+}
+
+fn blend_embeddings(old_blob: &[u8], new_emb: &[f32], w_old: f32, w_new: f32) -> Vec<u8> {
+    let dim = new_emb.len();
+    let mut floats = Vec::with_capacity(dim);
+    let mut norm_sq: f32 = 0.0;
+
+    for i in 0..dim {
+        let old_v = f32::from_le_bytes([
+            old_blob[i * 4],
+            old_blob[i * 4 + 1],
+            old_blob[i * 4 + 2],
+            old_blob[i * 4 + 3],
+        ]);
+        let v = old_v * w_old + new_emb[i] * w_new;
+        floats.push(v);
+        norm_sq += v * v;
+    }
+
+    let norm = norm_sq.sqrt().max(1e-12);
+    let mut result = Vec::with_capacity(dim * 4);
+    for v in floats {
+        result.extend_from_slice(&(v / norm).to_le_bytes());
+    }
+    result
 }

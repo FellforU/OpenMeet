@@ -249,6 +249,13 @@ pub fn run() {
             database::db_get_setting,
             database::db_set_setting,
             database::get_app_data_dir,
+            // Voiceprint commands
+            database::voiceprint_list,
+            database::voiceprint_update,
+            database::voiceprint_delete,
+            database::voiceprint_merge,
+            database::voiceprint_match,
+            database::voiceprint_passive_learn,
             http_fetch,
             open_url,
             reveal_file,

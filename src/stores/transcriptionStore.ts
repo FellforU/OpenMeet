@@ -58,6 +58,7 @@ interface TranscriptionStore {
   setPlaybackSpeed: (speed: number) => void;
   updateSegmentText: (id: string, text: string) => void;
   updateSegmentSpeaker: (oldName: string, newName: string) => void;
+  assignSegmentVoiceprint: (segmentId: string, voiceprintId: string, name: string) => void;
   setSummary: (summary: Summary | null) => void;
   toggleActionItem: (index: number) => void;
   setPipelineStep: (step: PipelineStep) => void;
@@ -417,6 +418,14 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
     set({
       segments: get().segments.map((s) =>
         s.speaker === oldName ? { ...s, speaker: newName } : s
+      ),
+    });
+  },
+
+  assignSegmentVoiceprint: (segmentId, voiceprintId, name) => {
+    set({
+      segments: get().segments.map((s) =>
+        s.id === segmentId ? { ...s, voiceprintId, speaker: name } : s
       ),
     });
   },

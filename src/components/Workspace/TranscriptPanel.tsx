@@ -34,6 +34,7 @@ export function TranscriptPanel() {
   const highlightSegmentTime = useTranscriptionStore((s) => s.highlightSegmentTime);
   const clearHighlight = useTranscriptionStore((s) => s.clearHighlight);
   const updateSegmentSpeaker = useTranscriptionStore((s) => s.updateSegmentSpeaker);
+  const assignSegmentVoiceprint = useTranscriptionStore((s) => s.assignSegmentVoiceprint);
 
   const isRecording = useRecordingStore((s) => s.status === "recording");
 
@@ -283,6 +284,7 @@ export function TranscriptPanel() {
                 showSpeakerHeader={showHeader}
                 speakerTimeRange={showHeader ? speakerRanges.get(i) : undefined}
                 onRenameSpeaker={updateSegmentSpeaker}
+                onAssignVoiceprint={assignSegmentVoiceprint}
               />
             </div>
           );

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
-import { Settings, BrainCircuit, Mic, Info, FolderOpen, Loader2, BookOpenText } from "lucide-react";
+import { Settings, BrainCircuit, Mic, Info, FolderOpen, Loader2, BookOpenText, AudioWaveform } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -35,6 +35,7 @@ import { ModelManager } from "./ModelManager";
 import { KnowledgeSettings } from "./KnowledgeSettings";
 import { LLMProviderTab } from "./LLMProviderTab";
 import { SystemModelSelector } from "./SystemModelSelector";
+import { VoiceprintList } from "../VoiceprintLibrary/VoiceprintList";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { restartAsrService } from "../../services/asrClient";
 import logoWithText from "../../../ico/OpenMeet_1.png";
@@ -254,6 +255,31 @@ function GeneralSettings() {
         )}
       </div>
 
+      {/* Voiceprint Matching Threshold */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium">
+          {t("general.diarizationThreshold")}
+        </label>
+        <p className="text-xs text-muted-foreground">
+          {t("general.diarizationThresholdDesc")}
+        </p>
+        <div className="flex items-center gap-3">
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={Math.round(general.diarizationThreshold * 100)}
+            onChange={(e) =>
+              setGeneral({ diarizationThreshold: Number(e.target.value) / 100 })
+            }
+            className="flex-1"
+          />
+          <span className="w-12 text-right text-sm font-mono">
+            {Math.round(general.diarizationThreshold * 100)}%
+          </span>
+        </div>
+      </div>
+
       {/* Migration Confirm Dialog */}
       <AlertDialog open={migrateOpen} onOpenChange={setMigrateOpen}>
         <AlertDialogContent>
@@ -336,6 +362,10 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
               <Mic className="h-3.5 w-3.5" />
               {t("tabs.asrModels")}
             </TabsTrigger>
+            <TabsTrigger value="voiceprint" className="gap-1.5">
+              <AudioWaveform className="h-3.5 w-3.5" />
+              {t("tabs.voiceprint")}
+            </TabsTrigger>
             <TabsTrigger value="knowledge" className="gap-1.5">
               <BookOpenText className="h-3.5 w-3.5" />
               {t("tabs.knowledge")}
@@ -354,6 +384,9 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps) {
             </TabsContent>
             <TabsContent value="asr" className="max-h-[480px] overflow-y-auto">
               <ModelManager />
+            </TabsContent>
+            <TabsContent value="voiceprint" className="max-h-[480px] overflow-y-auto">
+              <VoiceprintList />
             </TabsContent>
             <TabsContent value="knowledge" className="max-h-[480px] overflow-y-auto">
               <KnowledgeSettings />

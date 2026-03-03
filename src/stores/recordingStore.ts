@@ -10,7 +10,7 @@ import { useProjectStore } from "./projectStore";
 import { useSettingsStore } from "./settingsStore";
 import { tauriFetch } from "../services/httpProxy";
 import { generateMeetingTitle, generateMeetingSummary } from "../services/llmClient";
-import type { Segment } from "../types";
+import type { Segment, VoiceprintMatchResult } from "../types";
 
 type RecordingStatus = "idle" | "recording" | "paused";
 type ProcessingStep =
@@ -358,13 +358,12 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
       }
     }
 
-    // Run post-processing (ITN + punctuation + speaker diarization) if we have a job and audio
+    // Run post-processing (ITN + punctuation + speaker diarization + voiceprint matching)
     const currentSessionSegmentCount = segments.length - capturedSegmentCountAtStart;
     if (capturedJobId && audioPath && currentSessionSegmentCount > 0) {
       set({ processingStep: "diarizing" });
       try {
         await api.postProcessJob(capturedJobId, audioPath);
-        // Fetch updated segments with speaker labels
         const result = await tauriFetch(
           `http://127.0.0.1:18090/jobs/${capturedJobId}/result`,
           { method: "GET" }
@@ -381,12 +380,34 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
               confidence: s.confidence || null,
             })
           );
+
+          // Voiceprint matching: pass embeddings to Rust for library comparison
+          const embeddings: (number[] | null)[] = data.embeddings || [];
+          if (embeddings.length > 0) {
+            try {
+              const threshold = useSettingsStore.getState().general.diarizationThreshold;
+              const matchResult = await invoke<VoiceprintMatchResult>(
+                "voiceprint_match",
+                { embeddings, threshold }
+              );
+              for (let i = 0; i < postProcessedSegments.length; i++) {
+                if (matchResult.assignments[i]) {
+                  postProcessedSegments[i].voiceprintId = matchResult.assignments[i];
+                }
+                if (matchResult.speaker_names[i]) {
+                  postProcessedSegments[i].speaker = matchResult.speaker_names[i];
+                }
+              }
+            } catch {
+              // Voiceprint matching failure is non-fatal
+            }
+          }
+
           // Merge: keep pre-existing segments, replace only current session's portion
           const allSegments = useTranscriptionStore.getState().segments;
           const previousSegments = allSegments.slice(0, capturedSegmentCountAtStart);
           const mergedSegments = [...previousSegments, ...postProcessedSegments];
           useTranscriptionStore.getState().setSegments(mergedSegments);
-          // Re-persist updated segments with speaker labels
           if (activeProjectId) {
             await useTranscriptionStore.getState().persistSegments(activeProjectId);
           }

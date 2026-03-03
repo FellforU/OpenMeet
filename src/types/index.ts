@@ -17,6 +17,7 @@ export interface Segment {
   text: string;
   speaker: string | null;
   confidence: number | null;
+  voiceprintId?: string | null;
 }
 
 export interface Summary {
@@ -45,3 +46,35 @@ export type PipelineStep =
   | "diarizing"
   | "summarizing"
   | null;
+
+export interface VoiceprintInfo {
+  id: string;
+  name: string;
+  nickname: string;
+  email: string;
+  department: string;
+  title: string;
+  note: string;
+  avatarPath: string | null;
+  sampleCount: number;
+  modelVersion: string;
+  createdAt: string;
+  updatedAt: string;
+  lastSeenAt: string | null;
+}
+
+export interface VoiceprintMetadata {
+  name?: string;
+  nickname?: string;
+  email?: string;
+  department?: string;
+  title?: string;
+  note?: string;
+  avatarPath?: string;
+}
+
+export interface VoiceprintMatchResult {
+  assignments: (string | null)[];
+  speaker_names: (string | null)[];
+  new_voiceprint_ids: string[];
+}

@@ -95,6 +95,11 @@
     "empty": "生成摘要后将显示思维导图",
     "exportXmind": "导出 XMind"
   },
+  "voiceprint": {
+    "searchPlaceholder": "搜索音色或输入新名字...",
+    "noMatch": "未找到匹配的音色",
+    "renameAs": "重命名为「{{name}}」"
+  },
   "chat": {
     "title": "AI 助手",
     "currentProject": "当前会议",

@@ -10,6 +10,7 @@ from typing import Optional
 
 from asr_service.models.job import TranscriptionJob, JobStatus, Segment
 from asr_service.processors.factory import create_pipeline
+from asr_service.processors.diarization.factory import create_embedding_extractor
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,19 @@ class PostProcessingPipeline:
             segments = await self._run_diarization(job.audio_path, segments, language)
         except Exception as e:
             logger.warning("Diarization step failed: %s", e)
+
+        # Step 4: Extract speaker embeddings for voiceprint matching
+        if job.audio_path:
+            try:
+                extractor = create_embedding_extractor()
+                job.embeddings = await extractor.extract_embeddings(
+                    job.audio_path, segments
+                )
+            except Exception as e:
+                logger.warning("Embedding extraction failed: %s", e)
+                job.embeddings = []
+        else:
+            job.embeddings = []
 
         job.segments = segments
         job.status = JobStatus.READY

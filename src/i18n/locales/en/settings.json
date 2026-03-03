@@ -5,7 +5,8 @@
     "llmModels": "LLM Models",
     "asrModels": "ASR Models",
     "knowledge": "Knowledge",
-    "about": "About"
+    "about": "About",
+    "voiceprint": "Voiceprints"
   },
   "general": {
     "autoSummary": "Auto-generate summary",
@@ -38,7 +39,9 @@
     "migrateSuccess": "Migration complete",
     "migrateFailed": "Migration failed: {{error}}",
     "hfMirror": "Enable HuggingFace Mirror",
-    "hfMirrorDesc": "Use a mirror URL to download models for regions with limited HuggingFace access"
+    "hfMirrorDesc": "Use a mirror URL to download models for regions with limited HuggingFace access",
+    "diarizationThreshold": "Speaker Identification Threshold",
+    "diarizationThresholdDesc": "Voiceprint matching similarity threshold, higher is stricter (recommended 65%)"
   },
   "llm": {
     "title": "LLM Provider Configuration",
@@ -155,6 +158,31 @@
     "subtitle": "Configure Embedding and Rerank models for knowledge retrieval and Q&A",
     "enableRerank": "Enable Rerank",
     "enableRerankDesc": "Rerank search results before sending to LLM for improved answer quality"
+  },
+  "voiceprint": {
+    "title": "Voiceprint Library",
+    "subtitle": "Manage identified speaker voiceprint profiles",
+    "empty": "No voiceprints yet. They will be created automatically after recording meetings.",
+    "loading": "Loading...",
+    "name": "Name",
+    "namePlaceholder": "Enter speaker name",
+    "nickname": "Nickname",
+    "email": "Email",
+    "department": "Department",
+    "titleField": "Title",
+    "note": "Note",
+    "samples": "Samples",
+    "lastSeen": "Last seen",
+    "unnamed": "Unnamed",
+    "editTitle": "Edit Voiceprint",
+    "merge": "Merge Selected",
+    "mergeSuccess": "Voiceprints merged successfully",
+    "mergeFailed": "Voiceprint merge failed",
+    "deleteConfirmTitle": "Delete Voiceprint",
+    "deleteConfirmDesc": "After deletion, associated transcript segments will keep their text labels but will no longer be linked to this voiceprint. Are you sure?",
+    "deleteSuccess": "Voiceprint deleted",
+    "deleteFailed": "Delete failed",
+    "updateSuccess": "Voiceprint updated"
   },
   "about": {
     "description": "Local-first AI meeting transcription tool. Built with Tauri 2.x, React 19, FastAPI, Ollama.",
