@@ -188,11 +188,6 @@ fn start_mixed_capture(
                 mic_samples
             };
 
-            // WS buffer: mic only (mono) for better ASR accuracy
-            if !mic_mono.is_empty() {
-                ws_buffer.push_samples(&mic_mono);
-            }
-
             // Step 1: Down-mix system audio from multi-channel to mono
             let sys_mono: Vec<i16> = if sys_ch > 1 {
                 sys_samples
@@ -219,6 +214,18 @@ fn start_mixed_capture(
             } else {
                 sys_mono
             };
+
+            // WS buffer: send mic + system mixed to mono for ASR
+            let ws_len = mic_mono.len().max(sys_resampled.len());
+            if ws_len > 0 {
+                let mut ws_mixed = Vec::with_capacity(ws_len);
+                for i in 0..ws_len {
+                    let m = mic_mono.get(i).copied().unwrap_or(0) as i32;
+                    let s = sys_resampled.get(i).copied().unwrap_or(0) as i32;
+                    ws_mixed.push(((m + s) / 2) as i16);
+                }
+                ws_buffer.push_samples(&ws_mixed);
+            }
 
             // Step 3: Interleave [mic, sys] into stereo at mic sample rate (no attenuation)
             let len = mic_mono.len().max(sys_resampled.len());
