@@ -279,8 +279,10 @@ function VendorConfigModal({
                       <Loader2 className="h-3 w-3 animate-spin" />
                       <span>
                         {t("common:downloadPhase.downloading")}
-                        {downloadState.modelName && (
-                          <span className="ml-1 font-medium">{downloadState.modelName}</span>
+                        {downloadState.elapsedSeconds > 0 && downloadState.downloadedBytes > 0 && (
+                          <span className="ml-1 font-medium">
+                            {formatBytes(downloadState.downloadedBytes / downloadState.elapsedSeconds)}/s
+                          </span>
                         )}
                       </span>
                       <span className="text-muted-foreground">
