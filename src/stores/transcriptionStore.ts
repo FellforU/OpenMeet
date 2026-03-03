@@ -104,6 +104,7 @@ function segmentToRust(s: Segment) {
     text: s.text,
     speaker: s.speaker,
     confidence: s.confidence,
+    voiceprint_id: s.voiceprintId ?? null,
   };
 }
 
@@ -481,6 +482,7 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
         text: string;
         speaker: string | null;
         confidence: number | null;
+        voiceprint_id: string | null;
       }>
     >("db_get_segments", { projectId });
     const segments: Segment[] = rawSegments.map((s) => ({
@@ -490,6 +492,7 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
       text: s.text,
       speaker: s.speaker,
       confidence: s.confidence,
+      voiceprintId: s.voiceprint_id,
     }));
 
     // Load summary from SQLite

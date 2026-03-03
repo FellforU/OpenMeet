@@ -825,6 +825,7 @@ pub fn get_app_data_dir(app: AppHandle) -> Result<String, String> {
 // ---------------------------------------------------------------------------
 
 #[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct VoiceprintInfo {
     pub id: String,
     pub name: String,
@@ -842,6 +843,7 @@ pub struct VoiceprintInfo {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VoiceprintMetadata {
     pub name: Option<String>,
     pub nickname: Option<String>,
@@ -853,6 +855,7 @@ pub struct VoiceprintMetadata {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VoiceprintMatchResult {
     pub assignments: Vec<Option<String>>,
     pub speaker_names: Vec<Option<String>>,
@@ -936,13 +939,15 @@ pub fn voiceprint_update(
 #[tauri::command]
 pub fn voiceprint_delete(state: State<DatabaseState>, id: String) -> Result<(), String> {
     let conn = state.conn.lock().map_err(|e| e.to_string())?;
-    conn.execute(
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    tx.execute(
         "UPDATE segments SET voiceprint_id = NULL WHERE voiceprint_id = ?1",
         params![id],
     )
     .map_err(|e| e.to_string())?;
-    conn.execute("DELETE FROM voiceprints WHERE id = ?1", params![id])
+    tx.execute("DELETE FROM voiceprints WHERE id = ?1", params![id])
         .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -1096,17 +1101,18 @@ pub fn voiceprint_match(
         }
     }
 
-    // 5. Update last_seen_at for matched voiceprints
-    for assignment in &assignments {
-        if let Some(vp_id) = assignment {
-            if !new_ids.contains(vp_id) {
-                tx.execute(
-                    "UPDATE voiceprints SET last_seen_at = ?1 WHERE id = ?2",
-                    params![now, vp_id],
-                )
-                .ok();
-            }
-        }
+    // 5. Update last_seen_at for matched voiceprints (deduplicated)
+    let matched_ids: std::collections::HashSet<&String> = assignments
+        .iter()
+        .filter_map(|a| a.as_ref())
+        .filter(|id| !new_ids.contains(id))
+        .collect();
+    for vp_id in &matched_ids {
+        tx.execute(
+            "UPDATE voiceprints SET last_seen_at = ?1 WHERE id = ?2",
+            params![now, vp_id],
+        )
+        .ok();
     }
 
     tx.commit().map_err(|e| e.to_string())?;
@@ -1261,6 +1267,9 @@ fn f32_vec_to_blob(v: &[f32]) -> Vec<u8> {
 }
 
 fn weighted_average_embeddings(a: &[u8], count_a: i32, b: &[u8], count_b: i32) -> Vec<u8> {
+    if a.len() != b.len() || a.len() % 4 != 0 {
+        return a.to_vec();
+    }
     let dim = a.len() / 4;
     let total = (count_a + count_b) as f32;
     let wa = count_a as f32 / total;
@@ -1286,6 +1295,9 @@ fn weighted_average_embeddings(a: &[u8], count_a: i32, b: &[u8], count_b: i32) -
 
 fn blend_embeddings(old_blob: &[u8], new_emb: &[f32], w_old: f32, w_new: f32) -> Vec<u8> {
     let dim = new_emb.len();
+    if old_blob.len() != dim * 4 {
+        return f32_vec_to_blob(new_emb);
+    }
     let mut floats = Vec::with_capacity(dim);
     let mut norm_sq: f32 = 0.0;
 

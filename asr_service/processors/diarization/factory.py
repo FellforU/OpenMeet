@@ -18,6 +18,12 @@ def create_diarizer(language: str):
     return PyAnnoteDiarizer()
 
 
+_cached_embedding_extractor: EcapaTdnnExtractor | None = None
+
+
 def create_embedding_extractor():
-    """Create the ECAPA-TDNN embedding extractor (language-independent)."""
-    return EcapaTdnnExtractor()
+    """Get or create the cached ECAPA-TDNN embedding extractor."""
+    global _cached_embedding_extractor
+    if _cached_embedding_extractor is None:
+        _cached_embedding_extractor = EcapaTdnnExtractor()
+    return _cached_embedding_extractor
