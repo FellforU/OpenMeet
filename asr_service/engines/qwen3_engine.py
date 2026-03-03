@@ -57,13 +57,15 @@ class Qwen3Engine:
 
     SUPPORTED_SIZES = list(MODEL_MAP.keys())
     ESTIMATED_SIZES: dict[str, int] = {
-        "qwen3-asr-0.6B": 1_200_000_000,
-        "qwen3-asr-1.7B": 3_500_000_000,
+        "qwen3-asr-0.6B": 1_240_000_000,  # ~1.24 GB (实际下载大小)
+        "qwen3-asr-1.7B": 3_500_000_000,   # ~3.5 GB (估算值)
     }
 
     def __init__(self):
         self._model = None
         self._model_size: Optional[str] = None
+        # Cache for actual model sizes fetched from HuggingFace
+        self._actual_sizes: dict[str, int] = {}
 
     async def get_capabilities(self) -> EngineCapabilities:
         return EngineCapabilities(
@@ -193,8 +195,35 @@ class Qwen3Engine:
             return str(cache_dir)
         return None
 
+    def _fetch_actual_model_size(self, model_size: str) -> int:
+        """Fetch actual model size from HuggingFace API."""
+        import os
+        from huggingface_hub import HfApi
+
+        model_id = MODEL_MAP[model_size]
+        try:
+            hf_endpoint = os.environ.get("HF_ENDPOINT", "https://huggingface.co")
+            # Remove trailing slash if present
+            if hf_endpoint.endswith("/"):
+                hf_endpoint = hf_endpoint[:-1]
+
+            api = HfApi(endpoint=hf_endpoint)
+            info = api.model_info(model_id, token=False)
+            total = 0
+            for sibling in info.siblings:
+                if sibling.size:
+                    total += sibling.size
+            self._actual_sizes[model_size] = total
+            return total
+        except Exception:
+            # Fall back to estimated size if fetch fails
+            return self.ESTIMATED_SIZES.get(model_size, 0)
+
     def estimated_size_bytes(self, model_size: str) -> int:
         """Return estimated download size in bytes."""
+        # Use cached actual size if available
+        if model_size in self._actual_sizes:
+            return self._actual_sizes[model_size]
         return self.ESTIMATED_SIZES.get(model_size, 0)
 
     def get_download_dir(self, model_size: str) -> str | None:
@@ -212,11 +241,41 @@ class Qwen3Engine:
         model_id = MODEL_MAP[model_size]
         cache_dir = str(_get_hf_cache())
 
+        import logging
+        import os
+
+        logger = logging.getLogger(__name__)
+
+        # Enable huggingface_hub progress bars
+        os.environ["HF_HUB_ENABLE_PROGRESS_BARS"] = "1"
+
+        # Show which endpoint is being used
+        hf_endpoint = os.environ.get("HF_ENDPOINT", "https://huggingface.co")
+        # Ensure endpoint ends with /
+        if not hf_endpoint.endswith("/"):
+            hf_endpoint += "/"
+
+        # Fetch actual model size from HuggingFace API
+        actual_size = await asyncio.to_thread(self._fetch_actual_model_size, model_size)
+        logger.info("模型实际大小: %s", f"{actual_size / 1_000_000_000:.2f} GB")
+
+        logger.info("=== 开始下载模型 ===")
+        logger.info("模型ID: %s", model_id)
+        logger.info("下载地址: %s", hf_endpoint)
+        logger.info("缓存目录: %s", cache_dir)
+        logger.info("提示: 如果下载缓慢，请在设置中启用 HuggingFace 镜像 (hf-mirror.com)")
+
         def _download():
             from huggingface_hub import snapshot_download
-            return snapshot_download(model_id, cache_dir=cache_dir)
+
+            return snapshot_download(
+                model_id,
+                cache_dir=cache_dir,
+                endpoint=hf_endpoint,
+            )
 
         path = await asyncio.to_thread(_download)
+        logger.info("模型下载完成: %s", path)
         return str(path)
 
     async def transcribe(

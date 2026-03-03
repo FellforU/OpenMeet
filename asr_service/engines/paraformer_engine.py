@@ -34,9 +34,9 @@ def _ensure_automodel():
 
 # Map model sizes to ModelScope model IDs or local paths
 MODEL_MAP = {
-    "paraformer-large": "iic/speech_paraformer-large_asr_nat-zh-cn-16k-common",
+    "paraformer-large": "iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch",
     "paraformer-large-vad-punc": "iic/speech_paraformer-large-vad-punc_asr_nat-zh-cn-16k-common-vocab8404-pytorch",
-    "paraformer-large-vad-punc-spk": "iic/speech_paraformer-large-vad-punc-spk_asr_nat-zh-cn",
+    "paraformer-large-vad-punc-spk": "iic/speech_paraformer-large-vad-punc-spk_asr_nat-zh-cn-16k-common-vocab8404-pytorch",
     "paraformer-online": "iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-online",
 }
 
@@ -57,9 +57,9 @@ SUB_MODEL_DEPS: dict[str, dict[str, str]] = {
 
 # Local model directory mapping (from meeting/models/)
 LOCAL_MODEL_DIRS = {
-    "paraformer-large": "speech_paraformer-large_asr_nat-zh-cn-16k-common",
+    "paraformer-large": "speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch",
     "paraformer-large-vad-punc": "speech_paraformer-large-vad-punc_asr_nat-zh-cn-16k-common-vocab8404-pytorch",
-    "paraformer-large-vad-punc-spk": "speech_paraformer-large-vad-punc-spk_asr_nat-zh-cn",
+    "paraformer-large-vad-punc-spk": "speech_paraformer-large-vad-punc-spk_asr_nat-zh-cn-16k-common-vocab8404-pytorch",
     "paraformer-online": "speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-online",
 }
 
@@ -79,6 +79,8 @@ class ParaformerEngine:
     def __init__(self):
         self._model = None
         self._model_size: Optional[str] = None
+        # Cache for actual model sizes fetched from ModelScope
+        self._actual_sizes: dict[str, int] = {}
 
     def _get_modelscope_cache(self) -> Path:
         """Return the ModelScope cache directory, respecting runtime config and env vars."""
@@ -243,8 +245,43 @@ class ParaformerEngine:
                 return str(cache_dir)
         return None
 
+    def _fetch_actual_model_size(self, model_size: str) -> int:
+        """Fetch actual model size from ModelScope API."""
+        from modelscope import HubApi
+
+        model_id = MODEL_MAP[model_size]
+        try:
+            api = HubApi()
+            model_info = api.get_model(model_id)
+            total = 0
+            # Model info may contain file sizes in different formats
+            # Try to get size from model info
+            if hasattr(model_info, 'size') and model_info.size:
+                total = model_info.size
+            elif isinstance(model_info, dict) and 'size' in model_info:
+                total = model_info['size']
+            # If size not available, try to get from files
+            else:
+                # Fallback: try to get model files info
+                try:
+                    files_info = api.list_model_files(model_id)
+                    for file_info in files_info.get('Data', {}).get('Files', []):
+                        if 'Size' in file_info:
+                            total += file_info['Size']
+                except Exception:
+                    pass
+
+            self._actual_sizes[model_size] = total
+            return total
+        except Exception:
+            # Fall back to estimated size if fetch fails
+            return self.ESTIMATED_SIZES.get(model_size, 0)
+
     def estimated_size_bytes(self, model_size: str) -> int:
         """Return estimated download size in bytes."""
+        # Use cached actual size if available
+        if model_size in self._actual_sizes:
+            return self._actual_sizes[model_size]
         return self.ESTIMATED_SIZES.get(model_size, 0)
 
     def get_download_dir(self, model_size: str) -> str | None:
@@ -271,14 +308,55 @@ class ParaformerEngine:
         sub_deps = SUB_MODEL_DEPS.get(model_size, {})
         cache_dir = str(self._get_modelscope_cache())
 
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.info("=== 开始下载 Paraformer 模型 ===")
+        logger.info("模型ID: %s", model_id)
+        logger.info("缓存目录: %s", cache_dir)
+        if sub_deps:
+            logger.info("子模型: %s", list(sub_deps.keys()))
+
+        # Fetch actual model size
+        actual_size = await asyncio.to_thread(self._fetch_actual_model_size, model_size)
+        logger.info("模型实际大小: %s", f"{actual_size / 1_000_000_000:.2f} GB")
+
         def _download():
-            from modelscope.hub.snapshot_download import snapshot_download
-            # Download main model
-            path = snapshot_download(model_id, cache_dir=cache_dir)
-            # Download required sub-models (VAD, punctuation, speaker)
-            for sub_id in sub_deps.values():
-                snapshot_download(sub_id, cache_dir=cache_dir)
-            return path
+            from modelscope import snapshot_download
+
+            # Check for ModelScope endpoint env var (similar to HF_ENDPOINT)
+            # ModelScope may not support this directly, but we'll prepare for it
+            modelscope_endpoint = os.environ.get("MODELSCOPE_ENDPOINT")
+            if modelscope_endpoint:
+                logger.info("使用 ModelScope 端点: %s", modelscope_endpoint)
+
+            # ModelScope SDK doesn't support progress_callback like huggingface_hub
+            # It has built-in progress bar shown in console
+
+            try:
+                # Download main model
+                logger.info("正在下载主模型: %s", model_id)
+                path = snapshot_download(
+                    model_id,
+                    cache_dir=cache_dir
+                )
+                logger.info("主模型下载完成: %s", path)
+
+                # Download required sub-models (VAD, punctuation, speaker)
+                for key, sub_id in sub_deps.items():
+                    logger.info("正在下载子模型 (%s): %s", key, sub_id)
+                    snapshot_download(sub_id, cache_dir=cache_dir)
+                    logger.info("子模型下载完成: %s", sub_id)
+
+                return path
+            except Exception as e:
+                logger.error("模型下载失败: %s", e)
+                raise RuntimeError(
+                    f"下载模型失败: {e}\n"
+                    f"模型ID: {model_id}\n"
+                    f"请检查网络连接，或手动从 ModelScope 下载模型:\n"
+                    f"https://www.modelscope.cn/models/{model_id}"
+                ) from e
 
         return await asyncio.to_thread(_download)
 

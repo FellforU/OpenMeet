@@ -1,4 +1,12 @@
 from contextlib import asynccontextmanager
+import logging
+
+# Configure logging to show INFO level messages
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler()]
+)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

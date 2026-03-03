@@ -209,8 +209,27 @@ async def _do_load_model(engine_name: str, engine, model_size: str):
 async def _do_download_model(engine_name: str, engine, model_size: str):
     """Background task to download model files."""
     status = _download_status[engine_name]
+
+    # Background task to update download progress periodically
+    async def _update_progress():
+        try:
+            while status["phase"] == DownloadPhase.DOWNLOADING:
+                if hasattr(engine, "get_download_dir"):
+                    dl_dir = engine.get_download_dir(model_size)
+                    if dl_dir:
+                        status["downloaded_bytes"] = _dir_size(dl_dir)
+                await asyncio.sleep(0.5)  # Update every 0.5 seconds
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.warning("Progress update error: %s", e)
+
+    progress_task = None
     try:
         status["phase"] = DownloadPhase.DOWNLOADING
+        # Start progress updater in background
+        progress_task = asyncio.create_task(_update_progress())
+        # Download model (blocking call)
         await engine.download_model(model_size)
         status["phase"] = DownloadPhase.COMPLETED
     except Exception as e:
@@ -218,6 +237,9 @@ async def _do_download_model(engine_name: str, engine, model_size: str):
         status["error"] = str(e)
         logger.error("Failed to download model %s/%s: %s", engine_name, model_size, e)
     finally:
+        # Cancel progress updater and cleanup
+        if progress_task and not progress_task.done():
+            progress_task.cancel()
         _download_tasks.pop(engine_name, None)
 
 
@@ -419,6 +441,7 @@ async def download_engine_model(
         "model_size": model_size,
         "phase": DownloadPhase.DOWNLOADING,
         "started_at": time.time(),
+        "downloaded_bytes": 0,
         "error": None,
     }
     task = asyncio.create_task(_do_download_model(engine_name, engine, model_size))
@@ -449,6 +472,7 @@ async def cancel_download(engine_name: str):
     status = _download_status.get(engine_name)
     if status and status["phase"] == DownloadPhase.DOWNLOADING:
         status["phase"] = DownloadPhase.IDLE
+        status["downloaded_bytes"] = 0
         status["error"] = None
 
     started_at = status.get("started_at") if status else None
