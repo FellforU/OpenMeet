@@ -10,6 +10,7 @@ from asr_service.engines.qwen3_engine import Qwen3Engine
 from asr_service.engines.paraformer_engine import ParaformerEngine
 from asr_service.engines.openai_api_engine import OpenAIWhisperEngine
 from asr_service.engines.alibaba_asr_engine import AlibabaASREngine
+from asr_service.engines.custom_engine import CustomEngine
 from asr_service.processors.audio_preprocessor import preprocess_audio
 from asr_service.services.post_processing import PostProcessingPipeline
 
@@ -27,6 +28,7 @@ class JobManager:
             "paraformer": ParaformerEngine(),
             "openai-whisper": OpenAIWhisperEngine(),
             "alibaba-asr": AlibabaASREngine(),
+            "custom": CustomEngine(),
         }
         self._running_tasks: dict[str, asyncio.Task] = {}
 

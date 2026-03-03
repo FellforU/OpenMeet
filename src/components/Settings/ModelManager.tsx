@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Download, Trash2, Loader2, Settings as SettingsIcon, Play, CheckCircle2, FolderOpen, XCircle } from "lucide-react";
+import { Download, Trash2, Loader2, Settings as SettingsIcon, Play, CheckCircle2, FolderOpen, XCircle, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
@@ -16,6 +16,7 @@ import { useEngineStore } from "../../stores/engineStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { ProviderCard } from "./ProviderCard";
 import { ProviderConfigModal } from "./ProviderConfigModal";
+import { CustomModelDialog } from "./CustomModelDialog";
 import * as api from "../../services/asrClient";
 
 import openaiSvg from "@lobehub/icons-static-svg/icons/openai.svg";
@@ -372,11 +373,12 @@ export function ModelManager() {
     clearLoadingState,
     clearDownloadState,
   } = useEngineStore();
-  const { cloudAsr, setCloudAsr, autoDegradation, setAutoDegradation } =
+  const { general, cloudAsr, setCloudAsr, autoDegradation, setAutoDegradation } =
     useSettingsStore();
   const [unloadingKey, setUnloadingKey] = useState<string | null>(null);
   const [configuringVendor, setConfiguringVendor] = useState<string | null>(null);
   const [configuringAsr, setConfiguringAsr] = useState<string | null>(null);
+  const [showCustomDialog, setShowCustomDialog] = useState(false);
 
   useEffect(() => {
     fetchEngines();
@@ -596,6 +598,51 @@ export function ModelManager() {
         })}
       </div>
 
+      {/* Custom model card */}
+      <div className="grid gap-2">
+        <div
+          className="flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-border p-3 transition-colors hover:bg-accent/50"
+          onClick={() => setShowCustomDialog(true)}
+        >
+          <div
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
+            style={{ backgroundColor: "#7C3AED10" }}
+          >
+            <Plus className="h-5 w-5 text-purple-600" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="font-medium">
+                {t("asr.custom.cardTitle")}
+              </span>
+              <Badge variant="secondary" className="gap-1 text-[10px]">
+                {t("llm.local")}
+              </Badge>
+              {(general.customASRModels?.length ?? 0) > 0 && (
+                <Badge variant="outline" className="gap-1 border-blue-300 text-[10px] text-blue-600">
+                  <CheckCircle2 className="h-2.5 w-2.5" />
+                  {general.customASRModels.length}
+                </Badge>
+              )}
+            </div>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              {t("asr.custom.cardDesc")}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowCustomDialog(true);
+            }}
+          >
+            <SettingsIcon className="mr-1.5 h-3.5 w-3.5" />
+            {t("llm.configureBtn")}
+          </Button>
+        </div>
+      </div>
+
       {/* Cloud ASR cards */}
       <div className="space-y-3 border-t pt-4">
         <div>
@@ -674,6 +721,12 @@ export function ModelManager() {
           onSave={handleCloudSave}
         />
       )}
+
+      {/* Custom model dialog */}
+      <CustomModelDialog
+        open={showCustomDialog}
+        onClose={() => setShowCustomDialog(false)}
+      />
     </div>
   );
 }

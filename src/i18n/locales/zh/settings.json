@@ -133,7 +133,22 @@
     "loadCancelled": "模型加载已取消",
     "notDownloaded": "请先下载模型",
     "activate": "加载",
-    "activateDesc": "设为默认并加载到内存"
+    "activateDesc": "设为默认并加载到内存",
+    "custom": {
+      "cardTitle": "自定义模型",
+      "cardDesc": "添加 HuggingFace / ModelScope 上的 ASR 模型",
+      "title": "自定义模型管理",
+      "subtitle": "添加和管理来自 HuggingFace / ModelScope 的自定义 ASR 模型",
+      "empty": "暂无自定义模型，点击下方按钮添加",
+      "addModel": "添加模型",
+      "platform": "平台",
+      "modelId": "模型 ID",
+      "mirror": "镜像地址",
+      "validate": "验证",
+      "validateFailed": "模型验证失败",
+      "add": "添加",
+      "addSuccess": "模型添加成功"
+    }
   },
   "knowledge": {
     "title": "知识库配置",

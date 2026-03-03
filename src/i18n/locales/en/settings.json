@@ -133,7 +133,22 @@
     "loadCancelled": "Model load cancelled",
     "notDownloaded": "Please download the model first",
     "activate": "Load",
-    "activateDesc": "Set as default and load into memory"
+    "activateDesc": "Set as default and load into memory",
+    "custom": {
+      "cardTitle": "Custom Models",
+      "cardDesc": "Add ASR models from HuggingFace / ModelScope",
+      "title": "Custom Model Manager",
+      "subtitle": "Add and manage custom ASR models from HuggingFace / ModelScope",
+      "empty": "No custom models yet. Click the button below to add one.",
+      "addModel": "Add Model",
+      "platform": "Platform",
+      "modelId": "Model ID",
+      "mirror": "Mirror URL",
+      "validate": "Validate",
+      "validateFailed": "Model validation failed",
+      "add": "Add",
+      "addSuccess": "Model added successfully"
+    }
   },
   "knowledge": {
     "title": "Knowledge Base",

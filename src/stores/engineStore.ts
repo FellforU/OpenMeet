@@ -50,10 +50,11 @@ interface EngineStore {
 const _pollTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 const _downloadPollTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 
-// All engine keys: local + cloud
+// All engine keys: local + cloud + custom
 export const ENGINE_KEYS = [
   "whisper", "qwen3", "paraformer",
   "openai-whisper", "alibaba-asr",
+  "custom",
 ] as const;
 
 export const CLOUD_ENGINES = new Set(["openai-whisper", "alibaba-asr"]);
@@ -65,6 +66,7 @@ export const FALLBACK_MODEL_SIZES: Record<string, string[]> = {
   paraformer: ["paraformer-large", "paraformer-large-vad-punc", "paraformer-large-vad-punc-spk"],
   "openai-whisper": ["whisper-1"],
   "alibaba-asr": ["paraformer-v2"],
+  custom: [],  // populated dynamically from settingsStore.customASRModels
 };
 
 /** Check if a cloud engine has its API credentials configured (accepts cloudAsr for reactivity) */

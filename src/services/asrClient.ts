@@ -237,6 +237,50 @@ export async function cancelDownload(
   );
 }
 
+// --- Custom Model API ---
+
+export interface CustomModelPayload {
+  id: string;
+  name: string;
+  platform: string;
+  model_id: string;
+  mirror_url?: string | null;
+  vram_gb: number;
+}
+
+export interface ValidateCustomModelParams {
+  platform: string;
+  model_id: string;
+  mirror_url?: string | null;
+}
+
+export interface ValidateCustomModelResponse {
+  valid: boolean;
+  error?: string | null;
+  model_name?: string | null;
+  tags?: string[] | null;
+}
+
+export async function pushCustomModels(
+  models: CustomModelPayload[]
+): Promise<{ status: string; count: number }> {
+  return fetchJson(`${ASR_BASE_URL}/custom/models`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ models }),
+  });
+}
+
+export async function validateCustomModel(
+  params: ValidateCustomModelParams
+): Promise<ValidateCustomModelResponse> {
+  return fetchJson(`${ASR_BASE_URL}/custom/validate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+}
+
 // --- Model Path API ---
 
 export interface ModelPathResponse {

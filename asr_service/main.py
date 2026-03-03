@@ -16,6 +16,7 @@ from asr_service.routers import config as config_router
 from asr_service.routers import index as index_router
 from asr_service.routers import mcp as mcp_router
 from asr_service.routers import chat as chat_router
+from asr_service.routers import custom as custom_router
 from asr_service.job_manager import JobManager
 from asr_service.knowledge.embedder import Embedder
 from asr_service.knowledge.vector_store import VectorStore
@@ -99,6 +100,7 @@ async def lifespan(app: FastAPI):
     engines.set_manager(manager)
     stream.set_manager(manager)
     search.set_manager(manager)
+    custom_router.set_engine(manager._engines["custom"])
     yield
     # Shutdown: cleanup
     await _ollama.close()
@@ -127,6 +129,7 @@ app.include_router(config_router.router)
 app.include_router(index_router.router)
 app.include_router(mcp_router.router)
 app.include_router(chat_router.router)
+app.include_router(custom_router.router)
 
 
 if __name__ == "__main__":

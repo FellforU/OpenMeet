@@ -15,7 +15,7 @@ HOST = "127.0.0.1"
 PORT = 18090
 
 # Supported engines
-AVAILABLE_ENGINES = ["whisper", "qwen3", "paraformer", "openai-whisper", "alibaba-asr"]
+AVAILABLE_ENGINES = ["whisper", "qwen3", "paraformer", "openai-whisper", "alibaba-asr", "custom"]
 DEFAULT_ENGINE = "whisper"
 
 # Knowledge platform config
