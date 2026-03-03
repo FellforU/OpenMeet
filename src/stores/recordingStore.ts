@@ -156,7 +156,7 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
         if (data.type === "segment") {
           const count = get().streamSegmentCount;
           const segment: Segment = {
-            id: `stream-${count}`,
+            id: crypto.randomUUID(),
             start: data.start,
             end: data.end,
             text: data.text,
@@ -286,8 +286,8 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
           const data = JSON.parse(result.body);
           if (Array.isArray(data.segments) && data.segments.length > 0) {
             const finalSegments: Segment[] = data.segments.map(
-              (s: { start: number; end: number; text: string; speaker: string | null; confidence: number | null }, i: number) => ({
-                id: `seg-${capturedSegmentCountAtStart + i}`,
+              (s: { start: number; end: number; text: string; speaker: string | null; confidence: number | null }) => ({
+                id: crypto.randomUUID(),
                 start: s.start,
                 end: s.end,
                 text: s.text,
@@ -370,8 +370,8 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
         if (result.status >= 200 && result.status < 300) {
           const data = JSON.parse(result.body);
           const postProcessedSegments: Segment[] = data.segments.map(
-            (s: { start: number; end: number; text: string; speaker: string | null; confidence: number | null }, i: number) => ({
-              id: `seg-${capturedSegmentCountAtStart + i}`,
+            (s: { start: number; end: number; text: string; speaker: string | null; confidence: number | null }) => ({
+              id: crypto.randomUUID(),
               start: s.start,
               end: s.end,
               text: s.text,

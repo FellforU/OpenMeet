@@ -445,8 +445,11 @@ pub fn db_save_segments(
 ) -> Result<(), String> {
     let conn = state.conn.lock().map_err(|e| e.to_string())?;
 
+    // Use a transaction so DELETE + INSERT are atomic — no data loss on failure
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+
     // Delete existing segments for this project
-    conn.execute(
+    tx.execute(
         "DELETE FROM segments WHERE project_id = ?1",
         params![project_id],
     )
@@ -454,7 +457,7 @@ pub fn db_save_segments(
 
     // Batch insert
     for (i, seg) in segments.iter().enumerate() {
-        conn.execute(
+        tx.execute(
             "INSERT INTO segments (id, project_id, idx, start_time, end_time, text, speaker, confidence)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
@@ -470,6 +473,8 @@ pub fn db_save_segments(
         )
         .map_err(|e| e.to_string())?;
     }
+
+    tx.commit().map_err(|e| e.to_string())?;
     Ok(())
 }
 

@@ -268,8 +268,8 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
           const hadExistingSegments = existingSegments.length > 0;
           type RawSeg = { start: number; end: number; text: string; speaker: string | null; confidence: number | null };
           const rawSegments = (Array.isArray(data?.segments) ? data.segments : []) as RawSeg[];
-          const segments: Segment[] = rawSegments.map((s, i) => ({
-            id: `seg-${i}`,
+          const segments: Segment[] = rawSegments.map((s) => ({
+            id: crypto.randomUUID(),
             ...s,
           }));
 
@@ -391,11 +391,9 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
   setSegments: (segments) => set({ segments }),
   appendSegments: (newSegments) => {
     const existing = get().segments;
-    // Re-index IDs to avoid collision
-    const offset = existing.length;
-    const reindexed = newSegments.map((s, i) => ({
+    const reindexed = newSegments.map((s) => ({
       ...s,
-      id: `seg-${offset + i}`,
+      id: crypto.randomUUID(),
     }));
     set({ segments: [...existing, ...reindexed] });
   },
