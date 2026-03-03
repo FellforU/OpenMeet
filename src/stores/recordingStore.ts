@@ -7,6 +7,7 @@ import * as api from "../services/asrClient";
 import { loadAudioUrl } from "../services/audioLoader";
 import { useTranscriptionStore } from "./transcriptionStore";
 import { useProjectStore } from "./projectStore";
+import { useSettingsStore } from "./settingsStore";
 import { tauriFetch } from "../services/httpProxy";
 import { generateMeetingTitle, generateMeetingSummary } from "../services/llmClient";
 import type { Segment } from "../types";
@@ -247,7 +248,8 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
     // Stop audio capture in Rust FIRST — this closes WebSocket to Python ASR service
     let audioPath: string | null = null;
     try {
-      const result = await invoke<string>("stop_recording");
+      const cacheDir = useSettingsStore.getState().general.cacheDir || undefined;
+      const result = await invoke<string>("stop_recording", { cacheDir });
       if (result && result.length > 0 && isFilePath(result)) {
         audioPath = result;
       }

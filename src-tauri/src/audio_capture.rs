@@ -354,6 +354,7 @@ pub async fn start_recording(
 pub async fn stop_recording(
     app: tauri::AppHandle,
     state: State<'_, AudioCaptureState>,
+    cache_dir: Option<String>,
 ) -> Result<String, String> {
     state.is_recording.store(false, Ordering::SeqCst);
     state.is_paused.store(false, Ordering::SeqCst);
@@ -371,17 +372,23 @@ pub async fn stop_recording(
         return Ok(String::new());
     }
 
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
-    let recordings_dir = data_dir.join("recordings");
-    std::fs::create_dir_all(&recordings_dir)
-        .map_err(|e| format!("Failed to create recordings dir: {}", e))?;
+    // Save WAV to {cache_dir}/records/ (preferred) or fall back to app_data_dir/recordings/
+    let records_dir = if let Some(ref dir) = cache_dir {
+        PathBuf::from(dir).join("records")
+    } else {
+        app.path()
+            .app_cache_dir()
+            .unwrap_or_else(|_| {
+                app.path().app_data_dir().unwrap_or_default()
+            })
+            .join("records")
+    };
+    std::fs::create_dir_all(&records_dir)
+        .map_err(|e| format!("Failed to create records dir: {}", e))?;
 
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
     let filename = format!("{}.wav", timestamp);
-    let wav_path = recordings_dir.join(&filename);
+    let wav_path = records_dir.join(&filename);
 
     wav::write_wav(&wav_path, &samples, sample_rate, channels)?;
 
