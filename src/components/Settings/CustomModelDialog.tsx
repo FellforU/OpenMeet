@@ -88,8 +88,18 @@ export function CustomModelDialog({
     fetchEngines,
   } = useEngineStore();
   const [showAddForm, setShowAddForm] = useState(false);
-  const [form, setForm] = useState<AddFormState>(initialAddForm);
   const [unloadingKey, setUnloadingKey] = useState<string | null>(null);
+
+  // Compute default HF mirror URL from system settings
+  const defaultHfMirror =
+    general.enableHfMirror && general.hfMirror
+      ? general.hfMirror
+      : "https://huggingface.co";
+
+  const [form, setForm] = useState<AddFormState>({
+    ...initialAddForm,
+    mirrorUrl: defaultHfMirror,
+  });
 
   const customModels = general.customASRModels ?? [];
 
@@ -153,7 +163,7 @@ export function CustomModelDialog({
     const updated = [...customModels, newModel];
     await setGeneral({ customASRModels: updated });
     await pushModelsToBackend(updated);
-    setForm(initialAddForm);
+    setForm({ ...initialAddForm, mirrorUrl: defaultHfMirror });
     setShowAddForm(false);
     toast.success(t("asr.custom.addSuccess"));
   };
@@ -410,14 +420,16 @@ export function CustomModelDialog({
               </label>
               <Select
                 value={form.platform}
-                onValueChange={(v) =>
+                onValueChange={(v) => {
+                  const platform = v as "huggingface" | "modelscope";
                   setForm((f) => ({
                     ...f,
-                    platform: v as "huggingface" | "modelscope",
+                    platform,
+                    mirrorUrl: platform === "huggingface" ? defaultHfMirror : "",
                     validated: false,
                     error: "",
-                  }))
-                }
+                  }));
+                }}
               >
                 <SelectTrigger className="flex-1">
                   <SelectValue />
@@ -448,19 +460,21 @@ export function CustomModelDialog({
               />
             </div>
 
-            <div className="flex items-center gap-2">
-              <label className="w-20 shrink-0 text-sm font-medium">
-                {t("asr.custom.mirror")}
-              </label>
-              <Input
-                className="flex-1"
-                placeholder="https://hf-mirror.com"
-                value={form.mirrorUrl}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, mirrorUrl: e.target.value }))
-                }
-              />
-            </div>
+            {form.platform === "huggingface" && (
+              <div className="flex items-center gap-2">
+                <label className="w-20 shrink-0 text-sm font-medium">
+                  {t("asr.custom.mirror")}
+                </label>
+                <Input
+                  className="flex-1"
+                  placeholder="https://huggingface.co"
+                  value={form.mirrorUrl}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, mirrorUrl: e.target.value }))
+                  }
+                />
+              </div>
+            )}
 
             <div className="flex items-center gap-2">
               <label className="w-20 shrink-0 text-sm font-medium">
@@ -497,7 +511,7 @@ export function CustomModelDialog({
                 size="sm"
                 onClick={() => {
                   setShowAddForm(false);
-                  setForm(initialAddForm);
+                  setForm({ ...initialAddForm, mirrorUrl: defaultHfMirror });
                 }}
               >
                 {t("common:action.cancel")}
