@@ -215,28 +215,16 @@ fn start_mixed_capture(
                 sys_mono
             };
 
-            // WS buffer: send mic + system mixed to mono for ASR
-            let ws_len = mic_mono.len().max(sys_resampled.len());
-            if ws_len > 0 {
-                let mut ws_mixed = Vec::with_capacity(ws_len);
-                for i in 0..ws_len {
-                    let m = mic_mono.get(i).copied().unwrap_or(0) as i32;
-                    let s = sys_resampled.get(i).copied().unwrap_or(0) as i32;
-                    ws_mixed.push(((m + s) / 2) as i16);
-                }
-                ws_buffer.push_samples(&ws_mixed);
-            }
-
-            // Step 3: Interleave [mic, sys] into stereo at mic sample rate (no attenuation)
+            // Step 3: Mix mic + system into mono
             let len = mic_mono.len().max(sys_resampled.len());
-            let mut stereo = Vec::with_capacity(len * 2);
+            let mut mixed = Vec::with_capacity(len);
             for i in 0..len {
-                let m = mic_mono.get(i).copied().unwrap_or(0);
-                let s = sys_resampled.get(i).copied().unwrap_or(0);
-                stereo.push(m);
-                stereo.push(s);
+                let m = mic_mono.get(i).copied().unwrap_or(0) as i32;
+                let s = sys_resampled.get(i).copied().unwrap_or(0) as i32;
+                mixed.push(((m + s) / 2) as i16);
             }
-            all_buffer.push_samples(&stereo);
+            ws_buffer.push_samples(&mixed);
+            all_buffer.push_samples(&mixed);
         }
     });
 
@@ -244,7 +232,7 @@ fn start_mixed_capture(
     handles.extend(sys_handles);
     // Store is_rec flag so interleaver stops when recording stops
     handles.push(CaptureHandle::new(is_rec));
-    Ok((handles, sr, 2)) // stereo: ch0=mic, ch1=system
+    Ok((handles, sr, 1)) // mono mixed
 }
 
 #[tauri::command]
