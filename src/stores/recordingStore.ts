@@ -239,14 +239,77 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
     const capturedJobId = get().jobId;
     const recordedSeconds = get().elapsed;
     const capturedSegmentCountAtStart = get().segmentCountAtStart;
-    const capturedStreamCount = get().streamSegmentCount;
     set({ status: "idle", jobId: null, elapsed: 0, streamSegmentCount: 0, processingStep: "saving" });
 
     const activeProjectId = useProjectStore.getState().activeProjectId;
-    const segments = useTranscriptionStore.getState().segments;
     const isFirstRecording = capturedSegmentCountAtStart === 0;
 
-    // Mark transcription as completed
+    // Stop audio capture in Rust FIRST — this closes WebSocket to Python ASR service
+    let audioPath: string | null = null;
+    try {
+      const result = await invoke<string>("stop_recording");
+      if (result && result.length > 0 && isFilePath(result)) {
+        audioPath = result;
+      }
+    } catch {
+      toast.error(t("error.audioSaveFailed"));
+    }
+
+    // Wait for the streaming ASR job to finish processing remaining audio.
+    // Python's finally block transcribes buffered audio after WebSocket closes,
+    // which takes a few hundred ms to a few seconds depending on model.
+    if (capturedJobId) {
+      const MAX_WAIT_MS = 15_000;
+      const POLL_MS = 300;
+      const start = Date.now();
+      while (Date.now() - start < MAX_WAIT_MS) {
+        try {
+          const jobResp = await api.getJob(capturedJobId);
+          if (jobResp.status === "completed" || jobResp.status === "ready" ||
+              jobResp.status === "cancelled") {
+            break;
+          }
+        } catch {
+          // Network error — retry
+        }
+        await new Promise((r) => setTimeout(r, POLL_MS));
+      }
+
+      // Fetch final segments from the completed job (includes audio processed
+      // in Python's finally block that couldn't be sent via closed WebSocket)
+      try {
+        const result = await tauriFetch(
+          `http://127.0.0.1:18090/jobs/${capturedJobId}/result`,
+          { method: "GET" }
+        );
+        if (result.status >= 200 && result.status < 300) {
+          const data = JSON.parse(result.body);
+          if (Array.isArray(data.segments) && data.segments.length > 0) {
+            const finalSegments: Segment[] = data.segments.map(
+              (s: { start: number; end: number; text: string; speaker: string | null; confidence: number | null }, i: number) => ({
+                id: `seg-${capturedSegmentCountAtStart + i}`,
+                start: s.start,
+                end: s.end,
+                text: s.text,
+                speaker: s.speaker || null,
+                confidence: s.confidence || null,
+              })
+            );
+            // Merge: keep pre-existing segments, replace current session's portion
+            const allSegments = useTranscriptionStore.getState().segments;
+            const previousSegments = allSegments.slice(0, capturedSegmentCountAtStart);
+            const mergedSegments = [...previousSegments, ...finalSegments];
+            useTranscriptionStore.getState().setSegments(mergedSegments);
+          }
+        }
+      } catch {
+        // Fall through to use whatever segments we already have from streaming
+      }
+    }
+
+    // NOW check segments — after ASR service has finished processing
+    const segments = useTranscriptionStore.getState().segments;
+
     if (segments.length > 0) {
       useTranscriptionStore.getState().setJobStatus("completed");
 
@@ -259,20 +322,8 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
         }
       }
     } else if (recordedSeconds >= 3) {
-      // No segments after a meaningful recording duration — warn user
+      // No segments after ASR finished — warn user
       toast.warning(t("error.noSegments"));
-    }
-
-    // Stop audio capture in Rust and get saved WAV path
-    let audioPath: string | null = null;
-    try {
-      const result = await invoke<string>("stop_recording");
-      // Validate the result is a real file path, not an error message
-      if (result && result.length > 0 && isFilePath(result)) {
-        audioPath = result;
-      }
-    } catch {
-      toast.error(t("error.audioSaveFailed"));
     }
 
     // Merge audio files if project already has an audio path
@@ -306,7 +357,8 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
     }
 
     // Run post-processing (ITN + punctuation + speaker diarization) if we have a job and audio
-    if (capturedJobId && audioPath && capturedStreamCount > 0) {
+    const currentSessionSegmentCount = segments.length - capturedSegmentCountAtStart;
+    if (capturedJobId && audioPath && currentSessionSegmentCount > 0) {
       set({ processingStep: "diarizing" });
       try {
         await api.postProcessJob(capturedJobId, audioPath);

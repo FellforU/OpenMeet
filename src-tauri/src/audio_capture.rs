@@ -220,17 +220,18 @@ fn start_mixed_capture(
                 sys_mono
             };
 
-            // Step 3: Interleave [mic, sys_attenuated] into stereo at mic sample rate
+            // Step 3: Mix mic + system audio into mono at mic sample rate
+            // Use balanced gain: mic at 0.7, system at 0.5 to avoid clipping
             let len = mic_mono.len().max(sys_resampled.len());
-            let mut stereo = Vec::with_capacity(len * 2);
+            let mut mixed = Vec::with_capacity(len);
             for i in 0..len {
-                let m = mic_mono.get(i).copied().unwrap_or(0);
-                let s = sys_resampled.get(i).copied().unwrap_or(0);
-                let s_attenuated = ((s as f32) * 0.3) as i16; // System audio attenuation
-                stereo.push(m);
-                stereo.push(s_attenuated);
+                let m = mic_mono.get(i).copied().unwrap_or(0) as f32;
+                let s = sys_resampled.get(i).copied().unwrap_or(0) as f32;
+                let sum = m * 0.7 + s * 0.5;
+                // Soft clamp to i16 range
+                mixed.push(sum.clamp(-32767.0, 32767.0) as i16);
             }
-            all_buffer.push_samples(&stereo);
+            all_buffer.push_samples(&mixed);
         }
     });
 
@@ -238,7 +239,7 @@ fn start_mixed_capture(
     handles.extend(sys_handles);
     // Store is_rec flag so interleaver stops when recording stops
     handles.push(CaptureHandle::new(is_rec));
-    Ok((handles, sr, 2)) // stereo
+    Ok((handles, sr, 1)) // mono mixed
 }
 
 #[tauri::command]
