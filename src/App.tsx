@@ -9,7 +9,7 @@ import { StatusBar } from "./components/StatusBar";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FirstRunGuide } from "./components/Guide/FirstRunGuide";
 import { TooltipProvider } from "./components/ui/tooltip";
-import { startAsrService, checkAsrHealth, configureEngine } from "./services/asrClient";
+import { startAsrService, checkAsrHealth, configureEngine, pushCustomModels } from "./services/asrClient";
 import { configureKnowledge } from "./services/knowledgeClient";
 import { migrateFromLocalStorage } from "./services/dataMigration";
 import { useSettingsStore } from "./stores/settingsStore";
@@ -63,6 +63,7 @@ function App() {
           if (!cancelled) {
             await pushKnowledgeConfig();
             pushCredentials();
+            pushCustomModelConfigs();
             // Refresh engine list after config is applied (correct cache dir)
             useEngineStore.getState().fetchEngines();
             setAsrReady(true);
@@ -80,6 +81,22 @@ function App() {
         await configureKnowledge(appDataDir);
       } catch {
         // Knowledge features unavailable without config
+      }
+    }
+
+    function pushCustomModelConfigs() {
+      const { general } = useSettingsStore.getState();
+      if (general.customASRModels?.length) {
+        pushCustomModels(
+          general.customASRModels.map((m) => ({
+            id: m.id,
+            name: m.name,
+            platform: m.platform,
+            model_id: m.modelId,
+            mirror_url: m.mirrorUrl || null,
+            vram_gb: m.vramGb,
+          }))
+        ).catch(() => {});
       }
     }
 

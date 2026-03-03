@@ -38,6 +38,7 @@ interface GeneralConfig {
   cacheDir: string;                 // Root cache directory for models, audio, attachments, etc.
   enableHfMirror: boolean;         // Whether to use HuggingFace mirror for model downloads
   hfMirror: string;                // HuggingFace mirror URL (e.g. "https://hf-mirror.com")
+  customASRModels: CustomASRModel[]; // User-added custom ASR models
 }
 
 // Parse a compound model reference like "openai/gpt-4o"
@@ -50,6 +51,15 @@ export function parseModelRef(ref: string): { provider: string; model: string } 
 // Build a compound model reference
 export function makeModelRef(provider: string, model: string): string {
   return `${provider}/${model}`;
+}
+
+export interface CustomASRModel {
+  id: string;
+  name: string;
+  platform: "huggingface" | "modelscope";
+  modelId: string;
+  mirrorUrl: string;
+  vramGb: number;
 }
 
 interface CloudAsrConfig {
@@ -88,6 +98,7 @@ const defaultState = {
     cacheDir: "",
     enableHfMirror: false,
     hfMirror: "",
+    customASRModels: [],
   },
   llmProviders: {
     ollama: { enabled: true, host: "http://localhost:11434", model: "qwen2.5:7b", modelByType: { LLM: "qwen2.5:7b" } },

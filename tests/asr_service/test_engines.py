@@ -6,10 +6,10 @@ async def test_list_engines(client):
     resp = await client.get("/engines")
     assert resp.status_code == 200
     data = resp.json()
-    assert len(data) == 5
+    assert len(data) == 6
 
     names = {e["name"] for e in data}
-    assert names == {"whisper", "qwen3", "paraformer", "openai-whisper", "alibaba-asr"}
+    assert names == {"whisper", "qwen3", "paraformer", "openai-whisper", "alibaba-asr", "custom"}
 
 
 async def test_engine_capabilities_whisper(client):
