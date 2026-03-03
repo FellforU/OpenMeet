@@ -31,7 +31,7 @@ pub fn start_system_capture(
 
     eprintln!(
         "WASAPI loopback: device={:?}, rate={}, ch={}, fmt={:?}",
-        device.description().unwrap_or_default(),
+        device.name().unwrap_or_else(|_| "unknown".to_string()),
         sample_rate,
         channels,
         config.sample_format()
