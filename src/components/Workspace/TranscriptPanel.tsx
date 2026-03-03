@@ -221,6 +221,7 @@ export function TranscriptPanel() {
 
   // Pipeline step display name
   const stepLabels: Record<string, string> = {
+    loading_model: t("transcript.step.loading_model"),
     transcribing: t("transcript.step.transcribing"),
     itn: t("transcript.step.itn"),
     punctuation: t("transcript.step.punctuation"),

@@ -15,6 +15,7 @@
     "waitingForSegments": "Recording, waiting for transcription...",
     "liveRecording": "Live transcribing",
     "step": {
+      "loading_model": "Loading Model",
       "transcribing": "Transcribing",
       "itn": "Inverse Text Normalization",
       "punctuation": "Adding Punctuation",

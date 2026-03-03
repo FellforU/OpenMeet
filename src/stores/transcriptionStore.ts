@@ -171,13 +171,17 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
         const MAX_WAIT_MS = 300_000;
         const POLL_MS = 1_000;
         const start = Date.now();
+        let loaded = false;
         while (Date.now() - start < MAX_WAIT_MS) {
           await new Promise((r) => setTimeout(r, POLL_MS));
           const status = await api.getLoadStatus(engine);
-          if (status.phase === "ready") break;
+          if (status.phase === "ready") { loaded = true; break; }
           if (status.phase === "error") {
             throw new Error(status.error || "Model load failed");
           }
+        }
+        if (!loaded) {
+          throw new Error("模型加载超时，请检查模型是否已下载");
         }
       }
 
@@ -193,9 +197,14 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
       });
 
       // Start transcription with file path
-      await tauriFetch(`http://127.0.0.1:18090/jobs/${jobResp.id}/start?audio_path=${encodeURIComponent(audio.filePath)}`, {
+      const startResp = await tauriFetch(`http://127.0.0.1:18090/jobs/${jobResp.id}/start?audio_path=${encodeURIComponent(audio.filePath)}`, {
         method: "POST",
       });
+      if (startResp.status < 200 || startResp.status >= 300) {
+        let detail = "";
+        try { detail = JSON.parse(startResp.body).detail; } catch { detail = startResp.body; }
+        throw new Error(detail || `启动转录失败 (HTTP ${startResp.status})`);
+      }
 
       // Start polling — capture project ID so results persist to the correct project
       // even if the user switches meetings during transcription
@@ -343,6 +352,14 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
           // and a stale non-idle status blocks future transcription operations
           set({ job: { ...get().job, status: "idle" as JobStatus, pipelineStep: null as PipelineStep } });
           pollTimeoutId = null;
+          return;
+        }
+
+        if (jobResp.status === "idle") {
+          // Job never started — /start may have failed silently
+          pollTimeoutId = null;
+          toast.error("转录任务未启动，请检查 ASR 服务日志");
+          set({ job: { ...get().job, status: "idle" as JobStatus, progress: 0, pipelineStep: null as PipelineStep } });
           return;
         }
 

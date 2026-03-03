@@ -15,6 +15,7 @@
     "waitingForSegments": "正在录制，等待转录文本...",
     "liveRecording": "实时转录中",
     "step": {
+      "loading_model": "正在加载模型",
       "transcribing": "正在转录",
       "itn": "逆文本正则化",
       "punctuation": "添加标点符号",
