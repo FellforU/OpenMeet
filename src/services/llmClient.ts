@@ -343,60 +343,143 @@ Reply with ONLY the short title, nothing else.`;
   return cleaned;
 }
 
-export async function generateMeetingSummary(
-  transcriptText: string
-): Promise<Summary> {
-  // Truncate to ~3000 chars to fit context window of smaller models
-  const truncated =
-    transcriptText.length > 3000
-      ? transcriptText.slice(0, 3000) + "\n...(truncated)"
-      : transcriptText;
+// -- Map-Reduce summary helpers --
 
-  const prompt = `You are a meeting summarizer. Analyze the transcript below and produce a JSON summary.
+const CHUNK_SIZE = 2500;
 
-Return ONLY valid JSON with this exact structure (no markdown fences, no extra text):
-{
-  "topic": "meeting topic in Chinese (10-20 chars)",
-  "conclusions": ["conclusion 1", "conclusion 2"],
-  "action_items": [{"assignee": "person", "task": "task description", "deadline": null}],
-  "discussion": [{"topic": "subtopic", "summary": "brief summary"}]
+/** Split transcript into chunks at sentence boundaries. */
+function splitTranscript(text: string): string[] {
+  if (text.length <= CHUNK_SIZE) return [text];
+
+  const chunks: string[] = [];
+  let remaining = text;
+
+  while (remaining.length > 0) {
+    if (remaining.length <= CHUNK_SIZE) {
+      chunks.push(remaining);
+      break;
+    }
+
+    // Find a sentence boundary near the chunk size limit
+    let splitIdx = CHUNK_SIZE;
+    const sentenceEnders = ["。", "！", "？", ".", "!", "?", "\n"];
+    let bestIdx = -1;
+    for (const ender of sentenceEnders) {
+      const idx = remaining.lastIndexOf(ender, CHUNK_SIZE);
+      if (idx > CHUNK_SIZE * 0.5 && idx > bestIdx) {
+        bestIdx = idx;
+      }
+    }
+    if (bestIdx > 0) {
+      splitIdx = bestIdx + 1;
+    }
+
+    chunks.push(remaining.slice(0, splitIdx));
+    remaining = remaining.slice(splitIdx);
+  }
+
+  return chunks;
 }
 
-Rules:
-- Write all content in Chinese
-- Keep conclusions concise (1 sentence each)
-- Include 1-5 action items if mentioned, otherwise empty array
-- Include 1-5 discussion topics
-
-Transcript:
-${truncated}`;
-
-  const { text } = await generateText(prompt, { maxTokens: 2000 });
-
-  // Extract JSON from the response (handle markdown fences)
+/** Extract JSON from LLM response, handling markdown fences. */
+function extractJson(text: string): string {
   let jsonStr = text;
   const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fenceMatch) {
     jsonStr = fenceMatch[1];
   }
-  jsonStr = jsonStr.trim();
+  return jsonStr.trim();
+}
+
+interface ChunkSummary {
+  topics: string[];
+  conclusions: string[];
+  action_items: Array<{ assignee?: string; task?: string; deadline?: string | null }>;
+  discussion: Array<{ topic?: string; summary?: string }>;
+  key_data: string[];
+  participants: string[];
+}
+
+/** Summarize a single chunk of transcript. */
+async function summarizeChunk(chunk: string, chunkIndex: number, totalChunks: number): Promise<ChunkSummary> {
+  const prompt = `你是一个专业的会议记录助手。请分析以下会议转录片段（第${chunkIndex + 1}/${totalChunks}段），提取所有关键信息。
+
+要求：
+- 提取所有讨论的话题（不遗漏任何话题，包括闲聊、建议、经验分享）
+- 提取所有行动项（包括明确说的和隐含的，如"你先改那个..."、"到时候你提一下"等）
+- 保留所有关键数据：金额、日期、数字、百分比、技术名词
+- 识别参与讨论的人员名称或称呼
+- 用中文输出
+
+仅返回JSON格式，不要其他文字：
+{
+  "topics": ["话题1", "话题2"],
+  "conclusions": ["结论1"],
+  "action_items": [{"assignee": "责任人", "task": "任务描述", "deadline": null}],
+  "discussion": [{"topic": "子话题", "summary": "详细摘要，保留关键数据"}],
+  "key_data": ["100-200美金/月", "本周完成"],
+  "participants": ["雨辰"]
+}
+
+转录片段：
+${chunk}`;
+
+  const { text } = await generateText(prompt, { maxTokens: 2000 });
+  try {
+    return JSON.parse(extractJson(text));
+  } catch {
+    return { topics: [], conclusions: [], action_items: [], discussion: [], key_data: [], participants: [] };
+  }
+}
+
+/** Merge multiple chunk summaries into a final summary. */
+async function mergeChunkSummaries(chunks: ChunkSummary[]): Promise<Summary> {
+  const mergedData = JSON.stringify(chunks, null, 2);
+
+  const prompt = `你是一个专业的会议记录助手。以下是一次会议多个片段的分段总结，请合并为一份完整的会议纪要。
+
+合并要求：
+1. 合并所有话题，去重但不遗漏任何讨论内容
+2. 合并所有行动项，去除完全重复的，保留所有不同的行动项
+3. 合并所有结论，按重要性排序
+4. 合并关键数据和参与者信息
+5. 每个讨论要点的摘要应详细（50-150字），保留具体数字和数据
+6. 讨论要点应覆盖会议中提到的所有话题，包括非正式讨论
+
+仅返回JSON格式：
+{
+  "topic": "会议主题（一句话概括，10-20字）",
+  "conclusions": ["结论1", "结论2"],
+  "action_items": [{"assignee": "责任人", "task": "具体任务描述", "deadline": "截止时间或null"}],
+  "discussion": [{"topic": "子话题名称", "summary": "详细摘要，包含关键数据"}],
+  "key_data": ["关键数据1", "关键数据2"],
+  "participants": ["参与者1", "参与者2"]
+}
+
+分段总结数据：
+${mergedData}`;
+
+  const { text } = await generateText(prompt, { maxTokens: 3000 });
 
   let parsed: {
     topic?: string;
     conclusions?: string[];
     action_items?: Array<{ assignee?: string; task?: string; deadline?: string | null }>;
     discussion?: Array<{ topic?: string; summary?: string }>;
+    key_data?: string[];
+    participants?: string[];
   };
 
   try {
-    parsed = JSON.parse(jsonStr);
+    parsed = JSON.parse(extractJson(text));
   } catch {
-    // Fallback: treat entire response as raw text summary
     return {
       topic: "",
       conclusions: [],
       actionItems: [],
       discussion: [],
+      keyData: [],
+      participants: [],
       rawMarkdown: text,
       editedMarkdown: null,
     };
@@ -414,15 +497,19 @@ ${truncated}`;
     topic: d.topic || "",
     summary: d.summary || "",
   }));
+  const keyData = parsed.key_data || [];
+  const participants = parsed.participants || [];
 
   // Build rawMarkdown from structured data
   const lines: string[] = [];
   if (topic) lines.push(`# ${topic}`, "");
+
   if (conclusions.length > 0) {
     lines.push("## 结论", "");
     for (const c of conclusions) lines.push(`- ${c}`);
     lines.push("");
   }
+
   if (actionItems.length > 0) {
     lines.push("## 待办事项", "");
     for (const item of actionItems) {
@@ -433,6 +520,7 @@ ${truncated}`;
     }
     lines.push("");
   }
+
   if (discussion.length > 0) {
     lines.push("## 讨论要点", "");
     for (const d of discussion) {
@@ -440,12 +528,45 @@ ${truncated}`;
     }
   }
 
+  if (keyData.length > 0) {
+    lines.push("## 关键数据", "");
+    for (const data of keyData) lines.push(`- ${data}`);
+    lines.push("");
+  }
+
+  if (participants.length > 0) {
+    lines.push("## 参与者", "");
+    lines.push(participants.map((p) => `@${p}`).join("、"), "");
+  }
+
   return {
     topic,
     conclusions,
     actionItems,
     discussion,
+    keyData,
+    participants,
     rawMarkdown: lines.join("\n"),
     editedMarkdown: null,
   };
+}
+
+export async function generateMeetingSummary(
+  transcriptText: string
+): Promise<Summary> {
+  const chunks = splitTranscript(transcriptText);
+
+  if (chunks.length === 1) {
+    // Short transcript: single-pass summary with enhanced prompt
+    const chunkResult = await summarizeChunk(chunks[0], 0, 1);
+    return mergeChunkSummaries([chunkResult]);
+  }
+
+  // Map phase: summarize each chunk independently
+  const chunkSummaries = await Promise.all(
+    chunks.map((chunk, i) => summarizeChunk(chunk, i, chunks.length))
+  );
+
+  // Reduce phase: merge all chunk summaries
+  return mergeChunkSummaries(chunkSummaries);
 }

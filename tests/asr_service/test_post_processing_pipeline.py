@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from asr_service.models.job import Segment, TranscriptionJob, JobStatus
-from asr_service.services.post_processing import PostProcessingPipeline
+from asr_service.services.post_processing import PostProcessingPipeline, PipelineConfig
 
 
 @pytest.fixture
@@ -35,15 +35,29 @@ def test_pipeline_init(pipeline):
     assert isinstance(pipeline, PostProcessingPipeline)
 
 
+def test_pipeline_config_defaults():
+    config = PipelineConfig()
+    assert config.enable_hallucination_detection is True
+    assert config.enable_itn is True
+    assert config.enable_filler_filter is True
+    assert config.enable_punctuation is True
+    assert config.enable_diarization is True
+    assert config.enable_embedding is True
+
+
 @pytest.mark.asyncio
 async def test_run_sets_post_processing_status(pipeline, job):
     """Pipeline should transition job to POST_PROCESSING then READY."""
-    with patch.object(pipeline, "_run_diarization", new_callable=AsyncMock) as mock_diar, \
+    with patch.object(pipeline, "_run_hallucination_detection", new_callable=AsyncMock) as mock_hall, \
+         patch.object(pipeline, "_run_diarization", new_callable=AsyncMock) as mock_diar, \
          patch.object(pipeline, "_run_punctuation", new_callable=AsyncMock) as mock_punc, \
+         patch.object(pipeline, "_run_filler_filter", new_callable=AsyncMock) as mock_filler, \
          patch.object(pipeline, "_run_itn", new_callable=AsyncMock) as mock_itn:
 
+        mock_hall.return_value = job.segments
         mock_diar.return_value = job.segments
         mock_punc.return_value = job.segments
+        mock_filler.return_value = job.segments
         mock_itn.return_value = job.segments
 
         await pipeline.run(job)
@@ -53,11 +67,19 @@ async def test_run_sets_post_processing_status(pipeline, job):
 
 @pytest.mark.asyncio
 async def test_run_calls_processors_in_order(pipeline, job):
-    """Pipeline should call processors: ITN → Punctuation → Diarization."""
+    """Pipeline should call processors: Hallucination → ITN → Filler → Punctuation → Diarization."""
     call_order = []
+
+    async def mock_hall(segs, lang):
+        call_order.append("hallucination")
+        return segs
 
     async def mock_itn(segs, lang):
         call_order.append("itn")
+        return segs
+
+    async def mock_filler(segs, lang):
+        call_order.append("filler")
         return segs
 
     async def mock_punc(segs, lang):
@@ -68,13 +90,15 @@ async def test_run_calls_processors_in_order(pipeline, job):
         call_order.append("diarization")
         return segs
 
-    with patch.object(pipeline, "_run_itn", side_effect=mock_itn), \
+    with patch.object(pipeline, "_run_hallucination_detection", side_effect=mock_hall), \
+         patch.object(pipeline, "_run_itn", side_effect=mock_itn), \
+         patch.object(pipeline, "_run_filler_filter", side_effect=mock_filler), \
          patch.object(pipeline, "_run_punctuation", side_effect=mock_punc), \
          patch.object(pipeline, "_run_diarization", side_effect=mock_diar):
 
         await pipeline.run(job)
 
-    assert call_order == ["itn", "punctuation", "diarization"]
+    assert call_order == ["hallucination", "itn", "filler", "punctuation", "diarization"]
 
 
 @pytest.mark.asyncio
@@ -88,10 +112,13 @@ async def test_run_skips_if_not_completed(pipeline, job):
 @pytest.mark.asyncio
 async def test_run_handles_error_gracefully(pipeline, job):
     """Pipeline should set READY even on partial failure."""
-    with patch.object(pipeline, "_run_itn", new_callable=AsyncMock, side_effect=Exception("ITN failed")), \
+    with patch.object(pipeline, "_run_hallucination_detection", new_callable=AsyncMock, return_value=job.segments), \
+         patch.object(pipeline, "_run_itn", new_callable=AsyncMock, side_effect=Exception("ITN failed")), \
+         patch.object(pipeline, "_run_filler_filter", new_callable=AsyncMock) as mock_filler, \
          patch.object(pipeline, "_run_punctuation", new_callable=AsyncMock) as mock_punc, \
          patch.object(pipeline, "_run_diarization", new_callable=AsyncMock) as mock_diar:
 
+        mock_filler.return_value = job.segments
         mock_punc.return_value = job.segments
         mock_diar.return_value = job.segments
 
@@ -109,7 +136,9 @@ async def test_pipeline_updates_segments(pipeline, job):
         Segment(start=5.0, end=10.0, text="Let us begin the meeting.", speaker="Speaker_2"),
     ]
 
-    with patch.object(pipeline, "_run_itn", new_callable=AsyncMock, return_value=job.segments), \
+    with patch.object(pipeline, "_run_hallucination_detection", new_callable=AsyncMock, return_value=job.segments), \
+         patch.object(pipeline, "_run_itn", new_callable=AsyncMock, return_value=job.segments), \
+         patch.object(pipeline, "_run_filler_filter", new_callable=AsyncMock, return_value=job.segments), \
          patch.object(pipeline, "_run_punctuation", new_callable=AsyncMock, return_value=job.segments), \
          patch.object(pipeline, "_run_diarization", new_callable=AsyncMock, return_value=processed):
 
@@ -127,7 +156,9 @@ async def test_skips_punctuation_for_whisper(pipeline, segments):
     job.segments = segments
     job.audio_path = "/tmp/test.wav"
 
-    with patch.object(pipeline, "_run_itn", new_callable=AsyncMock, return_value=segments), \
+    with patch.object(pipeline, "_run_hallucination_detection", new_callable=AsyncMock, return_value=segments), \
+         patch.object(pipeline, "_run_itn", new_callable=AsyncMock, return_value=segments), \
+         patch.object(pipeline, "_run_filler_filter", new_callable=AsyncMock, return_value=segments), \
          patch.object(pipeline, "_run_punctuation", new_callable=AsyncMock) as mock_punc, \
          patch.object(pipeline, "_run_diarization", new_callable=AsyncMock, return_value=segments):
 
@@ -144,13 +175,40 @@ async def test_skips_punctuation_for_qwen3(pipeline, segments):
     job.segments = segments
     job.audio_path = "/tmp/test.wav"
 
-    with patch.object(pipeline, "_run_itn", new_callable=AsyncMock, return_value=segments), \
+    with patch.object(pipeline, "_run_hallucination_detection", new_callable=AsyncMock, return_value=segments), \
+         patch.object(pipeline, "_run_itn", new_callable=AsyncMock, return_value=segments), \
+         patch.object(pipeline, "_run_filler_filter", new_callable=AsyncMock, return_value=segments), \
          patch.object(pipeline, "_run_punctuation", new_callable=AsyncMock) as mock_punc, \
          patch.object(pipeline, "_run_diarization", new_callable=AsyncMock, return_value=segments):
 
         await pipeline.run(job)
 
     mock_punc.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_pipeline_configurable_disable_steps(segments):
+    """Pipeline should skip disabled steps."""
+    config = PipelineConfig(
+        enable_hallucination_detection=False,
+        enable_filler_filter=False,
+    )
+    pipeline = PostProcessingPipeline(config)
+    job = TranscriptionJob(engine="paraformer", language="en")
+    job.status = JobStatus.COMPLETED
+    job.segments = segments
+    job.audio_path = "/tmp/test.wav"
+
+    with patch.object(pipeline, "_run_hallucination_detection", new_callable=AsyncMock) as mock_hall, \
+         patch.object(pipeline, "_run_itn", new_callable=AsyncMock, return_value=segments), \
+         patch.object(pipeline, "_run_filler_filter", new_callable=AsyncMock) as mock_filler, \
+         patch.object(pipeline, "_run_punctuation", new_callable=AsyncMock, return_value=segments), \
+         patch.object(pipeline, "_run_diarization", new_callable=AsyncMock, return_value=segments):
+
+        await pipeline.run(job)
+
+    mock_hall.assert_not_called()
+    mock_filler.assert_not_called()
 
 
 @pytest.mark.asyncio

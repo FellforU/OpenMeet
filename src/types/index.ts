@@ -25,6 +25,8 @@ export interface Summary {
   conclusions: string[];
   actionItems: Array<{ assignee: string; task: string; deadline: string | null; done?: boolean }>;
   discussion: Array<{ topic: string; summary: string }>;
+  keyData: string[];
+  participants: string[];
   rawMarkdown: string;
   editedMarkdown: string | null;
 }

@@ -131,6 +131,8 @@ function summaryFromRust(r: {
   conclusions: string[];
   action_items: Array<{ assignee: string; task: string; deadline: string | null; done?: boolean }>;
   discussion: Array<{ topic: string; summary: string }>;
+  key_data?: string[];
+  participants?: string[];
   raw_markdown: string;
   edited_markdown: string | null;
 }): Summary {
@@ -139,6 +141,8 @@ function summaryFromRust(r: {
     conclusions: r.conclusions,
     actionItems: r.action_items,
     discussion: r.discussion,
+    keyData: r.key_data || [],
+    participants: r.participants || [],
     rawMarkdown: r.raw_markdown,
     editedMarkdown: r.edited_markdown,
   };
