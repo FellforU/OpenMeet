@@ -41,7 +41,18 @@
     "hfMirror": "Enable HuggingFace Mirror",
     "hfMirrorDesc": "Use a mirror URL to download models for regions with limited HuggingFace access",
     "diarizationThreshold": "Speaker Identification Threshold",
-    "diarizationThresholdDesc": "Voiceprint matching similarity threshold, higher is stricter (recommended 65%)"
+    "diarizationThresholdDesc": "Voiceprint matching similarity threshold, higher is stricter (recommended 65%)",
+    "postProcessingTitle": "Transcription Post-processing",
+    "enableSpeechCleaning": "Enable Speech Cleaning",
+    "enableSpeechCleaningDesc": "Automatically remove filler words (um, uh, like, etc.) and repeated phrases",
+    "cleaningIntensity": "Cleaning Intensity",
+    "light": "Light",
+    "medium": "Medium",
+    "heavy": "Heavy",
+    "enableSegmentation": "Enable Semantic Segmentation",
+    "enableSegmentationDesc": "Automatically split transcript into paragraphs based on time gaps and semantics",
+    "enableHallucinationDetection": "Enable Hallucination Detection",
+    "enableHallucinationDetectionDesc": "Automatically detect and remove hallucinated text from ASR output"
   },
   "llm": {
     "title": "LLM Provider Configuration",

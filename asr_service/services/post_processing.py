@@ -22,9 +22,11 @@ class PipelineConfig:
     enable_hallucination_detection: bool = True
     enable_itn: bool = True
     enable_filler_filter: bool = True
+    enable_segmentation: bool = True
     enable_punctuation: bool = True
     enable_diarization: bool = True
     enable_embedding: bool = True
+    segmentation_strategy: str = "hybrid"  # time/semantic/hybrid
 
 
 class PostProcessingPipeline:
@@ -39,7 +41,7 @@ class PostProcessingPipeline:
     async def run(self, job: TranscriptionJob) -> None:
         """Run the full post-processing pipeline on a completed job.
 
-        Steps: Hallucination Detection → ITN → Filler Filter → Punctuation → Diarization → Embedding
+        Steps: Hallucination Detection → ITN → Filler Filter → Segmentation → Punctuation → Diarization → Embedding
         Each step is fault-tolerant — failure skips to next step.
         Summary generation is handled by the frontend (Map-Reduce).
         """
@@ -71,7 +73,14 @@ class PostProcessingPipeline:
             except Exception as e:
                 logger.warning("Filler filter step failed: %s", e)
 
-        # Step 4: Punctuation restoration (skip for engines that already produce punctuation)
+        # Step 4: Semantic segmentation (paragraph boundaries)
+        if self._config.enable_segmentation:
+            try:
+                segments = self._run_segmentation(segments, language)
+            except Exception as e:
+                logger.warning("Segmentation step failed: %s", e)
+
+        # Step 5: Punctuation restoration (skip for engines that already produce punctuation)
         if self._config.enable_punctuation and job.engine not in self.PUNCTUATED_ENGINES:
             try:
                 segments = await self._run_punctuation(segments, language)
@@ -80,14 +89,14 @@ class PostProcessingPipeline:
         elif job.engine in self.PUNCTUATED_ENGINES:
             logger.info("Skipping punctuation for engine '%s' (already punctuated)", job.engine)
 
-        # Step 5: Speaker diarization
+        # Step 6: Speaker diarization
         if self._config.enable_diarization:
             try:
                 segments = await self._run_diarization(job.audio_path, segments, language)
             except Exception as e:
                 logger.warning("Diarization step failed: %s", e)
 
-        # Step 6: Extract speaker embeddings for voiceprint matching
+        # Step 7: Extract speaker embeddings for voiceprint matching
         if self._config.enable_embedding and job.audio_path:
             try:
                 extractor = create_embedding_extractor()
@@ -125,6 +134,16 @@ class PostProcessingPipeline:
         """Remove filler words and merge repetitions."""
         pipeline = create_pipeline(language)
         return await pipeline.filler_filter.filter(segments, language)
+
+    def _run_segmentation(
+        self, segments: list[Segment], language: str
+    ) -> list[Segment]:
+        """Apply semantic paragraph segmentation."""
+        pipeline = create_pipeline(
+            language,
+            segmentation_strategy=self._config.segmentation_strategy,
+        )
+        return pipeline.segmenter.process(segments)
 
     async def _run_punctuation(
         self, segments: list[Segment], language: str

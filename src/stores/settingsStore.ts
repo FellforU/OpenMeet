@@ -40,6 +40,10 @@ interface GeneralConfig {
   hfMirror: string;                // HuggingFace mirror URL (e.g. "https://hf-mirror.com")
   customASRModels: CustomASRModel[]; // User-added custom ASR models
   diarizationThreshold: number;      // Voiceprint matching threshold (0.0-1.0)
+  enableSpeechCleaning: boolean;     // Enable filler word cleaning
+  cleaningIntensity: "light" | "medium" | "heavy"; // Cleaning intensity
+  enableSegmentation: boolean;       // Enable semantic segmentation
+  enableHallucinationDetection: boolean; // Enable hallucination detection
 }
 
 // Parse a compound model reference like "openai/gpt-4o"
@@ -101,6 +105,10 @@ const defaultState = {
     hfMirror: "",
     customASRModels: [],
     diarizationThreshold: 0.65,
+    enableSpeechCleaning: true,
+    cleaningIntensity: "medium" as const,
+    enableSegmentation: true,
+    enableHallucinationDetection: true,
   },
   llmProviders: {
     ollama: { enabled: true, host: "http://localhost:11434", model: "qwen2.5:7b", modelByType: { LLM: "qwen2.5:7b" } },

@@ -394,8 +394,11 @@ function extractJson(text: string): string {
 interface ChunkSummary {
   topics: string[];
   conclusions: string[];
-  action_items: Array<{ assignee?: string; task?: string; deadline?: string | null }>;
-  discussion: Array<{ topic?: string; summary?: string }>;
+  decisions: Array<{ decision?: string; made_by?: string; reasoning?: string }>;
+  action_items: Array<{ assignee?: string; task?: string; deadline?: string | null; priority?: string; status?: string }>;
+  discussion: Array<{ topic?: string; summary?: string; participants?: string[]; key_points?: string[] }>;
+  technical_details: Array<{ category?: string; details?: string }>;
+  next_steps: string[];
   key_data: string[];
   participants: string[];
 }
@@ -406,7 +409,11 @@ async function summarizeChunk(chunk: string, chunkIndex: number, totalChunks: nu
 
 要求：
 - 提取所有讨论的话题（不遗漏任何话题，包括闲聊、建议、经验分享）
-- 提取所有行动项（包括明确说的和隐含的，如"你先改那个..."、"到时候你提一下"等）
+- 提取所有决策（明确做出的决定，包含决策内容、决策人和理由）
+- 提取所有行动项（包括明确说的和隐含的），标注优先级(high/medium/low)和状态(not_started/in_progress/completed)
+- 每个讨论话题标注参与者和关键要点
+- 提取技术细节（架构、方案、技术选型等）
+- 提取下一步行动计划
 - 保留所有关键数据：金额、日期、数字、百分比、技术名词
 - 识别参与讨论的人员名称或称呼
 - 用中文输出
@@ -415,8 +422,11 @@ async function summarizeChunk(chunk: string, chunkIndex: number, totalChunks: nu
 {
   "topics": ["话题1", "话题2"],
   "conclusions": ["结论1"],
-  "action_items": [{"assignee": "责任人", "task": "任务描述", "deadline": null}],
-  "discussion": [{"topic": "子话题", "summary": "详细摘要，保留关键数据"}],
+  "decisions": [{"decision": "决策内容", "made_by": "决策人", "reasoning": "理由"}],
+  "action_items": [{"assignee": "责任人", "task": "任务描述", "deadline": null, "priority": "medium", "status": "not_started"}],
+  "discussion": [{"topic": "子话题", "summary": "详细摘要", "participants": ["参与者"], "key_points": ["要点1"]}],
+  "technical_details": [{"category": "分类", "details": "技术细节描述"}],
+  "next_steps": ["下一步行动1"],
   "key_data": ["100-200美金/月", "本周完成"],
   "participants": ["雨辰"]
 }
@@ -424,11 +434,11 @@ async function summarizeChunk(chunk: string, chunkIndex: number, totalChunks: nu
 转录片段：
 ${chunk}`;
 
-  const { text } = await generateText(prompt, { maxTokens: 2000 });
+  const { text } = await generateText(prompt, { maxTokens: 3000 });
   try {
     return JSON.parse(extractJson(text));
   } catch {
-    return { topics: [], conclusions: [], action_items: [], discussion: [], key_data: [], participants: [] };
+    return { topics: [], conclusions: [], decisions: [], action_items: [], discussion: [], technical_details: [], next_steps: [], key_data: [], participants: [] };
   }
 }
 
@@ -440,18 +450,22 @@ async function mergeChunkSummaries(chunks: ChunkSummary[]): Promise<Summary> {
 
 合并要求：
 1. 合并所有话题，去重但不遗漏任何讨论内容
-2. 合并所有行动项，去除完全重复的，保留所有不同的行动项
-3. 合并所有结论，按重要性排序
-4. 合并关键数据和参与者信息
-5. 每个讨论要点的摘要应详细（50-150字），保留具体数字和数据
-6. 讨论要点应覆盖会议中提到的所有话题，包括非正式讨论
+2. 合并所有决策，去重并保留决策人和理由
+3. 合并所有行动项，去除完全重复的，保留优先级和状态
+4. 合并所有结论，按重要性排序
+5. 合并技术细节、下一步行动、关键数据和参与者信息
+6. 每个讨论要点的摘要应详细（50-150字），标注参与者和关键要点
+7. 讨论要点应覆盖会议中提到的所有话题，包括非正式讨论
 
 仅返回JSON格式：
 {
   "topic": "会议主题（一句话概括，10-20字）",
   "conclusions": ["结论1", "结论2"],
-  "action_items": [{"assignee": "责任人", "task": "具体任务描述", "deadline": "截止时间或null"}],
-  "discussion": [{"topic": "子话题名称", "summary": "详细摘要，包含关键数据"}],
+  "decisions": [{"decision": "决策内容", "made_by": "决策人", "reasoning": "理由"}],
+  "action_items": [{"assignee": "责任人", "task": "具体任务描述", "deadline": "截止时间或null", "priority": "high/medium/low", "status": "not_started/in_progress/completed"}],
+  "discussion": [{"topic": "子话题名称", "summary": "详细摘要", "participants": ["参与者"], "key_points": ["要点1"]}],
+  "technical_details": [{"category": "分类", "details": "技术细节描述"}],
+  "next_steps": ["下一步行动1"],
   "key_data": ["关键数据1", "关键数据2"],
   "participants": ["参与者1", "参与者2"]
 }
@@ -464,8 +478,11 @@ ${mergedData}`;
   let parsed: {
     topic?: string;
     conclusions?: string[];
-    action_items?: Array<{ assignee?: string; task?: string; deadline?: string | null }>;
-    discussion?: Array<{ topic?: string; summary?: string }>;
+    decisions?: Array<{ decision?: string; made_by?: string; reasoning?: string }>;
+    action_items?: Array<{ assignee?: string; task?: string; deadline?: string | null; priority?: string; status?: string }>;
+    discussion?: Array<{ topic?: string; summary?: string; participants?: string[]; key_points?: string[] }>;
+    technical_details?: Array<{ category?: string; details?: string }>;
+    next_steps?: string[];
     key_data?: string[];
     participants?: string[];
   };
@@ -476,8 +493,11 @@ ${mergedData}`;
     return {
       topic: "",
       conclusions: [],
+      decisions: [],
       actionItems: [],
       discussion: [],
+      technicalDetails: [],
+      nextSteps: [],
       keyData: [],
       participants: [],
       rawMarkdown: text,
@@ -487,16 +507,30 @@ ${mergedData}`;
 
   const topic = parsed.topic || "";
   const conclusions = parsed.conclusions || [];
+  const decisions = (parsed.decisions || []).map((d) => ({
+    decision: d.decision || "",
+    madeBy: d.made_by || "",
+    reasoning: d.reasoning || "",
+  }));
   const actionItems = (parsed.action_items || []).map((item) => ({
     assignee: item.assignee || "",
     task: item.task || "",
     deadline: item.deadline || null,
+    priority: item.priority || "medium",
+    status: item.status || "not_started",
     done: false,
   }));
   const discussion = (parsed.discussion || []).map((d) => ({
     topic: d.topic || "",
     summary: d.summary || "",
+    participants: d.participants || [],
+    keyPoints: d.key_points || [],
   }));
+  const technicalDetails = (parsed.technical_details || []).map((td) => ({
+    category: td.category || "",
+    details: td.details || "",
+  }));
+  const nextSteps = parsed.next_steps || [];
   const keyData = parsed.key_data || [];
   const participants = parsed.participants || [];
 
@@ -510,10 +544,22 @@ ${mergedData}`;
     lines.push("");
   }
 
+  if (decisions.length > 0) {
+    lines.push("## 决策", "");
+    for (const d of decisions) {
+      let line = `- **${d.decision}**`;
+      if (d.madeBy) line += ` (${d.madeBy})`;
+      if (d.reasoning) line += ` — ${d.reasoning}`;
+      lines.push(line);
+    }
+    lines.push("");
+  }
+
   if (actionItems.length > 0) {
     lines.push("## 待办事项", "");
     for (const item of actionItems) {
-      let line = `- [ ] ${item.task}`;
+      const priorityTag = item.priority === "high" ? " 🔴" : item.priority === "low" ? " 🟢" : "";
+      let line = `- [ ] ${item.task}${priorityTag}`;
       if (item.assignee) line += ` (@${item.assignee})`;
       if (item.deadline) line += ` [截止: ${item.deadline}]`;
       lines.push(line);
@@ -524,8 +570,31 @@ ${mergedData}`;
   if (discussion.length > 0) {
     lines.push("## 讨论要点", "");
     for (const d of discussion) {
-      lines.push(`### ${d.topic}`, "", d.summary, "");
+      lines.push(`### ${d.topic}`, "");
+      if (d.participants.length > 0) {
+        lines.push(`**参与者:** ${d.participants.join("、")}`, "");
+      }
+      lines.push(d.summary, "");
+      if (d.keyPoints.length > 0) {
+        lines.push("**关键要点:**", "");
+        for (const kp of d.keyPoints) lines.push(`- ${kp}`);
+        lines.push("");
+      }
     }
+  }
+
+  if (technicalDetails.length > 0) {
+    lines.push("## 技术细节", "");
+    for (const td of technicalDetails) {
+      lines.push(`- **${td.category}**: ${td.details}`);
+    }
+    lines.push("");
+  }
+
+  if (nextSteps.length > 0) {
+    lines.push("## 下一步", "");
+    for (const step of nextSteps) lines.push(`- ${step}`);
+    lines.push("");
   }
 
   if (keyData.length > 0) {
@@ -542,8 +611,11 @@ ${mergedData}`;
   return {
     topic,
     conclusions,
+    decisions,
     actionItems,
     discussion,
+    technicalDetails,
+    nextSteps,
     keyData,
     participants,
     rawMarkdown: lines.join("\n"),

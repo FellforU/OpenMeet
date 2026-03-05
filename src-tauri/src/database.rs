@@ -63,6 +63,9 @@ impl Database {
                 conclusions     TEXT,
                 action_items    TEXT,
                 discussion      TEXT,
+                decisions       TEXT,
+                technical_details TEXT,
+                next_steps      TEXT,
                 raw_markdown    TEXT,
                 edited_markdown TEXT
             );
@@ -120,6 +123,19 @@ impl Database {
             .map_err(|e| e.to_string())?;
         }
 
+        // Migration: add new summary columns (decisions, technical_details, next_steps)
+        let has_decisions: bool = conn
+            .prepare("SELECT decisions FROM summaries LIMIT 0")
+            .is_ok();
+        if !has_decisions {
+            conn.execute_batch(
+                "ALTER TABLE summaries ADD COLUMN decisions TEXT;
+                 ALTER TABLE summaries ADD COLUMN technical_details TEXT;
+                 ALTER TABLE summaries ADD COLUMN next_steps TEXT;"
+            )
+            .map_err(|e| e.to_string())?;
+        }
+
         Ok(())
     }
 }
@@ -166,6 +182,10 @@ pub struct ActionItem {
     pub assignee: String,
     pub task: String,
     pub deadline: Option<String>,
+    #[serde(default)]
+    pub priority: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
     pub done: Option<bool>,
 }
 
@@ -173,14 +193,41 @@ pub struct ActionItem {
 pub struct DiscussionItem {
     pub topic: String,
     pub summary: String,
+    #[serde(default)]
+    pub participants: Option<Vec<String>>,
+    #[serde(default)]
+    pub key_points: Option<Vec<String>>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Decision {
+    pub decision: String,
+    pub made_by: String,
+    pub reasoning: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct TechnicalDetail {
+    pub category: String,
+    pub details: String,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Summary {
     pub topic: String,
     pub conclusions: Vec<String>,
+    #[serde(default)]
+    pub decisions: Option<Vec<Decision>>,
     pub action_items: Vec<ActionItem>,
     pub discussion: Vec<DiscussionItem>,
+    #[serde(default)]
+    pub technical_details: Option<Vec<TechnicalDetail>>,
+    #[serde(default)]
+    pub next_steps: Option<Vec<String>>,
+    #[serde(default)]
+    pub key_data: Option<Vec<String>>,
+    #[serde(default)]
+    pub participants: Option<Vec<String>>,
     pub raw_markdown: String,
     pub edited_markdown: Option<String>,
 }
@@ -521,24 +568,30 @@ pub fn db_get_summary(
     let conn = state.conn.lock().map_err(|e| e.to_string())?;
     let mut stmt = conn
         .prepare(
-            "SELECT topic, conclusions, action_items, discussion, raw_markdown, edited_markdown FROM summaries WHERE project_id = ?1",
+            "SELECT topic, conclusions, action_items, discussion, decisions, technical_details, next_steps, raw_markdown, edited_markdown FROM summaries WHERE project_id = ?1",
         )
         .map_err(|e| e.to_string())?;
 
-    let result: Option<(String, String, String, String, String, Option<String>)> = stmt
+    let result = stmt
         .query_row(params![project_id], |row| {
             let topic: String = row.get(0)?;
             let conclusions_json: String = row.get(1)?;
             let action_items_json: String = row.get(2)?;
             let discussion_json: String = row.get(3)?;
-            let raw_markdown: String = row.get(4)?;
-            let edited_markdown: Option<String> = row.get(5)?;
+            let decisions_json: Option<String> = row.get(4)?;
+            let technical_details_json: Option<String> = row.get(5)?;
+            let next_steps_json: Option<String> = row.get(6)?;
+            let raw_markdown: String = row.get(7)?;
+            let edited_markdown: Option<String> = row.get(8)?;
 
             Ok((
                 topic,
                 conclusions_json,
                 action_items_json,
                 discussion_json,
+                decisions_json,
+                technical_details_json,
+                next_steps_json,
                 raw_markdown,
                 edited_markdown,
             ))
@@ -547,19 +600,36 @@ pub fn db_get_summary(
         .map_err(|e: rusqlite::Error| e.to_string())?;
 
     match result {
-        Some((topic, conclusions_json, action_items_json, discussion_json, raw_markdown, edited_markdown)) => {
+        Some((topic, conclusions_json, action_items_json, discussion_json, decisions_json, technical_details_json, next_steps_json, raw_markdown, edited_markdown)) => {
             let conclusions: Vec<String> =
                 serde_json::from_str(&conclusions_json).unwrap_or_default();
             let action_items: Vec<ActionItem> =
                 serde_json::from_str(&action_items_json).unwrap_or_default();
             let discussion: Vec<DiscussionItem> =
                 serde_json::from_str(&discussion_json).unwrap_or_default();
+            let decisions: Vec<Decision> = decisions_json
+                .as_deref()
+                .map(|s| serde_json::from_str(s).unwrap_or_default())
+                .unwrap_or_default();
+            let technical_details: Vec<TechnicalDetail> = technical_details_json
+                .as_deref()
+                .map(|s| serde_json::from_str(s).unwrap_or_default())
+                .unwrap_or_default();
+            let next_steps: Vec<String> = next_steps_json
+                .as_deref()
+                .map(|s| serde_json::from_str(s).unwrap_or_default())
+                .unwrap_or_default();
 
             Ok(Some(Summary {
                 topic,
                 conclusions,
+                decisions: Some(decisions),
                 action_items,
                 discussion,
+                technical_details: Some(technical_details),
+                next_steps: Some(next_steps),
+                key_data: None,
+                participants: None,
                 raw_markdown,
                 edited_markdown,
             }))
@@ -581,12 +651,18 @@ pub fn db_save_summary(
         serde_json::to_string(&summary.action_items).map_err(|e| e.to_string())?;
     let discussion_json =
         serde_json::to_string(&summary.discussion).map_err(|e| e.to_string())?;
+    let decisions_json =
+        serde_json::to_string(&summary.decisions.as_deref().unwrap_or(&[])).map_err(|e| e.to_string())?;
+    let technical_details_json =
+        serde_json::to_string(&summary.technical_details.as_deref().unwrap_or(&[])).map_err(|e| e.to_string())?;
+    let next_steps_json =
+        serde_json::to_string(&summary.next_steps.as_deref().unwrap_or(&[])).map_err(|e| e.to_string())?;
 
     let id = uuid::Uuid::new_v4().to_string();
 
     conn.execute(
-        "INSERT OR REPLACE INTO summaries (id, project_id, topic, conclusions, action_items, discussion, raw_markdown, edited_markdown)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        "INSERT OR REPLACE INTO summaries (id, project_id, topic, conclusions, action_items, discussion, decisions, technical_details, next_steps, raw_markdown, edited_markdown)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         params![
             id,
             project_id,
@@ -594,6 +670,9 @@ pub fn db_save_summary(
             conclusions_json,
             action_items_json,
             discussion_json,
+            decisions_json,
+            technical_details_json,
+            next_steps_json,
             summary.raw_markdown,
             summary.edited_markdown,
         ],

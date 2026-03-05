@@ -13,6 +13,7 @@ from asr_service.processors.punctuation.ct_transformer import CTTransformerPunct
 from asr_service.processors.itn import ChineseITNProcessor
 from asr_service.processors.filler_filter import FillerFilterProcessor
 from asr_service.processors.hallucination_detector import HallucinationDetector
+from asr_service.processors.segmenter import SemanticSegmenter, SegmenterConfig
 from asr_service.processors.diarization.factory import create_diarizer
 
 
@@ -24,16 +25,25 @@ class ProcessorPipeline:
     itn: Optional[ChineseITNProcessor]
     filler_filter: FillerFilterProcessor
     hallucination_detector: HallucinationDetector
+    segmenter: SemanticSegmenter
     diarizer: object  # CAMPPlusDiarizer or PyAnnoteDiarizer
 
 
-def create_pipeline(language: str) -> ProcessorPipeline:
+def create_pipeline(
+    language: str,
+    segmentation_strategy: str = "hybrid",
+) -> ProcessorPipeline:
     """Create a language-adaptive processor pipeline.
 
-    Chinese → FSMN-VAD + CT-Transformer + ITN + FillerFilter + HallucinationDetector + CAMPPlus
-    Other → Silero-VAD + FillerFilter + HallucinationDetector + pyannote
+    Chinese → FSMN-VAD + CT-Transformer + ITN + FillerFilter + HallucinationDetector + Segmenter + CAMPPlus
+    Other → Silero-VAD + FillerFilter + HallucinationDetector + Segmenter + pyannote
     """
     chinese_codes = {"zh", "yue", "wuu", "min_nan", "gan", "hakka", "xiang"}
+
+    segmenter_config = SegmenterConfig(
+        language=language,
+        strategy=segmentation_strategy,
+    )
 
     if language in chinese_codes:
         return ProcessorPipeline(
@@ -42,6 +52,7 @@ def create_pipeline(language: str) -> ProcessorPipeline:
             itn=ChineseITNProcessor(),
             filler_filter=FillerFilterProcessor(),
             hallucination_detector=HallucinationDetector(),
+            segmenter=SemanticSegmenter(segmenter_config),
             diarizer=create_diarizer(language),
         )
 
@@ -51,5 +62,6 @@ def create_pipeline(language: str) -> ProcessorPipeline:
         itn=None,
         filler_filter=FillerFilterProcessor(),
         hallucination_detector=HallucinationDetector(),
+        segmenter=SemanticSegmenter(segmenter_config),
         diarizer=create_diarizer(language),
     )
