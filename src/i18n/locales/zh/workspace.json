@@ -67,7 +67,11 @@
     "summary": "重新生成摘要",
     "transcript": "重新生成转录",
     "summaryGenerating": "正在生成摘要...",
-    "transcriptGenerating": "正在转录..."
+    "transcriptGenerating": "正在转录...",
+    "postProcess": "重新后处理",
+    "postProcessing": "正在后处理...",
+    "postProcessSuccess": "后处理完成",
+    "postProcessFailed": "后处理失败: {{message}}"
   },
   "recording": {
     "start": "开始录制",

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Loader2, Sparkles, FileText, RefreshCw } from "lucide-react";
+import { Loader2, Sparkles, FileText, RefreshCw, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
 import {
@@ -14,6 +14,7 @@ import { useProjectStore } from "../../stores/projectStore";
 import { useEngineStore } from "../../stores/engineStore";
 import { useRecordingStore } from "../../stores/recordingStore";
 import { generateMeetingSummary } from "../../services/llmClient";
+import { reprocessSegments } from "../../services/asrClient";
 
 export function RegenerateButton() {
   const { t } = useTranslation("workspace");
@@ -22,13 +23,15 @@ export function RegenerateButton() {
   const jobStatus = useTranscriptionStore((s) => s.job.status);
   const startTranscription = useTranscriptionStore((s) => s.startTranscription);
   const setSummary = useTranscriptionStore((s) => s.setSummary);
+  const setSegments = useTranscriptionStore((s) => s.setSegments);
   const persistSummary = useTranscriptionStore((s) => s.persistSummary);
+  const persistSegments = useTranscriptionStore((s) => s.persistSegments);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const recordingStatus = useRecordingStore((s) => s.status);
   const processingStep = useRecordingStore((s) => s.processingStep);
   const { selectedEngine, selectedModelSize, selectedLanguage } = useEngineStore();
 
-  const [generating, setGenerating] = useState<"summary" | "transcript" | null>(null);
+  const [generating, setGenerating] = useState<"summary" | "transcript" | "postprocess" | null>(null);
 
   const isJobBusy = jobStatus === "running" || jobStatus === "post_processing";
   const isRecording = recordingStatus !== "idle";
@@ -76,14 +79,59 @@ export function RegenerateButton() {
     }
   };
 
+  const handleReprocess = async () => {
+    if (segments.length === 0) return;
+    setGenerating("postprocess");
+    try {
+      const result = await reprocessSegments({
+        segments: segments.map((s) => ({
+          start: s.start,
+          end: s.end,
+          text: s.text,
+          speaker: s.speaker || null,
+          confidence: s.confidence ?? null,
+        })),
+        audio_path: audioFilePath || undefined,
+        engine: selectedEngine,
+        language: selectedLanguage === "auto" ? undefined : selectedLanguage,
+      });
+
+      const newSegments = result.segments.map((s) => ({
+        id: crypto.randomUUID(),
+        start: s.start,
+        end: s.end,
+        text: s.text,
+        speaker: s.speaker ?? null,
+        confidence: s.confidence ?? null,
+      }));
+
+      setSegments(newSegments);
+
+      if (activeProjectId) {
+        await persistSegments(activeProjectId);
+      }
+
+      toast.success(t("regenerate.postProcessSuccess"));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(t("regenerate.postProcessFailed", { message: msg }));
+    } finally {
+      setGenerating(null);
+    }
+  };
+
   // Show spinner when generating
   if (generating) {
+    const labelKey =
+      generating === "summary"
+        ? "regenerate.summaryGenerating"
+        : generating === "postprocess"
+          ? "regenerate.postProcessing"
+          : "regenerate.transcriptGenerating";
     return (
       <Button variant="outline" size="sm" disabled>
         <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-        {generating === "summary"
-          ? t("regenerate.summaryGenerating")
-          : t("regenerate.transcriptGenerating")}
+        {t(labelKey)}
       </Button>
     );
   }
@@ -101,6 +149,12 @@ export function RegenerateButton() {
           <DropdownMenuItem onClick={handleGenerateTranscript}>
             <FileText className="mr-2 h-4 w-4" />
             {t("regenerate.transcript")}
+          </DropdownMenuItem>
+        )}
+        {hasSegments && (
+          <DropdownMenuItem onClick={handleReprocess}>
+            <Wand2 className="mr-2 h-4 w-4" />
+            {t("regenerate.postProcess")}
           </DropdownMenuItem>
         )}
         {hasSegments && (

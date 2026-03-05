@@ -67,7 +67,11 @@
     "summary": "Regenerate Summary",
     "transcript": "Regenerate Transcript",
     "summaryGenerating": "Generating summary...",
-    "transcriptGenerating": "Transcribing..."
+    "transcriptGenerating": "Transcribing...",
+    "postProcess": "Re-run Post-processing",
+    "postProcessing": "Post-processing...",
+    "postProcessSuccess": "Post-processing completed",
+    "postProcessFailed": "Post-processing failed: {{message}}"
   },
   "recording": {
     "start": "Start Recording",

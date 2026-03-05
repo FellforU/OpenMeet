@@ -111,6 +111,40 @@ export async function postProcessJob(
   });
 }
 
+export interface ReprocessRequest {
+  segments: Array<{
+    start: number;
+    end: number;
+    text: string;
+    speaker: string | null;
+    confidence: number | null;
+  }>;
+  audio_path?: string;
+  engine?: string;
+  language?: string;
+}
+
+export interface ReprocessResponse {
+  segments: Array<{
+    start: number;
+    end: number;
+    text: string;
+    speaker: string | null;
+    confidence: number | null;
+  }>;
+  embeddings?: Array<number[] | null>;
+}
+
+export async function reprocessSegments(
+  req: ReprocessRequest
+): Promise<ReprocessResponse> {
+  return fetchJson(`${ASR_BASE_URL}/jobs/reprocess`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+}
+
 export interface EngineInfo {
   name: string;
   supported_languages: string[];
