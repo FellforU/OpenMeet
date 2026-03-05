@@ -69,9 +69,9 @@ class EcapaTdnnExtractor:
         model_ref = self._model
 
         def _extract():
-            import torchaudio
+            from asr_service.processors.diarization.campplus import _load_audio
 
-            waveform, sr = torchaudio.load(audio_path)
+            waveform, sr = _load_audio(audio_path)
             if waveform.shape[0] > 1:
                 waveform = waveform.mean(dim=0, keepdim=True)
             if sr != 16000:

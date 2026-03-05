@@ -15,6 +15,27 @@ from asr_service.processors.model_utils import resolve_modelscope_model
 
 logger = logging.getLogger(__name__)
 
+
+def _load_audio(audio_path: str):
+    """Load audio file with torchaudio, falling back across backends.
+
+    Newer torchaudio (>=2.5) defaults to torchcodec which may not be
+    installed.  Try multiple backends in order: soundfile → ffmpeg → sox.
+    """
+    import torch
+    import torchaudio
+
+    # Try explicit backends first to avoid torchcodec requirement
+    for backend in ("soundfile", "ffmpeg", "sox"):
+        try:
+            return torchaudio.load(audio_path, backend=backend)
+        except Exception:
+            continue
+
+    # Last resort: default backend (may require torchcodec)
+    return torchaudio.load(audio_path)
+
+
 # Model path from meeting/models/
 CAMPPLUS_MODEL_DIR = "speech_campplus_sv_zh-cn_16k-common"
 
@@ -80,9 +101,7 @@ class CAMPPlusDiarizer:
 
         def _diarize():
             try:
-                import torchaudio
-
-                waveform, sr = torchaudio.load(audio_path)
+                waveform, sr = _load_audio(audio_path)
                 # Convert to mono
                 if waveform.shape[0] > 1:
                     waveform = waveform.mean(dim=0, keepdim=True)
