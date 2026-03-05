@@ -367,16 +367,22 @@ class Qwen3Engine:
                     wf.setframerate(sr)
                     wf.writeframes(chunk_data)
 
+                chunk_end_sec = end_frame / sr
+
                 try:
                     chunk_segs = self._transcribe_single(
                         model_ref, tmp_path, language, apply_t2s,
                     )
-                    # Offset timestamps by chunk start
+                    # Assign timestamps based on chunk position.
+                    # Qwen3-ASR returns start=0/end=0 (no timestamps),
+                    # so we use the chunk time range instead.
                     for seg in chunk_segs:
+                        seg_start = seg.start if seg.start > 0 or seg.end > 0 else 0.0
+                        seg_end = seg.end if seg.end > 0 else (chunk_end_sec - chunk_start_sec)
                         all_segments.append(
                             Segment(
-                                start=round(chunk_start_sec + seg.start, 3),
-                                end=round(chunk_start_sec + seg.end, 3),
+                                start=round(chunk_start_sec + seg_start, 3),
+                                end=round(chunk_start_sec + seg_end, 3),
                                 text=seg.text,
                             )
                         )

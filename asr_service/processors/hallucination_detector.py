@@ -326,7 +326,8 @@ class HallucinationDetector:
         """Detect segments with impossible timestamps.
 
         Checks for:
-        - Segments with negative or zero duration
+        - Segments with negative duration (but NOT zero — some engines
+          like Qwen3-ASR don't produce timestamps, yielding start==end)
         - Segments exceeding maximum allowed duration
         - Segments overlapping significantly with the previous segment
         """
@@ -337,10 +338,12 @@ class HallucinationDetector:
         for i, seg in enumerate(segments):
             duration = seg.end - seg.start
 
-            # Negative or zero duration
-            if duration <= 0:
+            # Negative duration (truly impossible timestamp)
+            # Zero duration is allowed — engines without timestamp support
+            # (e.g. Qwen3-ASR) produce start==end which is valid.
+            if duration < 0:
                 logger.warning(
-                    "Hallucination [timestamp]: segment %d has non-positive "
+                    "Hallucination [timestamp]: segment %d has negative "
                     "duration %.2f — text: '%s' [%.2f-%.2f]",
                     i, duration, seg.text[:60], seg.start, seg.end,
                 )
