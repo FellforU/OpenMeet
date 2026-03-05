@@ -354,10 +354,14 @@ class Qwen3Engine:
                 chunk_start_sec = start_frame / sr
 
                 # Write chunk to temp WAV
+                # Close the handle immediately — on Windows the file
+                # stays locked while NamedTemporaryFile is open.
                 tmp = tempfile.NamedTemporaryFile(
                     suffix=".wav", delete=False, prefix="qwen3_chunk_",
                 )
-                with wave_mod.open(tmp.name, "wb") as wf:
+                tmp_path = tmp.name
+                tmp.close()
+                with wave_mod.open(tmp_path, "wb") as wf:
                     wf.setnchannels(n_channels)
                     wf.setsampwidth(sampwidth)
                     wf.setframerate(sr)
@@ -365,7 +369,7 @@ class Qwen3Engine:
 
                 try:
                     chunk_segs = self._transcribe_single(
-                        model_ref, tmp.name, language, apply_t2s,
+                        model_ref, tmp_path, language, apply_t2s,
                     )
                     # Offset timestamps by chunk start
                     for seg in chunk_segs:
@@ -377,7 +381,7 @@ class Qwen3Engine:
                             )
                         )
                 finally:
-                    Path(tmp.name).unlink(missing_ok=True)
+                    Path(tmp_path).unlink(missing_ok=True)
 
                 # Free GPU cache between chunks
                 if torch.cuda.is_available():
