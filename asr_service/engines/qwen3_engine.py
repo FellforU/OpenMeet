@@ -282,6 +282,11 @@ class Qwen3Engine:
         logger.info("模型下载完成: %s", path)
         return str(path)
 
+    # Maximum chunk duration in seconds for GPU-safe inference.
+    # 16-minute audio with 1.7B model needs ~9.75 GiB for attention —
+    # splitting into 30-second chunks keeps peak VRAM under 4 GiB.
+    MAX_CHUNK_SECONDS = 30
+
     async def transcribe(
         self,
         audio: AudioInput,
@@ -295,25 +300,115 @@ class Qwen3Engine:
         apply_t2s = language in ("zh", None)
 
         def _transcribe():
-            results = model_ref.transcribe(
-                audio=audio.file_path,
-                language=language,
+            import wave as wave_mod
+
+            # Read audio metadata to decide chunking
+            try:
+                with wave_mod.open(audio.file_path, "rb") as wf:
+                    sr = wf.getframerate()
+                    n_channels = wf.getnchannels()
+                    n_frames = wf.getnframes()
+                    sampwidth = wf.getsampwidth()
+            except Exception:
+                # Not a WAV or can't read — fall back to single-shot
+                return self._transcribe_single(
+                    model_ref, audio.file_path, language, apply_t2s,
+                )
+
+            total_duration = n_frames / sr
+            max_chunk_sec = self.MAX_CHUNK_SECONDS
+
+            # Short audio — process in one shot
+            if total_duration <= max_chunk_sec:
+                return self._transcribe_single(
+                    model_ref, audio.file_path, language, apply_t2s,
+                )
+
+            # Long audio — split into chunks to avoid OOM
+            import logging
+            import struct
+            import tempfile
+            import torch
+
+            logger = logging.getLogger(__name__)
+            chunk_frames = max_chunk_sec * sr
+            num_chunks = (n_frames + chunk_frames - 1) // chunk_frames
+            logger.info(
+                "Audio %.1fs exceeds %ds limit, splitting into %d chunks",
+                total_duration, max_chunk_sec, num_chunks,
             )
 
-            segments = []
-            if isinstance(results, list):
-                for item in results:
-                    if isinstance(item, dict):
-                        text = item.get("text", "")
-                    else:
-                        text = getattr(item, "text", None) or ""
-                    text = text.strip() if text else ""
-                    if text:
-                        if apply_t2s:
-                            text = _t2s.convert(text)
-                        segments.append(
-                            Segment(start=0.0, end=0.0, text=text)
+            # Read all raw PCM data
+            with wave_mod.open(audio.file_path, "rb") as wf:
+                raw_data = wf.readframes(n_frames)
+
+            bytes_per_frame = n_channels * sampwidth
+            all_segments = []
+
+            for i in range(num_chunks):
+                start_frame = i * chunk_frames
+                end_frame = min((i + 1) * chunk_frames, n_frames)
+                start_byte = start_frame * bytes_per_frame
+                end_byte = end_frame * bytes_per_frame
+                chunk_data = raw_data[start_byte:end_byte]
+                chunk_start_sec = start_frame / sr
+
+                # Write chunk to temp WAV
+                tmp = tempfile.NamedTemporaryFile(
+                    suffix=".wav", delete=False, prefix="qwen3_chunk_",
+                )
+                with wave_mod.open(tmp.name, "wb") as wf:
+                    wf.setnchannels(n_channels)
+                    wf.setsampwidth(sampwidth)
+                    wf.setframerate(sr)
+                    wf.writeframes(chunk_data)
+
+                try:
+                    chunk_segs = self._transcribe_single(
+                        model_ref, tmp.name, language, apply_t2s,
+                    )
+                    # Offset timestamps by chunk start
+                    for seg in chunk_segs:
+                        all_segments.append(
+                            Segment(
+                                start=round(chunk_start_sec + seg.start, 3),
+                                end=round(chunk_start_sec + seg.end, 3),
+                                text=seg.text,
+                            )
                         )
-            return segments
+                finally:
+                    Path(tmp.name).unlink(missing_ok=True)
+
+                # Free GPU cache between chunks
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
+                if on_progress:
+                    on_progress((i + 1) / num_chunks)
+
+            return all_segments
 
         return await asyncio.to_thread(_transcribe)
+
+    @staticmethod
+    def _transcribe_single(
+        model, audio_path: str, language, apply_t2s: bool,
+    ) -> list[Segment]:
+        """Transcribe a single audio file (must be short enough for GPU memory)."""
+        results = model.transcribe(audio=audio_path, language=language)
+
+        segments = []
+        if isinstance(results, list):
+            for item in results:
+                if isinstance(item, dict):
+                    text = item.get("text", "")
+                else:
+                    text = getattr(item, "text", None) or ""
+                text = text.strip() if text else ""
+                if text:
+                    if apply_t2s:
+                        text = _t2s.convert(text)
+                    segments.append(
+                        Segment(start=0.0, end=0.0, text=text)
+                    )
+        return segments
