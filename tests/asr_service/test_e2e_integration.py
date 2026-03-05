@@ -23,6 +23,8 @@ async def test_full_transcription_flow(client):
 
     mock_engine = MagicMock()
     mock_engine.is_loaded.return_value = True
+    mock_engine.unload_model = AsyncMock()
+    mock_engine.load_model = AsyncMock()
     mock_engine.transcribe = AsyncMock(return_value=fake_segments)
 
     with patch(
@@ -98,6 +100,8 @@ async def test_cancel_running_job(client):
 
     mock_engine = MagicMock()
     mock_engine.is_loaded.return_value = True
+    mock_engine.unload_model = AsyncMock()
+    mock_engine.load_model = AsyncMock()
     mock_engine.transcribe = slow_transcribe
 
     with patch(
@@ -176,6 +180,8 @@ async def test_job_lifecycle_status_transitions(client):
 
     mock_engine = MagicMock()
     mock_engine.is_loaded.return_value = True
+    mock_engine.unload_model = AsyncMock()
+    mock_engine.load_model = AsyncMock()
     mock_engine.transcribe = AsyncMock(return_value=fake_segments)
 
     with patch(

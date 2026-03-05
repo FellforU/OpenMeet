@@ -65,9 +65,12 @@ class JobManager:
             if not engine:
                 raise ValueError(f"Engine '{job.engine}' not available")
 
-            if not engine.is_loaded():
-                job.progress = 5.0
-                await engine.load_model(job.model_size)
+            # Always unload first to release GPU memory before (re-)loading.
+            # On 8GB GPUs, residual tensors from a previous run can cause OOM.
+            if engine.is_loaded():
+                await engine.unload_model()
+            job.progress = 5.0
+            await engine.load_model(job.model_size)
 
             job.progress = 10.0
 
@@ -89,6 +92,10 @@ class JobManager:
             job.segments = segments
             job.progress = 100.0
             job.status = JobStatus.COMPLETED
+
+            # Release GPU memory after transcription so post-processing
+            # (and the next job) don't compete for VRAM
+            await engine.unload_model()
 
             # Run post-processing pipeline (fault-tolerant)
             try:
