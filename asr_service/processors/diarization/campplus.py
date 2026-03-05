@@ -58,6 +58,10 @@ class CAMPPlusDiarizer:
     def is_available(self) -> bool:
         return self._model is not None
 
+    # Segments longer than this (seconds) will be split via energy-based VAD
+    # before embedding extraction, so each sub-segment maps to one speaker.
+    MAX_SEGMENT_FOR_EMBEDDING = 5.0
+
     async def process(
         self, audio_path: str, segments: list[Segment]
     ) -> list[Segment]:
@@ -72,6 +76,7 @@ class CAMPPlusDiarizer:
             return segments
 
         model_ref = self._model
+        max_seg_dur = self.MAX_SEGMENT_FOR_EMBEDDING
 
         def _diarize():
             try:
@@ -87,27 +92,62 @@ class CAMPPlusDiarizer:
                     sr = 16000
 
                 audio_np = waveform.squeeze(0).numpy()
+                total_samples = len(audio_np)
 
-                # Extract embedding per segment
-                embeddings: list[Optional[np.ndarray]] = []
-                for seg in segments:
-                    start_sample = int(seg.start * sr)
-                    end_sample = int(seg.end * sr)
+                # Build sub-segments: if a segment is too long (e.g. 30s chunk
+                # from engines without timestamps), split it via energy-based
+                # VAD so each sub-segment maps to one speaker.
+                sub_segments: list[tuple[int, float, float]] = []  # (orig_idx, start, end)
+                for i, seg in enumerate(segments):
+                    duration = seg.end - seg.start
+                    if duration > max_seg_dur:
+                        # Split long segment using energy-based VAD
+                        vad_segs = _energy_vad_split(
+                            audio_np, sr, seg.start, seg.end, total_samples,
+                        )
+                        if vad_segs:
+                            for vs, ve in vad_segs:
+                                sub_segments.append((i, vs, ve))
+                        else:
+                            sub_segments.append((i, seg.start, seg.end))
+                    else:
+                        sub_segments.append((i, seg.start, seg.end))
+
+                # Extract embedding per sub-segment
+                sub_embeddings: list[Optional[np.ndarray]] = []
+                for _, ss, se in sub_segments:
+                    start_sample = int(ss * sr)
+                    end_sample = min(int(se * sr), total_samples)
                     chunk = audio_np[start_sample:end_sample]
 
                     if len(chunk) < int(MIN_SEGMENT_DURATION * sr):
-                        embeddings.append(None)
+                        sub_embeddings.append(None)
                         continue
 
                     try:
                         result = model_ref.generate(input=chunk)
                         emb = _extract_embedding(result)
-                        embeddings.append(emb)
+                        sub_embeddings.append(emb)
                     except Exception:
-                        embeddings.append(None)
+                        sub_embeddings.append(None)
 
-                # Cluster embeddings
-                speaker_map = _cluster_embeddings(embeddings)
+                # Cluster sub-segment embeddings
+                sub_speaker_map = _cluster_embeddings(sub_embeddings)
+
+                # Map back: for each original segment, pick the most frequent
+                # speaker label among its sub-segments (majority vote).
+                from collections import Counter
+                seg_labels: dict[int, list[str]] = {}
+                for sub_idx, (orig_idx, _, _) in enumerate(sub_segments):
+                    label = sub_speaker_map.get(sub_idx)
+                    if label:
+                        seg_labels.setdefault(orig_idx, []).append(label)
+
+                speaker_map: dict[int, str] = {}
+                for orig_idx, labels in seg_labels.items():
+                    counter = Counter(labels)
+                    speaker_map[orig_idx] = counter.most_common(1)[0][0]
+
                 return speaker_map
             except Exception as e:
                 logger.warning("Diarization failed: %s", e, exc_info=True)
@@ -133,6 +173,74 @@ class CAMPPlusDiarizer:
                 )
             )
         return labeled
+
+
+def _energy_vad_split(
+    audio_np: np.ndarray,
+    sr: int,
+    seg_start: float,
+    seg_end: float,
+    total_samples: int,
+    frame_ms: int = 30,
+    min_speech_ms: int = 300,
+) -> list[tuple[float, float]]:
+    """Split a long audio region into speech segments using energy-based VAD.
+
+    Returns list of (start_sec, end_sec) tuples for detected speech regions.
+    This is a lightweight alternative to model-based VAD, suitable for
+    pre-splitting before speaker embedding extraction.
+    """
+    start_sample = int(seg_start * sr)
+    end_sample = min(int(seg_end * sr), total_samples)
+    chunk = audio_np[start_sample:end_sample]
+
+    if len(chunk) == 0:
+        return []
+
+    frame_size = int(sr * frame_ms / 1000)
+    num_frames = len(chunk) // frame_size
+    if num_frames == 0:
+        return [(seg_start, seg_end)]
+
+    # Compute per-frame energy (RMS)
+    energies = np.array([
+        np.sqrt(np.mean(chunk[i * frame_size:(i + 1) * frame_size] ** 2))
+        for i in range(num_frames)
+    ])
+
+    # Adaptive threshold: median energy (silence floor) + fraction of dynamic range
+    if len(energies) == 0:
+        return [(seg_start, seg_end)]
+    sorted_e = np.sort(energies)
+    noise_floor = sorted_e[int(len(sorted_e) * 0.3)]
+    peak = sorted_e[int(len(sorted_e) * 0.95)]
+    threshold = noise_floor + 0.25 * (peak - noise_floor)
+
+    # Find contiguous speech regions above threshold
+    is_speech = energies > threshold
+    min_speech_frames = max(1, int(min_speech_ms / frame_ms))
+
+    regions: list[tuple[float, float]] = []
+    in_speech = False
+    speech_start = 0
+
+    for i, s in enumerate(is_speech):
+        if s and not in_speech:
+            speech_start = i
+            in_speech = True
+        elif not s and in_speech:
+            if i - speech_start >= min_speech_frames:
+                rs = seg_start + speech_start * frame_ms / 1000.0
+                re = seg_start + i * frame_ms / 1000.0
+                regions.append((rs, min(re, seg_end)))
+            in_speech = False
+
+    # Handle speech region extending to end
+    if in_speech and num_frames - speech_start >= min_speech_frames:
+        rs = seg_start + speech_start * frame_ms / 1000.0
+        regions.append((rs, seg_end))
+
+    return regions if regions else [(seg_start, seg_end)]
 
 
 def _extract_embedding(result) -> Optional[np.ndarray]:

@@ -71,7 +71,7 @@ class FillerFilterConfig:
     """Configuration for filler word filtering."""
     level: FilterLevel = FilterLevel.MEDIUM
     remove_start_fillers: bool = True
-    remove_mid_fillers: bool = False
+    remove_mid_fillers: bool = True
     merge_repetitions: bool = True
     min_repetition_count: int = 2
     custom_fillers_zh: set[str] = field(default_factory=set)
@@ -187,8 +187,19 @@ def _merge_repetitions(text: str, is_chinese: bool, min_count: int = 2) -> str:
       e.g. "the the the" → "the"
     """
     if is_chinese:
-        # Match repeated Chinese character sequences (2-6 chars), at least min_count times
-        # Start from length 2 to avoid false positives on natural doubled chars like 天天、人人、慢慢
+        # Match repeated Chinese character sequences, at least min_count times.
+        # Process single-char stuttering FIRST (我我我→我), then multi-char
+        # phrases (一个一个一个→一个) from long to short.  This avoids the
+        # length-2 pattern consuming single-char stutters as 2-char repeats
+        # (e.g. "我我我我" being seen as "我我"×2 instead of "我"×4).
+
+        # Step 1: Single-char stuttering — require 3+ repetitions to preserve
+        # natural doubled chars like 天天、人人、慢慢
+        threshold_1 = max(min_count, 3)
+        pattern_1 = rf"([\u4e00-\u9fff])\1{{{threshold_1 - 1},}}"
+        text = re.sub(pattern_1, r"\1", text)
+
+        # Step 2: Multi-char phrase repetitions (length 2-6), long to short
         for length in range(6, 1, -1):
             pattern = rf"([\u4e00-\u9fff]{{{length}}})\1{{{min_count - 1},}}"
             text = re.sub(pattern, r"\1", text)

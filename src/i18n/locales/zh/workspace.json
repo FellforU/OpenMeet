@@ -71,7 +71,11 @@
     "postProcess": "重新后处理",
     "postProcessing": "正在后处理...",
     "postProcessSuccess": "后处理完成",
-    "postProcessFailed": "后处理失败: {{message}}"
+    "postProcessFailed": "后处理失败: {{message}}",
+    "correction": "AI 纠错",
+    "correctionRunning": "AI 纠错中...",
+    "correctionSuccess": "AI 纠错完成",
+    "correctionFailed": "AI 纠错失败: {{message}}"
   },
   "recording": {
     "start": "开始录制",

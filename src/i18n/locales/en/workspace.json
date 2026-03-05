@@ -71,7 +71,11 @@
     "postProcess": "Re-run Post-processing",
     "postProcessing": "Post-processing...",
     "postProcessSuccess": "Post-processing completed",
-    "postProcessFailed": "Post-processing failed: {{message}}"
+    "postProcessFailed": "Post-processing failed: {{message}}",
+    "correction": "AI Correction",
+    "correctionRunning": "AI correcting...",
+    "correctionSuccess": "AI correction completed",
+    "correctionFailed": "AI correction failed: {{message}}"
   },
   "recording": {
     "start": "Start Recording",

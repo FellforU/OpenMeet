@@ -642,3 +642,88 @@ export async function generateMeetingSummary(
   // Reduce phase: merge all chunk summaries
   return mergeChunkSummaries(chunkSummaries);
 }
+
+// -- ASR error correction via LLM --
+
+const CORRECTION_CHUNK_SIZE = 2000;
+
+/**
+ * Use system-configured LLM to correct ASR recognition errors.
+ *
+ * Splits transcript into chunks, asks LLM to fix homophone/near-sound
+ * substitution errors while preserving original meaning and structure.
+ * Returns corrected text array (one per input segment).
+ */
+export async function correctTranscriptErrors(
+  segments: Array<{ text: string }>
+): Promise<string[]> {
+  // Build numbered transcript for LLM
+  const lines = segments.map((s, i) => `[${i}] ${s.text}`);
+  const fullText = lines.join("\n");
+
+  // Split into chunks at line boundaries
+  const chunks = splitCorrectionChunks(fullText);
+
+  // Process each chunk (sequentially to avoid rate limits)
+  const correctedMap = new Map<number, string>();
+
+  for (let ci = 0; ci < chunks.length; ci++) {
+    const prompt = `你是一个专业的语音转录校对助手。以下是 ASR（语音识别）系统输出的会议转录文本，每行前有编号 [N]。
+
+请修正其中明显的 ASR 识别错误，包括：
+1. 同音/近音字替换错误（如"国购服务器"→"Google服务器"、"夫妻"→"服务器"、"一饭"→"Jira"）
+2. 技术术语/产品名/人名的误识别（如"欧本Kotlin"→"OpenClaw"、"本club"→"OpenClaw"）
+3. 口语数字表述错误（如"二分四季"→"2核4G"、"幺50"→"#150"）
+
+## 严格要求
+- 只修正明显的 ASR 错误，不要改动语义、语序或口语表达风格
+- 不要添加或删除内容，不要润色文字
+- 对于不确定的词，保持原样不修改
+- 保持原始编号格式 [N]，每行一条
+- 只输出修正后的文本，不要其他解释
+
+## 待校对文本（第${ci + 1}/${chunks.length}批）
+${chunks[ci]}`;
+
+    try {
+      const { text } = await generateText(prompt, { maxTokens: 4000 });
+      // Parse numbered lines from response
+      const responseLines = text.split("\n");
+      for (const line of responseLines) {
+        const match = line.match(/^\[(\d+)\]\s*(.+)/);
+        if (match) {
+          const idx = parseInt(match[1], 10);
+          const corrected = match[2].trim();
+          if (corrected && idx >= 0 && idx < segments.length) {
+            correctedMap.set(idx, corrected);
+          }
+        }
+      }
+    } catch {
+      // If a chunk fails, skip it — segments keep original text
+    }
+  }
+
+  // Build result: use corrected text where available, original otherwise
+  return segments.map((s, i) => correctedMap.get(i) ?? s.text);
+}
+
+/** Split numbered transcript into chunks at line boundaries. */
+function splitCorrectionChunks(text: string): string[] {
+  if (text.length <= CORRECTION_CHUNK_SIZE) return [text];
+
+  const chunks: string[] = [];
+  const lines = text.split("\n");
+  let current = "";
+
+  for (const line of lines) {
+    if (current.length + line.length + 1 > CORRECTION_CHUNK_SIZE && current) {
+      chunks.push(current);
+      current = line;
+    } else {
+      current = current ? current + "\n" + line : line;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}

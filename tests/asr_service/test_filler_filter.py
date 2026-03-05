@@ -19,8 +19,16 @@ def test_merge_chinese_repetitions():
 
 
 def test_merge_chinese_triple_char():
-    """Single-char repetitions are preserved to avoid false positives (天天、人人)."""
-    assert _merge_repetitions("对对对", is_chinese=True, min_count=2) == "对对对"
+    """Triple single-char repetitions (stuttering) should be merged."""
+    assert _merge_repetitions("对对对", is_chinese=True, min_count=2) == "对"
+    assert _merge_repetitions("我我我我", is_chinese=True, min_count=2) == "我"
+
+
+def test_merge_chinese_double_char_preserved():
+    """Natural doubled chars like 天天、人人、慢慢 should be preserved (only 2 repetitions)."""
+    assert _merge_repetitions("天天", is_chinese=True, min_count=2) == "天天"
+    assert _merge_repetitions("人人", is_chinese=True, min_count=2) == "人人"
+    assert _merge_repetitions("慢慢", is_chinese=True, min_count=2) == "慢慢"
 
 
 def test_merge_chinese_no_change_if_below_min():
