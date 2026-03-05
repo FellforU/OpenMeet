@@ -134,6 +134,8 @@ class Qwen3Engine:
             self._model = None
             self._model_size = None
             try:
+                import gc
+                gc.collect()
                 import torch
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()

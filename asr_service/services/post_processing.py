@@ -48,51 +48,61 @@ class PostProcessingPipeline:
         if job.status != JobStatus.COMPLETED:
             return
 
+        # Release GPU memory from ASR engine before post-processing
+        self._release_gpu_memory()
+
         job.status = JobStatus.POST_PROCESSING
         language = job.language or "zh"
         segments = job.segments
 
+        # Create pipeline ONCE and reuse across all steps
+        pipeline = create_pipeline(
+            language,
+            segmentation_strategy=self._config.segmentation_strategy,
+        )
+
         # Step 1: Hallucination detection (remove ASR artifacts)
         if self._config.enable_hallucination_detection:
             try:
-                segments = await self._run_hallucination_detection(segments, language)
+                segments = pipeline.hallucination_detector.detect(segments, language)
             except Exception as e:
                 logger.warning("Hallucination detection step failed: %s", e)
 
         # Step 2: ITN (Inverse Text Normalization)
-        if self._config.enable_itn:
+        if self._config.enable_itn and pipeline.itn is not None:
             try:
-                segments = await self._run_itn(segments, language)
+                segments = await pipeline.itn.normalize(segments, language)
             except Exception as e:
                 logger.warning("ITN step failed: %s", e)
 
         # Step 3: Filler word filtering
         if self._config.enable_filler_filter:
             try:
-                segments = await self._run_filler_filter(segments, language)
+                segments = await pipeline.filler_filter.filter(segments, language)
             except Exception as e:
                 logger.warning("Filler filter step failed: %s", e)
 
         # Step 4: Semantic segmentation (paragraph boundaries)
         if self._config.enable_segmentation:
             try:
-                segments = self._run_segmentation(segments, language)
+                segments = pipeline.segmenter.process(segments)
             except Exception as e:
                 logger.warning("Segmentation step failed: %s", e)
 
         # Step 5: Punctuation restoration (skip for engines that already produce punctuation)
         if self._config.enable_punctuation and job.engine not in self.PUNCTUATED_ENGINES:
             try:
-                segments = await self._run_punctuation(segments, language)
+                if pipeline.punctuator is not None:
+                    segments = await pipeline.punctuator.restore(segments)
             except Exception as e:
                 logger.warning("Punctuation step failed: %s", e)
         elif job.engine in self.PUNCTUATED_ENGINES:
             logger.info("Skipping punctuation for engine '%s' (already punctuated)", job.engine)
 
         # Step 6: Speaker diarization
-        if self._config.enable_diarization:
+        if self._config.enable_diarization and job.audio_path:
             try:
-                segments = await self._run_diarization(job.audio_path, segments, language)
+                segments = await pipeline.diarizer.process(job.audio_path, segments)
             except Exception as e:
                 logger.warning("Diarization step failed: %s", e)
 
@@ -112,56 +122,17 @@ class PostProcessingPipeline:
         job.segments = segments
         job.status = JobStatus.READY
 
-    async def _run_hallucination_detection(
-        self, segments: list[Segment], language: str
-    ) -> list[Segment]:
-        """Remove hallucinated segments from ASR output."""
-        pipeline = create_pipeline(language)
-        return pipeline.hallucination_detector.detect(segments, language)
-
-    async def _run_itn(
-        self, segments: list[Segment], language: str
-    ) -> list[Segment]:
-        """Apply Inverse Text Normalization."""
-        pipeline = create_pipeline(language)
-        if pipeline.itn is None:
-            return segments
-        return await pipeline.itn.normalize(segments, language)
-
-    async def _run_filler_filter(
-        self, segments: list[Segment], language: str
-    ) -> list[Segment]:
-        """Remove filler words and merge repetitions."""
-        pipeline = create_pipeline(language)
-        return await pipeline.filler_filter.filter(segments, language)
-
-    def _run_segmentation(
-        self, segments: list[Segment], language: str
-    ) -> list[Segment]:
-        """Apply semantic paragraph segmentation."""
-        pipeline = create_pipeline(
-            language,
-            segmentation_strategy=self._config.segmentation_strategy,
-        )
-        return pipeline.segmenter.process(segments)
-
-    async def _run_punctuation(
-        self, segments: list[Segment], language: str
-    ) -> list[Segment]:
-        """Apply punctuation restoration."""
-        pipeline = create_pipeline(language)
-        if pipeline.punctuator is None:
-            return segments
-        return await pipeline.punctuator.restore(segments)
-
-    async def _run_diarization(
-        self, audio_path: Optional[str], segments: list[Segment], language: str
-    ) -> list[Segment]:
-        """Apply speaker diarization."""
-        if not audio_path:
-            return segments
-        pipeline = create_pipeline(language)
-        return await pipeline.diarizer.process(audio_path, segments)
+    @staticmethod
+    def _release_gpu_memory() -> None:
+        """Release GPU memory from previous ASR engine before post-processing."""
+        try:
+            import gc
+            gc.collect()
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
 
     async def close(self) -> None:
         """Clean up resources (no-op, kept for API compatibility)."""

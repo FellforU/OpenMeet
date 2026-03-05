@@ -5,17 +5,27 @@ from asr_service.processors.diarization.ecapa_tdnn import EcapaTdnnExtractor
 from asr_service.processors.diarization.pyannote_diarizer import PyAnnoteDiarizer
 
 
+_cached_campplus_diarizer: CAMPPlusDiarizer | None = None
+_cached_pyannote_diarizer: PyAnnoteDiarizer | None = None
+
+
 def create_diarizer(language: str):
-    """Select diarizer based on language.
+    """Select diarizer based on language (cached to avoid reloading models).
 
     Chinese → CAMPPlus (lightweight, optimized for Chinese)
     Other → pyannote-audio (multilingual, highest quality)
     """
+    global _cached_campplus_diarizer, _cached_pyannote_diarizer
     chinese_codes = {"zh", "yue", "wuu", "min_nan", "gan", "hakka", "xiang"}
 
     if language in chinese_codes:
-        return CAMPPlusDiarizer()
-    return PyAnnoteDiarizer()
+        if _cached_campplus_diarizer is None:
+            _cached_campplus_diarizer = CAMPPlusDiarizer()
+        return _cached_campplus_diarizer
+
+    if _cached_pyannote_diarizer is None:
+        _cached_pyannote_diarizer = PyAnnoteDiarizer()
+    return _cached_pyannote_diarizer
 
 
 _cached_embedding_extractor: EcapaTdnnExtractor | None = None

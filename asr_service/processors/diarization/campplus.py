@@ -47,8 +47,8 @@ class CAMPPlusDiarizer:
             try:
                 import torch
                 from funasr import AutoModel
-                device = "cuda" if torch.cuda.is_available() else "cpu"
-                return AutoModel(model=model_path, model_revision="v2.0.4", device=device)
+                # Force CPU to avoid competing with ASR engine for GPU memory
+                return AutoModel(model=model_path, model_revision="v2.0.4", device="cpu")
             except Exception as e:
                 logger.warning("Failed to load diarization model from %s: %s", model_path, e)
                 return None
