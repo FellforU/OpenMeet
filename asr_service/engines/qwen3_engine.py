@@ -105,11 +105,13 @@ class Qwen3Engine:
             dtype = torch.bfloat16 if has_cuda else torch.float32
 
             kwargs: dict = {"dtype": dtype}
-            # Only use device_map="auto" when GPU is available.
-            # On CPU-only machines it's unnecessary and can trigger accelerate's
-            # mmap loading path which fails with [Errno 22] on Windows symlinks.
+
+            # For models that fit on a single GPU (<= 8GB in bfloat16),
+            # avoid device_map="auto" — accelerate reserves 90% VRAM for
+            # model placement leaving only 10% for inference buffers,
+            # which causes OOM on 8GB GPUs.  Load directly to CUDA instead.
             if has_cuda:
-                kwargs["device_map"] = "auto"
+                kwargs["device_map"] = "cuda:0"
 
             # Strategy 1: load from local snapshot path (offline, no network)
             if local_path:
