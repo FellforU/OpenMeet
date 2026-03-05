@@ -104,7 +104,7 @@ class Qwen3Engine:
             has_cuda = torch.cuda.is_available()
             dtype = torch.bfloat16 if has_cuda else torch.float32
 
-            kwargs: dict = {"torch_dtype": dtype}
+            kwargs: dict = {"dtype": dtype}
             # Only use device_map="auto" when GPU is available.
             # On CPU-only machines it's unnecessary and can trigger accelerate's
             # mmap loading path which fails with [Errno 22] on Windows symlinks.

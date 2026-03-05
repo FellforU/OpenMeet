@@ -65,10 +65,9 @@ class JobManager:
             if not engine:
                 raise ValueError(f"Engine '{job.engine}' not available")
 
-            # Always unload first to release GPU memory before (re-)loading.
-            # On 8GB GPUs, residual tensors from a previous run can cause OOM.
-            if engine.is_loaded():
-                await engine.unload_model()
+            # load_model() internally checks if the same model_size is already
+            # loaded and returns immediately — no double-loading.  If a
+            # *different* model_size is requested it calls unload_model() first.
             job.progress = 5.0
             await engine.load_model(job.model_size)
 
