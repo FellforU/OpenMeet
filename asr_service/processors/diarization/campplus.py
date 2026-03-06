@@ -349,13 +349,14 @@ def _energy_vad_split(
     seg_end: float,
     total_samples: int,
     frame_ms: int = 30,
-    min_speech_ms: int = 300,
+    min_speech_ms: int = 500,
+    min_silence_ms: int = 600,
 ) -> list[tuple[float, float]]:
     """Split a long audio region into speech segments using energy-based VAD.
 
     Returns list of (start_sec, end_sec) tuples for detected speech regions.
-    This is a lightweight alternative to model-based VAD, suitable for
-    pre-splitting before speaker embedding extraction.
+    Only splits on silence gaps >= min_silence_ms to produce speaker-level
+    segments rather than sentence-level fragments.
     """
     start_sample = int(seg_start * sr)
     end_sample = min(int(seg_end * sr), total_samples)
@@ -386,26 +387,39 @@ def _energy_vad_split(
     # Find contiguous speech regions above threshold
     is_speech = energies > threshold
     min_speech_frames = max(1, int(min_speech_ms / frame_ms))
+    min_silence_frames = max(1, int(min_silence_ms / frame_ms))
 
     regions: list[tuple[float, float]] = []
     in_speech = False
     speech_start = 0
+    silence_count = 0  # Consecutive silence frames
 
     for i, s in enumerate(is_speech):
-        if s and not in_speech:
-            speech_start = i
-            in_speech = True
-        elif not s and in_speech:
-            if i - speech_start >= min_speech_frames:
-                rs = seg_start + speech_start * frame_ms / 1000.0
-                re = seg_start + i * frame_ms / 1000.0
-                regions.append((rs, min(re, seg_end)))
-            in_speech = False
+        if s:
+            if not in_speech:
+                speech_start = i
+                in_speech = True
+            silence_count = 0
+        else:
+            if in_speech:
+                silence_count += 1
+                # Only end speech region if silence is long enough
+                if silence_count >= min_silence_frames:
+                    # Speech ended at the frame before silence started
+                    speech_end = i - silence_count + 1
+                    if speech_end - speech_start >= min_speech_frames:
+                        rs = seg_start + speech_start * frame_ms / 1000.0
+                        re = seg_start + speech_end * frame_ms / 1000.0
+                        regions.append((rs, min(re, seg_end)))
+                    in_speech = False
+                    silence_count = 0
 
     # Handle speech region extending to end
-    if in_speech and num_frames - speech_start >= min_speech_frames:
-        rs = seg_start + speech_start * frame_ms / 1000.0
-        regions.append((rs, seg_end))
+    if in_speech:
+        speech_end = num_frames
+        if speech_end - speech_start >= min_speech_frames:
+            rs = seg_start + speech_start * frame_ms / 1000.0
+            regions.append((rs, seg_end))
 
     return regions if regions else [(seg_start, seg_end)]
 
