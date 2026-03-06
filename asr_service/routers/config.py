@@ -10,6 +10,7 @@ router = APIRouter(tags=["config"])
 _knowledge_initializer = None
 _embedder_ref = None
 _reranker_ref = None
+_llm_client_ref = None
 
 
 def set_knowledge_initializer(fn):
@@ -27,6 +28,11 @@ def set_reranker(reranker):
     _reranker_ref = reranker
 
 
+def set_llm_client(client):
+    global _llm_client_ref
+    _llm_client_ref = client
+
+
 class EmbeddingConfig(BaseModel):
     provider: str = "local"
     model: str = ""
@@ -38,10 +44,32 @@ class HfMirrorRequest(BaseModel):
     url: str = ""
 
 
+class LLMConfig(BaseModel):
+    provider: str = ""
+    model: str = ""
+    api_key: str | None = None
+    api_url: str | None = None
+    host: str | None = None  # Ollama host
+
+
+class PipelineToggle(BaseModel):
+    """Toggle switches for post-processing pipeline steps."""
+    enable_hallucination_detection: bool = True
+    enable_itn: bool = True
+    enable_filler_filter: bool = True
+    enable_llm_correction: bool = True
+    enable_segmentation: bool = True
+    enable_punctuation: bool = True
+    enable_diarization: bool = True
+    enable_embedding: bool = True
+
+
 class ConfigRequest(BaseModel):
     app_data_dir: str
     embedding_config: EmbeddingConfig | None = None
     rerank_config: EmbeddingConfig | None = None
+    llm_config: LLMConfig | None = None
+    pipeline_config: PipelineToggle | None = None
     cache_dir: str | None = None
     hf_mirror: str | None = None
 
@@ -81,6 +109,22 @@ async def set_config(req: ConfigRequest):
             model_name=rc.model,
             api_key=rc.api_key,
             api_url=rc.api_url,
+        )
+
+    # Apply pipeline toggle configuration
+    if req.pipeline_config:
+        from asr_service.services.post_processing import set_pipeline_config
+        set_pipeline_config(req.pipeline_config.model_dump())
+
+    # Apply LLM configuration if provided
+    if req.llm_config and _llm_client_ref:
+        lc = req.llm_config
+        _llm_client_ref.configure(
+            provider=lc.provider,
+            model=lc.model,
+            api_key=lc.api_key,
+            api_url=lc.api_url,
+            host=lc.host,
         )
 
     # Initialize knowledge modules if not already

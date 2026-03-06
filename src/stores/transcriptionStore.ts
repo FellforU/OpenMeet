@@ -113,13 +113,32 @@ function summaryToRust(s: Summary) {
   return {
     topic: s.topic,
     conclusions: s.conclusions,
+    decisions: s.decisions.map((d) => ({
+      decision: d.decision,
+      made_by: d.madeBy,
+      reasoning: d.reasoning,
+    })),
     action_items: s.actionItems.map((item) => ({
       assignee: item.assignee,
       task: item.task,
       deadline: item.deadline,
+      priority: item.priority,
+      status: item.status,
       done: item.done,
     })),
-    discussion: s.discussion,
+    discussion: s.discussion.map((d) => ({
+      topic: d.topic,
+      summary: d.summary,
+      participants: d.participants,
+      key_points: d.keyPoints,
+    })),
+    technical_details: s.technicalDetails.map((td) => ({
+      category: td.category,
+      details: td.details,
+    })),
+    next_steps: s.nextSteps,
+    key_data: s.keyData,
+    participants: s.participants,
     raw_markdown: s.rawMarkdown,
     edited_markdown: s.editedMarkdown,
   };
@@ -129,16 +148,45 @@ function summaryToRust(s: Summary) {
 function summaryFromRust(r: {
   topic: string;
   conclusions: string[];
-  action_items: Array<{ assignee: string; task: string; deadline: string | null; done?: boolean }>;
-  discussion: Array<{ topic: string; summary: string }>;
+  decisions?: Array<{ decision: string; made_by: string; reasoning: string }>;
+  action_items: Array<{ assignee: string; task: string; deadline: string | null; priority?: string; status?: string; done?: boolean }>;
+  discussion: Array<{ topic: string; summary: string; participants?: string[]; key_points?: string[] }>;
+  technical_details?: Array<{ category: string; details: string }>;
+  next_steps?: string[];
+  key_data?: string[];
+  participants?: string[];
   raw_markdown: string;
   edited_markdown: string | null;
 }): Summary {
   return {
     topic: r.topic,
     conclusions: r.conclusions,
-    actionItems: r.action_items,
-    discussion: r.discussion,
+    decisions: (r.decisions || []).map((d) => ({
+      decision: d.decision,
+      madeBy: d.made_by,
+      reasoning: d.reasoning,
+    })),
+    actionItems: r.action_items.map((item) => ({
+      assignee: item.assignee,
+      task: item.task,
+      deadline: item.deadline,
+      priority: item.priority || "medium",
+      status: item.status || "not_started",
+      done: item.done,
+    })),
+    discussion: r.discussion.map((d) => ({
+      topic: d.topic,
+      summary: d.summary,
+      participants: d.participants || [],
+      keyPoints: d.key_points || [],
+    })),
+    technicalDetails: (r.technical_details || []).map((td) => ({
+      category: td.category,
+      details: td.details,
+    })),
+    nextSteps: r.next_steps || [],
+    keyData: r.key_data || [],
+    participants: r.participants || [],
     rawMarkdown: r.raw_markdown,
     editedMarkdown: r.edited_markdown,
   };
@@ -499,8 +547,13 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
     const rawSummary = await invoke<{
       topic: string;
       conclusions: string[];
-      action_items: Array<{ assignee: string; task: string; deadline: string | null; done?: boolean }>;
-      discussion: Array<{ topic: string; summary: string }>;
+      decisions?: Array<{ decision: string; made_by: string; reasoning: string }>;
+      action_items: Array<{ assignee: string; task: string; deadline: string | null; priority?: string; status?: string; done?: boolean }>;
+      discussion: Array<{ topic: string; summary: string; participants?: string[]; key_points?: string[] }>;
+      technical_details?: Array<{ category: string; details: string }>;
+      next_steps?: string[];
+      key_data?: string[];
+      participants?: string[];
       raw_markdown: string;
       edited_markdown: string | null;
     } | null>("db_get_summary", { projectId });

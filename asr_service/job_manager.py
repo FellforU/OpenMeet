@@ -65,9 +65,11 @@ class JobManager:
             if not engine:
                 raise ValueError(f"Engine '{job.engine}' not available")
 
-            if not engine.is_loaded():
-                job.progress = 5.0
-                await engine.load_model(job.model_size)
+            # load_model() internally checks if the same model_size is already
+            # loaded and returns immediately — no double-loading.  If a
+            # *different* model_size is requested it calls unload_model() first.
+            job.progress = 5.0
+            await engine.load_model(job.model_size)
 
             job.progress = 10.0
 
@@ -89,6 +91,10 @@ class JobManager:
             job.segments = segments
             job.progress = 100.0
             job.status = JobStatus.COMPLETED
+
+            # Release GPU memory after transcription so post-processing
+            # (and the next job) don't compete for VRAM
+            await engine.unload_model()
 
             # Run post-processing pipeline (fault-tolerant)
             try:

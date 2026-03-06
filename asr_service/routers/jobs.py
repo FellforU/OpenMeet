@@ -166,11 +166,13 @@ async def post_process_job(job_id: str, audio_path: Optional[str] = Query(None))
     job = manager.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    if job.status != JobStatus.COMPLETED:
+    if job.status not in (JobStatus.COMPLETED, JobStatus.READY):
         raise HTTPException(
             status_code=400,
-            detail=f"Job must be COMPLETED, current status: {job.status.value}",
+            detail=f"Job must be COMPLETED or READY, current status: {job.status.value}",
         )
+    # Reset to COMPLETED so the pipeline can run
+    job.status = JobStatus.COMPLETED
 
     # Validate and set audio_path for diarization
     if audio_path:
@@ -194,6 +196,78 @@ async def post_process_job(job_id: str, audio_path: Optional[str] = Query(None))
         await pipeline.close()
 
     return _job_to_response(job)
+
+
+class ReprocessRequest(BaseModel):
+    segments: list[SegmentResponse]
+    audio_path: Optional[str] = None
+    engine: str = "whisper"
+    language: Optional[str] = None
+
+
+class ReprocessResponse(BaseModel):
+    segments: list[SegmentResponse]
+    embeddings: Optional[list[Optional[list[float]]]] = None
+
+
+@router.post("/reprocess", response_model=ReprocessResponse)
+async def reprocess_segments(req: ReprocessRequest):
+    """Run post-processing pipeline on existing segments.
+
+    Creates a temporary job, runs the full pipeline, and returns
+    processed segments. Does not persist the job.
+    """
+    import os
+    from asr_service.models.job import Segment
+
+    # Validate audio path if provided
+    audio_path = None
+    if req.audio_path:
+        resolved = os.path.realpath(req.audio_path)
+        if os.path.isfile(resolved):
+            ext = os.path.splitext(resolved)[1].lower()
+            if ext in ALLOWED_AUDIO_EXTENSIONS:
+                audio_path = resolved
+
+    # Build temporary job
+    job = TranscriptionJob(engine=req.engine, language=req.language or "zh")
+    job.status = JobStatus.COMPLETED
+    job.audio_path = audio_path
+    job.segments = [
+        Segment(
+            start=s.start,
+            end=s.end,
+            text=s.text,
+            speaker=s.speaker,
+            confidence=s.confidence,
+        )
+        for s in req.segments
+    ]
+
+    pipeline = PostProcessingPipeline()
+    try:
+        await pipeline.run(job)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Post-processing failed: {str(e)}",
+        )
+    finally:
+        await pipeline.close()
+
+    return ReprocessResponse(
+        segments=[
+            SegmentResponse(
+                start=s.start,
+                end=s.end,
+                text=s.text,
+                speaker=s.speaker,
+                confidence=s.confidence,
+            )
+            for s in job.segments
+        ],
+        embeddings=getattr(job, "embeddings", None),
+    )
 
 
 @router.put("/{job_id}/pause", response_model=JobResponse)

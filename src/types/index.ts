@@ -23,8 +23,32 @@ export interface Segment {
 export interface Summary {
   topic: string;
   conclusions: string[];
-  actionItems: Array<{ assignee: string; task: string; deadline: string | null; done?: boolean }>;
-  discussion: Array<{ topic: string; summary: string }>;
+  decisions: Array<{
+    decision: string;
+    madeBy: string;
+    reasoning: string;
+  }>;
+  actionItems: Array<{
+    assignee: string;
+    task: string;
+    deadline: string | null;
+    priority: string;
+    status: string;
+    done?: boolean;
+  }>;
+  discussion: Array<{
+    topic: string;
+    summary: string;
+    participants: string[];
+    keyPoints: string[];
+  }>;
+  technicalDetails: Array<{
+    category: string;
+    details: string;
+  }>;
+  nextSteps: string[];
+  keyData: string[];
+  participants: string[];
   rawMarkdown: string;
   editedMarkdown: string | null;
 }

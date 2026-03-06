@@ -255,6 +255,139 @@ function GeneralSettings() {
         )}
       </div>
 
+      {/* Post-processing Settings */}
+      <div className="space-y-3 rounded-lg border p-4">
+        <h3 className="text-sm font-semibold">{t("general.postProcessingTitle")}</h3>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <label className="text-sm font-medium">
+              {t("general.enableHallucinationDetection")}
+            </label>
+            <p className="text-xs text-muted-foreground">
+              {t("general.enableHallucinationDetectionDesc")}
+            </p>
+          </div>
+          <Switch
+            checked={general.enableHallucinationDetection}
+            onCheckedChange={(v) => setGeneral({ enableHallucinationDetection: v })}
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <label className="text-sm font-medium">
+              {t("general.enableItn")}
+            </label>
+            <p className="text-xs text-muted-foreground">
+              {t("general.enableItnDesc")}
+            </p>
+          </div>
+          <Switch
+            checked={general.enableItn}
+            onCheckedChange={(v) => setGeneral({ enableItn: v })}
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <label className="text-sm font-medium">
+              {t("general.enableSpeechCleaning")}
+            </label>
+            <p className="text-xs text-muted-foreground">
+              {t("general.enableSpeechCleaningDesc")}
+            </p>
+          </div>
+          <Switch
+            checked={general.enableSpeechCleaning}
+            onCheckedChange={(v) => setGeneral({ enableSpeechCleaning: v })}
+          />
+        </div>
+
+        {general.enableSpeechCleaning && (
+          <div className="space-y-1 pl-4">
+            <label className="text-sm font-medium">
+              {t("general.cleaningIntensity")}
+            </label>
+            <Select
+              value={general.cleaningIntensity}
+              onValueChange={(v) =>
+                setGeneral({ cleaningIntensity: v as "light" | "medium" | "heavy" })
+              }
+            >
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="light">{t("general.light")}</SelectItem>
+                <SelectItem value="medium">{t("general.medium")}</SelectItem>
+                <SelectItem value="heavy">{t("general.heavy")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between">
+          <div>
+            <label className="text-sm font-medium">
+              {t("general.enableLlmCorrection")}
+            </label>
+            <p className="text-xs text-muted-foreground">
+              {t("general.enableLlmCorrectionDesc")}
+            </p>
+          </div>
+          <Switch
+            checked={general.enableLlmCorrection}
+            onCheckedChange={(v) => setGeneral({ enableLlmCorrection: v })}
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <label className="text-sm font-medium">
+              {t("general.enableSegmentation")}
+            </label>
+            <p className="text-xs text-muted-foreground">
+              {t("general.enableSegmentationDesc")}
+            </p>
+          </div>
+          <Switch
+            checked={general.enableSegmentation}
+            onCheckedChange={(v) => setGeneral({ enableSegmentation: v })}
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <label className="text-sm font-medium">
+              {t("general.enablePunctuation")}
+            </label>
+            <p className="text-xs text-muted-foreground">
+              {t("general.enablePunctuationDesc")}
+            </p>
+          </div>
+          <Switch
+            checked={general.enablePunctuation}
+            onCheckedChange={(v) => setGeneral({ enablePunctuation: v })}
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <label className="text-sm font-medium">
+              {t("general.enableDiarization")}
+            </label>
+            <p className="text-xs text-muted-foreground">
+              {t("general.enableDiarizationDesc")}
+            </p>
+          </div>
+          <Switch
+            checked={general.enableDiarization}
+            onCheckedChange={(v) => setGeneral({ enableDiarization: v })}
+          />
+        </div>
+      </div>
+
       {/* Voiceprint Matching Threshold */}
       <div className="space-y-2">
         <label className="text-sm font-medium">

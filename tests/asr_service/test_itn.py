@@ -1,31 +1,65 @@
 """Tests for Chinese ITN (Inverse Text Normalization)."""
 
 import pytest
-from asr_service.processors.itn import ChineseITNProcessor, _basic_chinese_itn
+from asr_service.processors.itn import (
+    ChineseITNProcessor,
+    _smart_number_normalize,
+    _arabic_to_chinese_fallback,
+    _is_chinese_char,
+)
 from asr_service.models.job import Segment
 
 
-def test_basic_itn_digit_sequence():
-    """Basic ITN converts Chinese digits to Arabic."""
-    assert _basic_chinese_itn("一二三") == "123"
+# --- Smart number normalization (new fallback) ---
+
+def test_smart_normalize_converts_arabic_in_chinese_context():
+    """Arabic digits surrounded by Chinese should be converted."""
+    assert _smart_number_normalize("1个月") == "一个月"
+    assert _smart_number_normalize("3到5年") == "三到五年"
 
 
-def test_basic_itn_phone_number():
-    assert _basic_chinese_itn("一三八一二三四五六七八") == "13812345678"
+def test_smart_normalize_preserves_chinese_digits():
+    """Chinese digits should not be changed."""
+    assert _smart_number_normalize("一两百美金") == "一两百美金"
+    assert _smart_number_normalize("三到五年") == "三到五年"
 
 
-def test_basic_itn_percentage():
-    assert _basic_chinese_itn("百分之八〇") == "80%"
+def test_smart_normalize_preserves_years():
+    """Years like 2024年 should stay in Arabic."""
+    assert _smart_number_normalize("2024年") == "2024年"
 
 
-def test_basic_itn_mixed_text():
-    result = _basic_chinese_itn("今天是二〇二四年")
-    assert "2024" in result
+def test_smart_normalize_preserves_long_numbers():
+    """Long digit sequences should not be converted."""
+    assert _smart_number_normalize("13812345678") == "13812345678"
 
 
-def test_basic_itn_no_change_for_non_digits():
-    assert _basic_chinese_itn("你好世界") == "你好世界"
+def test_smart_normalize_preserves_ip():
+    text = "192.168.1.1"
+    assert _smart_number_normalize(text) == text
 
+
+def test_smart_normalize_no_change_for_pure_chinese():
+    assert _smart_number_normalize("你好世界") == "你好世界"
+
+
+# --- Arabic to Chinese fallback (old, utility) ---
+
+def test_arabic_to_chinese_fallback():
+    assert _arabic_to_chinese_fallback("123") == "一二三"
+    assert _arabic_to_chinese_fallback("hello") == "hello"
+
+
+# --- Chinese char detection ---
+
+def test_is_chinese_char():
+    assert _is_chinese_char("中") is True
+    assert _is_chinese_char("a") is False
+    assert _is_chinese_char("") is False
+    assert _is_chinese_char("1") is False
+
+
+# --- Processor tests ---
 
 async def test_itn_processor_non_chinese_passthrough():
     """ITN processor should pass through non-Chinese text unchanged."""
@@ -36,24 +70,24 @@ async def test_itn_processor_non_chinese_passthrough():
     assert result[0].text == "Hello world"
 
 
-async def test_itn_processor_fallback():
-    """Without WeTextProcessing, uses basic regex fallback."""
+async def test_itn_processor_fallback_normalizes_smart():
+    """Without WeTextProcessing, uses smart number fallback."""
     processor = ChineseITNProcessor()
     segments = [
-        Segment(start=0.0, end=2.0, text="一二三四五"),
-        Segment(start=2.0, end=4.0, text="百分之九五"),
+        Segment(start=0.0, end=2.0, text="1个月的费用"),
+        Segment(start=2.0, end=4.0, text="大概3到5年"),
     ]
 
     result = await processor.normalize(segments, language="zh")
-    assert result[0].text == "12345"
-    assert "95%" in result[1].text
+    assert "一个月" in result[0].text
+    assert "三" in result[1].text and "五" in result[1].text
 
 
 async def test_itn_processor_preserves_metadata():
     """ITN should preserve segment start, end, speaker, confidence."""
     processor = ChineseITNProcessor()
     segments = [
-        Segment(start=1.5, end=3.0, text="一二三", speaker="Speaker A", confidence=-0.3),
+        Segment(start=1.5, end=3.0, text="测试文本", speaker="Speaker A", confidence=-0.3),
     ]
 
     result = await processor.normalize(segments, language="zh")

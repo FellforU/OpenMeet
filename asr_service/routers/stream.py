@@ -203,3 +203,11 @@ async def stream_transcription(websocket: WebSocket):
 
         job.status = JobStatus.COMPLETED
         job.progress = 100.0
+
+        # Unload model to release GPU memory after streaming ends
+        engine = manager._engines.get(job.engine)
+        if engine and engine.is_loaded():
+            try:
+                await engine.unload_model()
+            except Exception:
+                pass

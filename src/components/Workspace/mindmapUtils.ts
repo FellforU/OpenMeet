@@ -117,6 +117,42 @@ export function summaryToNodes(summary: Summary): LayoutResult {
     });
   }
 
+  // Decisions branch
+  if (summary.decisions.length > 0) {
+    const branchId = "decisions";
+    nodes.push({
+      id: branchId,
+      type: "mindmapNode",
+      position: { x: 0, y: 0 },
+      data: {
+        label: "决策",
+        bgColor: "#dc2626",
+        textColor: "#fff",
+        fontWeight: 500,
+        fontSize: 13,
+      },
+    });
+    edges.push(makeEdge(rootId, branchId));
+
+    summary.decisions.forEach((d, i) => {
+      const nodeId = `decision-${i}`;
+      const label = d.madeBy ? `${d.decision} (${d.madeBy})` : d.decision;
+      nodes.push({
+        id: nodeId,
+        type: "mindmapNode",
+        position: { x: 0, y: 0 },
+        data: {
+          label,
+          bgColor: "#fef2f2",
+          textColor: "#991b1b",
+          borderColor: "#fecaca",
+          fontSize: 12,
+        },
+      });
+      edges.push(makeEdge(branchId, nodeId));
+    });
+  }
+
   // Discussion branch
   if (summary.discussion.length > 0) {
     const branchId = "discussion";
@@ -145,6 +181,76 @@ export function summaryToNodes(summary: Summary): LayoutResult {
           bgColor: "#f5f3ff",
           textColor: "#5b21b6",
           borderColor: "#ddd6fe",
+          fontSize: 12,
+        },
+      });
+      edges.push(makeEdge(branchId, nodeId));
+    });
+  }
+
+  // Technical details branch
+  if (summary.technicalDetails.length > 0) {
+    const branchId = "tech";
+    nodes.push({
+      id: branchId,
+      type: "mindmapNode",
+      position: { x: 0, y: 0 },
+      data: {
+        label: "技术细节",
+        bgColor: "#0891b2",
+        textColor: "#fff",
+        fontWeight: 500,
+        fontSize: 13,
+      },
+    });
+    edges.push(makeEdge(rootId, branchId));
+
+    summary.technicalDetails.forEach((td, i) => {
+      const nodeId = `tech-${i}`;
+      nodes.push({
+        id: nodeId,
+        type: "mindmapNode",
+        position: { x: 0, y: 0 },
+        data: {
+          label: `${td.category}: ${td.details}`,
+          bgColor: "#ecfeff",
+          textColor: "#155e75",
+          borderColor: "#a5f3fc",
+          fontSize: 12,
+        },
+      });
+      edges.push(makeEdge(branchId, nodeId));
+    });
+  }
+
+  // Next steps branch
+  if (summary.nextSteps.length > 0) {
+    const branchId = "nextsteps";
+    nodes.push({
+      id: branchId,
+      type: "mindmapNode",
+      position: { x: 0, y: 0 },
+      data: {
+        label: "下一步",
+        bgColor: "#2563eb",
+        textColor: "#fff",
+        fontWeight: 500,
+        fontSize: 13,
+      },
+    });
+    edges.push(makeEdge(rootId, branchId));
+
+    summary.nextSteps.forEach((step, i) => {
+      const nodeId = `next-${i}`;
+      nodes.push({
+        id: nodeId,
+        type: "mindmapNode",
+        position: { x: 0, y: 0 },
+        data: {
+          label: step,
+          bgColor: "#eff6ff",
+          textColor: "#1e40af",
+          borderColor: "#bfdbfe",
           fontSize: 12,
         },
       });
@@ -235,10 +341,20 @@ export async function summaryToXMind(summary: Summary): Promise<Uint8Array> {
     branchTopics.push(Topic("结论").children(conclusionChildren));
   }
 
+  // Decisions
+  if (summary.decisions.length > 0) {
+    const decisionChildren = summary.decisions.map((d) => {
+      const label = d.madeBy ? `${d.decision} (${d.madeBy})` : d.decision;
+      return d.reasoning ? Topic(label).children([Topic(d.reasoning)]) : Topic(label);
+    });
+    branchTopics.push(Topic("决策").children(decisionChildren));
+  }
+
   // Action items
   if (summary.actionItems.length > 0) {
     const actionChildren = summary.actionItems.map((item) => {
-      const label = `${item.assignee}: ${item.task}${item.deadline ? ` (${item.deadline})` : ""}`;
+      const priorityTag = item.priority === "high" ? " [高]" : item.priority === "low" ? " [低]" : "";
+      const label = `${item.assignee}: ${item.task}${priorityTag}${item.deadline ? ` (${item.deadline})` : ""}`;
       return Topic(label);
     });
     branchTopics.push(Topic("待办事项").children(actionChildren));
@@ -246,10 +362,28 @@ export async function summaryToXMind(summary: Summary): Promise<Uint8Array> {
 
   // Discussion
   if (summary.discussion.length > 0) {
-    const discussionChildren = summary.discussion.map((d) =>
-      Topic(d.topic).children([Topic(d.summary)]),
-    );
+    const discussionChildren = summary.discussion.map((d) => {
+      const children = [Topic(d.summary)];
+      if (d.keyPoints && d.keyPoints.length > 0) {
+        children.push(Topic("关键要点").children(d.keyPoints.map((kp) => Topic(kp))));
+      }
+      return Topic(d.topic).children(children);
+    });
     branchTopics.push(Topic("讨论要点").children(discussionChildren));
+  }
+
+  // Technical details
+  if (summary.technicalDetails.length > 0) {
+    const techChildren = summary.technicalDetails.map((td) =>
+      Topic(td.category).children([Topic(td.details)]),
+    );
+    branchTopics.push(Topic("技术细节").children(techChildren));
+  }
+
+  // Next steps
+  if (summary.nextSteps.length > 0) {
+    const nextChildren = summary.nextSteps.map((s) => Topic(s));
+    branchTopics.push(Topic("下一步").children(nextChildren));
   }
 
   root.children(branchTopics);

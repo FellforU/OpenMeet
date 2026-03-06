@@ -34,11 +34,22 @@ function buildMarkdown(segments: Segment[], summary: Summary | null): string {
         for (const c of summary.conclusions) md += `- ${c}\n`;
         md += "\n";
       }
+      if (summary.decisions.length > 0) {
+        md += "## Decisions\n\n";
+        for (const d of summary.decisions) {
+          md += `- **${d.decision}**`;
+          if (d.madeBy) md += ` (${d.madeBy})`;
+          if (d.reasoning) md += ` — ${d.reasoning}`;
+          md += "\n";
+        }
+        md += "\n";
+      }
       if (summary.actionItems.length > 0) {
         md += "## Action Items\n\n";
         for (const item of summary.actionItems) {
           const check = item.done ? "[x]" : "[ ]";
-          md += `- ${check} **${item.assignee}**: ${item.task}`;
+          const priorityTag = item.priority === "high" ? " 🔴" : item.priority === "low" ? " 🟢" : "";
+          md += `- ${check} **${item.assignee}**: ${item.task}${priorityTag}`;
           if (item.deadline) md += ` (${item.deadline})`;
           md += "\n";
         }
@@ -47,8 +58,38 @@ function buildMarkdown(segments: Segment[], summary: Summary | null): string {
       if (summary.discussion.length > 0) {
         md += "## Discussion\n\n";
         for (const d of summary.discussion) {
-          md += `### ${d.topic}\n\n${d.summary}\n\n`;
+          md += `### ${d.topic}\n\n`;
+          if (d.participants && d.participants.length > 0) {
+            md += `**Participants:** ${d.participants.join(", ")}\n\n`;
+          }
+          md += `${d.summary}\n\n`;
+          if (d.keyPoints && d.keyPoints.length > 0) {
+            md += "**Key Points:**\n\n";
+            for (const kp of d.keyPoints) md += `- ${kp}\n`;
+            md += "\n";
+          }
         }
+      }
+      if (summary.technicalDetails.length > 0) {
+        md += "## Technical Details\n\n";
+        for (const td of summary.technicalDetails) {
+          md += `- **${td.category}**: ${td.details}\n`;
+        }
+        md += "\n";
+      }
+      if (summary.nextSteps.length > 0) {
+        md += "## Next Steps\n\n";
+        for (const step of summary.nextSteps) md += `- ${step}\n`;
+        md += "\n";
+      }
+      if (summary.keyData.length > 0) {
+        md += "## Key Data\n\n";
+        for (const data of summary.keyData) md += `- ${data}\n`;
+        md += "\n";
+      }
+      if (summary.participants.length > 0) {
+        md += "## Participants\n\n";
+        md += summary.participants.map((p) => `@${p}`).join(", ") + "\n\n";
       }
     }
   }
@@ -79,14 +120,44 @@ function buildPlainText(segments: Segment[], summary: Summary | null): string {
       for (const c of summary.conclusions) text += `  - ${c}\n`;
       text += "\n";
     }
+    if (summary.decisions.length > 0) {
+      text += "Decisions:\n";
+      for (const d of summary.decisions) {
+        text += `  - ${d.decision}`;
+        if (d.madeBy) text += ` (${d.madeBy})`;
+        if (d.reasoning) text += ` — ${d.reasoning}`;
+        text += "\n";
+      }
+      text += "\n";
+    }
     if (summary.actionItems.length > 0) {
       text += "Action Items:\n";
       for (const item of summary.actionItems) {
         const mark = item.done ? "✓" : "○";
-        text += `  ${mark} ${item.assignee}: ${item.task}`;
+        const priorityTag = item.priority === "high" ? " [HIGH]" : item.priority === "low" ? " [LOW]" : "";
+        text += `  ${mark} ${item.assignee}: ${item.task}${priorityTag}`;
         if (item.deadline) text += ` (${item.deadline})`;
         text += "\n";
       }
+      text += "\n";
+    }
+    if (summary.discussion.length > 0) {
+      text += "Discussion:\n";
+      for (const d of summary.discussion) {
+        text += `  [${d.topic}] ${d.summary}\n`;
+      }
+      text += "\n";
+    }
+    if (summary.technicalDetails.length > 0) {
+      text += "Technical Details:\n";
+      for (const td of summary.technicalDetails) {
+        text += `  - ${td.category}: ${td.details}\n`;
+      }
+      text += "\n";
+    }
+    if (summary.nextSteps.length > 0) {
+      text += "Next Steps:\n";
+      for (const step of summary.nextSteps) text += `  - ${step}\n`;
       text += "\n";
     }
   }

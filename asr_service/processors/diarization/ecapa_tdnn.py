@@ -42,8 +42,8 @@ class EcapaTdnnExtractor:
                 import torch
                 from funasr import AutoModel
 
-                device = "cuda" if torch.cuda.is_available() else "cpu"
-                return AutoModel(model=model_path, device=device)
+                # Force CPU to avoid competing with ASR engine for GPU memory
+                return AutoModel(model=model_path, device="cpu")
             except Exception as e:
                 logger.warning("Failed to load ECAPA-TDNN from %s: %s", model_path, e)
                 return None
@@ -69,9 +69,9 @@ class EcapaTdnnExtractor:
         model_ref = self._model
 
         def _extract():
-            import torchaudio
+            from asr_service.processors.diarization.campplus import _load_audio
 
-            waveform, sr = torchaudio.load(audio_path)
+            waveform, sr = _load_audio(audio_path)
             if waveform.shape[0] > 1:
                 waveform = waveform.mean(dim=0, keepdim=True)
             if sr != 16000:
