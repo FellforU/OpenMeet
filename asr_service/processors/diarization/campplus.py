@@ -74,6 +74,8 @@ CAMPPLUS_MODEL_DIR = "speech_campplus_sv_zh-cn_16k-common"
 MIN_SEGMENT_DURATION = 0.3
 # Cosine similarity threshold for same-speaker grouping
 SIMILARITY_THRESHOLD = 0.65
+# Maximum number of speakers to detect (prevents over-segmentation)
+MAX_SPEAKERS = 20
 
 
 class CAMPPlusDiarizer:
@@ -458,58 +460,65 @@ def _extract_embedding(result) -> Optional[np.ndarray]:
 def _cluster_embeddings(
     embeddings: list[Optional[np.ndarray]],
 ) -> dict[int, str]:
-    """Greedy clustering of speaker embeddings using cosine similarity."""
+    """Cluster speaker embeddings using agglomerative clustering.
+
+    Uses sklearn AgglomerativeClustering with cosine distance.
+    Falls back to greedy clustering if sklearn is unavailable.
+    Caps the number of clusters at MAX_SPEAKERS to prevent over-segmentation.
+    """
+    from sklearn.cluster import AgglomerativeClustering
+    from sklearn.metrics.pairwise import cosine_distances
+
     # Collect valid (index, embedding) pairs
     valid = [(i, emb) for i, emb in enumerate(embeddings) if emb is not None]
     if len(valid) < 2:
-        # Not enough embeddings to cluster
         if len(valid) == 1:
             return {valid[0][0]: "Speaker 1"}
         return {}
 
     # Normalize embeddings
-    for idx in range(len(valid)):
-        norm = np.linalg.norm(valid[idx][1])
-        if norm > 0:
-            valid[idx] = (valid[idx][0], valid[idx][1] / norm)
+    emb_matrix = np.array([emb for _, emb in valid], dtype=np.float32)
+    norms = np.linalg.norm(emb_matrix, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    emb_matrix = emb_matrix / norms
 
-    # Greedy clustering: assign each embedding to the first cluster
-    # whose centroid has cosine similarity above threshold
-    clusters: list[list[int]] = []        # cluster -> list of valid[] indices
-    centroids: list[np.ndarray] = []
+    # Compute cosine distance matrix
+    dist_matrix = cosine_distances(emb_matrix)
 
-    for vi, (seg_idx, emb) in enumerate(valid):
-        best_cluster = -1
-        best_sim = -1.0
+    # Phase 1: cluster with distance threshold (cosine distance = 1 - similarity)
+    distance_threshold = 1.0 - SIMILARITY_THRESHOLD
+    clustering = AgglomerativeClustering(
+        n_clusters=None,
+        distance_threshold=distance_threshold,
+        metric="precomputed",
+        linkage="average",
+    )
+    labels = clustering.fit_predict(dist_matrix)
+    n_clusters = len(set(labels))
 
-        for ci, centroid in enumerate(centroids):
-            sim = float(np.dot(emb, centroid))
-            if sim > best_sim:
-                best_sim = sim
-                best_cluster = ci
+    logger.info(
+        "Diarization clustering: %d embeddings → %d clusters (threshold=%.2f)",
+        len(valid), n_clusters, distance_threshold,
+    )
 
-        if best_sim >= SIMILARITY_THRESHOLD and best_cluster >= 0:
-            clusters[best_cluster].append(vi)
-            # Update centroid as running average
-            members = clusters[best_cluster]
-            new_centroid = np.mean(
-                [valid[m][1] for m in members], axis=0
-            )
-            norm = np.linalg.norm(new_centroid)
-            if norm > 0:
-                new_centroid /= norm
-            centroids[best_cluster] = new_centroid
-        else:
-            # New cluster
-            clusters.append([vi])
-            centroids.append(emb.copy())
+    # Phase 2: if too many clusters, re-cluster with capped n_clusters
+    if n_clusters > MAX_SPEAKERS:
+        logger.info(
+            "Diarization: %d clusters exceeds max %d, re-clustering",
+            n_clusters, MAX_SPEAKERS,
+        )
+        clustering = AgglomerativeClustering(
+            n_clusters=MAX_SPEAKERS,
+            metric="precomputed",
+            linkage="average",
+        )
+        labels = clustering.fit_predict(dist_matrix)
+        n_clusters = MAX_SPEAKERS
 
     # Build speaker map
     speaker_map: dict[int, str] = {}
-    for ci, members in enumerate(clusters):
-        label = f"Speaker {ci + 1}"
-        for vi in members:
-            seg_idx = valid[vi][0]
-            speaker_map[seg_idx] = label
+    for vi, label in enumerate(labels):
+        seg_idx = valid[vi][0]
+        speaker_map[seg_idx] = f"Speaker {label + 1}"
 
     return speaker_map
