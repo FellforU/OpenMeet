@@ -72,6 +72,7 @@ class ConfigRequest(BaseModel):
     pipeline_config: PipelineToggle | None = None
     cache_dir: str | None = None
     hf_mirror: str | None = None
+    hf_token: str | None = None
 
 
 class ConfigResponse(BaseModel):
@@ -90,6 +91,11 @@ async def set_config(req: ConfigRequest):
     # Apply HuggingFace mirror
     if req.hf_mirror is not None:
         set_hf_mirror(req.hf_mirror or None)
+
+    # Apply HuggingFace token (for pyannote model download)
+    if req.hf_token:
+        import os
+        os.environ["HF_TOKEN"] = req.hf_token
 
     # Apply embedding configuration if provided
     if req.embedding_config and _embedder_ref:

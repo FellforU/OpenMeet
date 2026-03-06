@@ -118,7 +118,7 @@ export async function configureKnowledge(
     enable_embedding: general.enableDiarization, // Embedding depends on diarization
   };
 
-  const { cacheDir, enableHfMirror, hfMirror } = general;
+  const { cacheDir, enableHfMirror, hfMirror, hfToken } = general;
   const resp = await tauriFetch(`${ASR_BASE_URL}/config`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -130,6 +130,7 @@ export async function configureKnowledge(
       pipeline_config: pipelineConfig,
       cache_dir: cacheDir || "",
       hf_mirror: (enableHfMirror && hfMirror) || "",
+      hf_token: hfToken || "",
     }),
   });
   if (resp.status < 200 || resp.status >= 300) {

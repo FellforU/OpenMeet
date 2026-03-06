@@ -38,6 +38,7 @@ interface GeneralConfig {
   cacheDir: string;                 // Root cache directory for models, audio, attachments, etc.
   enableHfMirror: boolean;         // Whether to use HuggingFace mirror for model downloads
   hfMirror: string;                // HuggingFace mirror URL (e.g. "https://hf-mirror.com")
+  hfToken: string;                 // HuggingFace token for pyannote model download
   customASRModels: CustomASRModel[]; // User-added custom ASR models
   diarizationThreshold: number;      // Voiceprint matching threshold (0.0-1.0)
   enableSpeechCleaning: boolean;     // Enable filler word cleaning
@@ -107,6 +108,7 @@ const defaultState = {
     cacheDir: "",
     enableHfMirror: false,
     hfMirror: "",
+    hfToken: "",
     customASRModels: [],
     diarizationThreshold: 0.65,
     enableSpeechCleaning: true,
@@ -199,8 +201,13 @@ async function persistSettings(state: {
   autoDegradation: boolean;
 }) {
   const encryptedProviders = await encryptProviders(state.llmProviders);
+  // Encrypt sensitive fields in general config
+  const encryptedGeneral = { ...state.general };
+  if (encryptedGeneral.hfToken) {
+    encryptedGeneral.hfToken = await encryptSecret(encryptedGeneral.hfToken);
+  }
   const data = {
-    general: state.general,
+    general: encryptedGeneral,
     llmProviders: encryptedProviders,
     cloudAsr: state.cloudAsr,
     autoDegradation: state.autoDegradation,
@@ -269,6 +276,10 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         }
 
         const decrypted = await decryptProviders(mergedProviders);
+        // Decrypt sensitive fields in general config
+        if (mergedGeneral.hfToken) {
+          mergedGeneral.hfToken = await decryptSecret(mergedGeneral.hfToken);
+        }
         set({
           general: mergedGeneral,
           llmProviders: decrypted,

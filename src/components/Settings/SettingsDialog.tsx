@@ -255,6 +255,23 @@ function GeneralSettings() {
         )}
       </div>
 
+      {/* HuggingFace Token */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium">
+          {t("general.hfToken")}
+        </label>
+        <p className="text-xs text-muted-foreground">
+          {t("general.hfTokenDesc")}
+        </p>
+        <Input
+          type="password"
+          value={general.hfToken}
+          placeholder={t("general.hfTokenPlaceholder")}
+          className="text-xs font-mono"
+          onChange={(e) => setGeneral({ hfToken: e.target.value })}
+        />
+      </div>
+
       {/* Post-processing Settings */}
       <div className="space-y-3 rounded-lg border p-4">
         <h3 className="text-sm font-semibold">{t("general.postProcessingTitle")}</h3>
