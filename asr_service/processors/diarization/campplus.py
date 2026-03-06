@@ -379,53 +379,183 @@ class CAMPPlusDiarizer:
     def _apply_timeline_to_segments(
         self, segments: list[Segment], timeline: list[tuple[float, float, str]],
     ) -> list[Segment]:
-        """Map speaker timeline regions to original segments.
+        """Map speaker timeline to segments, splitting at speaker changes.
 
-        For each segment, find the timeline region that contains its
-        timestamp. Uses binary-search style lookup for efficiency.
+        1. Estimate each segment's actual time range (start → next segment's start)
+        2. Find all timeline regions overlapping that range
+        3. If multiple speakers, split segment text proportionally
         """
         if not timeline:
             return segments
 
+        # Estimate each segment's actual time range
+        seg_ranges: list[tuple[float, float]] = []
+        for i, seg in enumerate(segments):
+            seg_start = seg.start
+            if i + 1 < len(segments):
+                seg_end = segments[i + 1].start
+            else:
+                # Last segment: estimate duration from text length
+                # ~4 chars/second for Chinese speech
+                seg_end = seg_start + max(2.0, len(seg.text) / 4.0)
+            # Ensure minimum duration
+            if seg_end <= seg_start:
+                seg_end = seg_start + 2.0
+            seg_ranges.append((seg_start, seg_end))
+
         result: list[Segment] = []
-        for seg in segments:
-            seg_t = seg.start
-            best_spk = ""
 
-            # Find the timeline region containing this timestamp
+        for i, seg in enumerate(segments):
+            s_start, s_end = seg_ranges[i]
+            s_dur = s_end - s_start
+
+            # Find all timeline regions overlapping this segment's range
+            overlapping: list[tuple[float, float, str]] = []
             for ts, te, spk in timeline:
-                if ts <= seg_t <= te:
-                    best_spk = spk
-                    break
-                # Also handle segments slightly before first region
-                # or between regions (assign to nearest)
-                if seg_t < ts:
-                    # Before this region — check if close enough
-                    if ts - seg_t < 5.0:
-                        best_spk = spk
-                    break
+                # Check overlap: region overlaps segment if not disjoint
+                if te > s_start and ts < s_end:
+                    # Clip to segment boundaries
+                    clip_s = max(ts, s_start)
+                    clip_e = min(te, s_end)
+                    if clip_e > clip_s:
+                        overlapping.append((clip_s, clip_e, spk))
 
-            # Fallback: find nearest region if no containing region found
-            if not best_spk:
-                min_dist = float("inf")
-                for ts, te, spk in timeline:
-                    # Distance from segment to region
-                    if seg_t < ts:
-                        d = ts - seg_t
-                    elif seg_t > te:
-                        d = seg_t - te
-                    else:
-                        d = 0.0
-                    if d < min_dist:
-                        min_dist = d
-                        best_spk = spk
+            if not overlapping:
+                # No overlap — find nearest timeline region
+                best_spk = _find_nearest_speaker(seg.start, timeline)
+                result.append(Segment(
+                    start=seg.start, end=seg.end, text=seg.text,
+                    speaker=best_spk, confidence=seg.confidence,
+                ))
+                continue
 
-            result.append(Segment(
-                start=seg.start, end=seg.end, text=seg.text,
-                speaker=best_spk, confidence=seg.confidence,
-            ))
+            # Merge consecutive regions with same speaker
+            merged_regions: list[tuple[float, float, str]] = [overlapping[0]]
+            for clip_s, clip_e, spk in overlapping[1:]:
+                if spk == merged_regions[-1][2]:
+                    merged_regions[-1] = (merged_regions[-1][0], clip_e, spk)
+                else:
+                    merged_regions.append((clip_s, clip_e, spk))
 
+            if len(merged_regions) == 1:
+                # Single speaker — assign directly
+                result.append(Segment(
+                    start=seg.start, end=seg.end, text=seg.text,
+                    speaker=merged_regions[0][2], confidence=seg.confidence,
+                ))
+                continue
+
+            # Multiple speakers — split text proportionally
+            text = seg.text
+            text_len = len(text)
+            splits = _split_text_by_speakers(text, s_start, s_dur, merged_regions)
+
+            for sub_start, sub_end, sub_text, sub_spk in splits:
+                if sub_text.strip():
+                    result.append(Segment(
+                        start=sub_start, end=sub_end, text=sub_text.strip(),
+                        speaker=sub_spk, confidence=seg.confidence,
+                    ))
+
+        logger.info(
+            "Diarization: split %d segments → %d segments with speaker labels",
+            len(segments), len(result),
+        )
         return result
+
+
+def _find_nearest_speaker(
+    timestamp: float, timeline: list[tuple[float, float, str]],
+) -> str:
+    """Find the speaker of the nearest timeline region to a timestamp."""
+    best_spk = ""
+    min_dist = float("inf")
+    for ts, te, spk in timeline:
+        if ts <= timestamp <= te:
+            return spk
+        d = min(abs(timestamp - ts), abs(timestamp - te))
+        if d < min_dist:
+            min_dist = d
+            best_spk = spk
+    return best_spk
+
+
+def _split_text_by_speakers(
+    text: str,
+    seg_start: float,
+    seg_dur: float,
+    regions: list[tuple[float, float, str]],
+) -> list[tuple[float, float, str, str]]:
+    """Split text proportionally based on speaker timeline regions.
+
+    Returns list of (start_time, end_time, text_portion, speaker).
+    Splits at sentence boundaries (。！？.!?) when possible.
+    """
+    text_len = len(text)
+    if text_len == 0 or not regions:
+        return []
+
+    # Calculate the proportion of each speaker region
+    total_region_dur = sum(re - rs for rs, re, _ in regions)
+    if total_region_dur <= 0:
+        return [(seg_start, seg_start + seg_dur, text, regions[0][2])]
+
+    # Build split points as character positions
+    splits: list[tuple[float, float, str, str]] = []
+    char_pos = 0
+
+    for ri, (rs, re, spk) in enumerate(regions):
+        proportion = (re - rs) / total_region_dur
+        # For the last region, take all remaining text
+        if ri == len(regions) - 1:
+            target_end = text_len
+        else:
+            target_end = min(text_len, int(char_pos + proportion * text_len))
+
+        # Try to split at a sentence boundary near the target position
+        if target_end < text_len:
+            target_end = _find_sentence_boundary(text, target_end)
+
+        sub_text = text[char_pos:target_end]
+        if sub_text.strip():
+            splits.append((rs, re, sub_text, spk))
+
+        char_pos = target_end
+
+    return splits
+
+
+def _find_sentence_boundary(text: str, target_pos: int, search_range: int = 20) -> int:
+    """Find the nearest sentence boundary to target_pos.
+
+    Looks for punctuation marks (。！？.!?，,) within search_range
+    of the target position. Returns the position after the punctuation.
+    """
+    best_pos = target_pos
+    best_dist = search_range + 1
+
+    # Search around target for sentence-ending punctuation
+    start = max(0, target_pos - search_range)
+    end = min(len(text), target_pos + search_range)
+
+    for i in range(start, end):
+        if text[i] in "。！？.!?":
+            # Split after the punctuation
+            pos = i + 1
+            dist = abs(pos - target_pos)
+            if dist < best_dist:
+                best_dist = dist
+                best_pos = pos
+        elif text[i] in "，,、；;":
+            # Comma/semicolon — less preferred but still OK
+            pos = i + 1
+            dist = abs(pos - target_pos)
+            # Only use comma if no sentence-ending punctuation found
+            if dist < best_dist and best_dist > search_range:
+                best_dist = dist
+                best_pos = pos
+
+    return best_pos
 
 
 def _extract_embeddings_batch(
