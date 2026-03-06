@@ -168,16 +168,24 @@ class PyAnnoteDiarizer:
         # Rename speakers to sequential "Speaker 1", "Speaker 2", etc.
         timeline = _rename_speakers(timeline)
 
-        # Check if segments have zero-duration timestamps
+        # Decide whether to use sentence-level splitting:
+        # 1. Zero-duration segments (e.g., Qwen3 raw output)
+        # 2. Coarse segments (e.g., 30s chunks) where avg duration is too long
+        #    for accurate per-segment speaker assignment
         zero_dur_count = sum(
             1 for seg in segments if seg.end - seg.start < 0.01
         )
-        use_sentence_split = zero_dur_count > len(segments) * 0.8
+        total_dur = sum(seg.end - seg.start for seg in segments)
+        avg_dur = total_dur / len(segments) if segments else 0
+        use_sentence_split = (
+            zero_dur_count > len(segments) * 0.8
+            or avg_dur > 15.0
+        )
 
         if use_sentence_split:
             logger.info(
-                "pyannote: %d/%d zero-duration segments, using sentence-level splitting",
-                zero_dur_count, len(segments),
+                "pyannote: %d/%d zero-dur, avg_dur=%.1fs, using sentence-level splitting",
+                zero_dur_count, len(segments), avg_dur,
             )
             return await self._apply_timeline_to_segments(
                 audio_path, segments, timeline,
@@ -218,18 +226,23 @@ class PyAnnoteDiarizer:
         # --- Get sentence timestamps via forced alignment ---
         sentence_times: list[Optional[tuple[float, float]]] = [None] * len(sentences)
 
-        # Load audio for forced alignment
+        # Load audio for forced alignment (using soundfile to avoid torchcodec)
         audio_np, sr = None, 16000
         try:
-            from asr_service.processors.diarization.campplus import _load_audio
-            waveform, sr = _load_audio(audio_path)
-            if waveform.shape[0] > 1:
-                waveform = waveform.mean(dim=0, keepdim=True)
-            if sr != 16000:
+            import soundfile as sf_align
+            audio_data, file_sr = sf_align.read(audio_path, dtype="float32")
+            # Convert to mono if multi-channel
+            if audio_data.ndim > 1:
+                audio_data = audio_data.mean(axis=1)
+            # Resample to 16kHz if needed
+            if file_sr != 16000:
                 import torchaudio
-                waveform = torchaudio.transforms.Resample(sr, 16000)(waveform)
-                sr = 16000
-            audio_np = waveform.squeeze(0).numpy()
+                import torch as th
+                waveform_t = th.from_numpy(audio_data).unsqueeze(0)
+                waveform_t = torchaudio.functional.resample(waveform_t, file_sr, 16000)
+                audio_data = waveform_t.squeeze(0).numpy()
+            audio_np = audio_data
+            sr = 16000
         except Exception as e:
             logger.warning("Audio loading for alignment failed: %s", e)
 
