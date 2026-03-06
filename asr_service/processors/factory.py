@@ -26,7 +26,7 @@ class ProcessorPipeline:
     filler_filter: FillerFilterProcessor
     hallucination_detector: HallucinationDetector
     segmenter: SemanticSegmenter
-    diarizer: object  # CAMPPlusDiarizer or PyAnnoteDiarizer
+    diarizer: object  # PyAnnoteDiarizer (primary) or CAMPPlusDiarizer (fallback)
 
 
 def create_pipeline(
