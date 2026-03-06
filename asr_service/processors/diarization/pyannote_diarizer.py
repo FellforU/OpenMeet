@@ -99,9 +99,16 @@ class PyAnnoteDiarizer:
 
         # Preload audio as waveform dict to bypass torchcodec/AudioDecoder
         # pyannote accepts {"waveform": Tensor(channel, time), "sample_rate": int}
+        # Use soundfile instead of torchaudio to avoid torchcodec dependency
+        import soundfile as sf
         import torch
-        import torchaudio
-        waveform, sample_rate = torchaudio.load(audio_path)
+        audio_data, sample_rate = sf.read(audio_path, dtype="float32")
+        # soundfile returns (samples,) for mono or (samples, channels) for multi-channel
+        waveform = torch.from_numpy(audio_data)
+        if waveform.ndim == 1:
+            waveform = waveform.unsqueeze(0)  # (1, samples)
+        else:
+            waveform = waveform.T  # (channels, samples)
         audio_input = {"waveform": waveform, "sample_rate": sample_rate}
 
         # Run pyannote diarization
