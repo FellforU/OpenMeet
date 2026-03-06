@@ -125,6 +125,8 @@ class PyAnnoteDiarizer:
                 # Newer versions may return DiarizeOutput; extract annotation
                 if hasattr(diarization, "itertracks"):
                     annotation = diarization
+                elif hasattr(diarization, "speaker_diarization"):
+                    annotation = diarization.speaker_diarization
                 elif hasattr(diarization, "annotation"):
                     annotation = diarization.annotation
                 elif isinstance(diarization, tuple):
