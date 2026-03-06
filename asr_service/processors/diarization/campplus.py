@@ -116,19 +116,24 @@ class CAMPPlusDiarizer:
     # before embedding extraction, so each sub-segment maps to one speaker.
     MAX_SEGMENT_FOR_EMBEDDING = 5.0
     # Sliding window parameters for zero-duration segment fallback.
-    # Window must be long enough for good embeddings but short enough
-    # to contain only one speaker (typical turn gap ~300ms).
-    WINDOW_SIZE = 1.5       # seconds per window
-    WINDOW_STEP = 0.75      # seconds step (50% overlap)
+    # 3s windows produce more stable embeddings than 1.5s.
+    # 1s step gives fine-grained timeline while keeping good overlap.
+    WINDOW_SIZE = 3.0       # seconds per window
+    WINDOW_STEP = 1.0       # seconds step (67% overlap)
     MIN_WINDOW_ENERGY = 0.01  # Skip silent windows
 
     async def process(
-        self, audio_path: str, segments: list[Segment]
+        self, audio_path: str, segments: list[Segment],
+        num_speakers: Optional[int] = None,
     ) -> list[Segment]:
         """Assign speaker labels by extracting per-segment embeddings and clustering.
 
         For zero-duration segments (Qwen3-ASR), builds a speaker timeline
         using sliding windows, then splits segments at speaker change points.
+
+        Args:
+            num_speakers: If specified, use this as the number of speakers
+                instead of auto-estimation. Greatly improves accuracy when known.
         """
         if not segments:
             return segments
@@ -186,6 +191,7 @@ class CAMPPlusDiarizer:
                     )
                     return self._sliding_window_diarize(
                         model_ref, audio_np, sr, total_dur, total_samples,
+                        num_speakers=num_speakers,
                     )
 
                 # Normal path: segments have valid timestamps
@@ -213,7 +219,7 @@ class CAMPPlusDiarizer:
                 if valid_count < 2:
                     return {}
 
-                sub_speaker_map = _cluster_embeddings(embeddings)
+                sub_speaker_map = _cluster_embeddings(embeddings, num_speakers=num_speakers)
 
                 from collections import Counter
                 seg_labels: dict[int, list[str]] = {}
@@ -255,6 +261,7 @@ class CAMPPlusDiarizer:
 
     def _sliding_window_diarize(
         self, model_ref, audio_np, sr, total_dur, total_samples,
+        num_speakers: Optional[int] = None,
     ):
         """Build speaker timeline via sliding windows, return new segment list.
 
@@ -315,7 +322,7 @@ class CAMPPlusDiarizer:
             return {}
 
         # Step 2: Cluster embeddings
-        speaker_map = _cluster_embeddings(embeddings)
+        speaker_map = _cluster_embeddings(embeddings, num_speakers=num_speakers)
         n_speakers = len(set(speaker_map.values())) if speaker_map else 0
         logger.info("Diarization: clustering → %d speakers", n_speakers)
 
@@ -771,17 +778,68 @@ def _extract_embedding(result) -> Optional[np.ndarray]:
     return None
 
 
+def _estimate_num_speakers(
+    affinity_matrix: np.ndarray, max_speakers: int = MAX_SPEAKERS,
+) -> int:
+    """Estimate number of speakers using eigenvalue gap (eigengap heuristic).
+
+    This is the standard approach in spectral clustering for speaker diarization.
+    Computes eigenvalues of the normalized Laplacian and finds the largest gap.
+    """
+    from scipy import sparse
+    from scipy.sparse.linalg import eigsh
+
+    n = affinity_matrix.shape[0]
+    if n <= 2:
+        return min(n, 2)
+
+    # Compute normalized Laplacian
+    degree = np.sum(affinity_matrix, axis=1)
+    degree[degree == 0] = 1.0
+    d_inv_sqrt = np.diag(1.0 / np.sqrt(degree))
+    laplacian = np.eye(n) - d_inv_sqrt @ affinity_matrix @ d_inv_sqrt
+
+    # Compute smallest eigenvalues
+    n_eig = min(max_speakers + 1, n - 1)
+    try:
+        lap_sparse = sparse.csr_matrix(laplacian)
+        eigenvalues = eigsh(lap_sparse, k=n_eig, which="SM", return_eigenvectors=False)
+        eigenvalues = np.sort(np.real(eigenvalues))
+    except Exception:
+        # Fallback to dense eigenvalue computation
+        eigenvalues = np.sort(np.real(np.linalg.eigvalsh(laplacian)))[:n_eig]
+
+    # Find largest gap between consecutive eigenvalues
+    # Skip the first eigenvalue (always ~0 for connected graphs)
+    if len(eigenvalues) < 3:
+        return 2
+
+    gaps = np.diff(eigenvalues[1:])  # gaps between eigenvalues 1,2,3,...
+    if len(gaps) == 0:
+        return 2
+
+    best_k = int(np.argmax(gaps)) + 2  # +2 because: +1 for diff offset, +1 for 1-indexed
+    best_k = max(2, min(best_k, max_speakers))
+
+    logger.info(
+        "Eigengap speaker estimation: eigenvalues=%s, gaps=%s → k=%d",
+        np.round(eigenvalues[:8], 4), np.round(gaps[:7], 4), best_k,
+    )
+
+    return best_k
+
+
 def _cluster_embeddings(
     embeddings: list[Optional[np.ndarray]],
+    num_speakers: Optional[int] = None,
 ) -> dict[int, str]:
-    """Cluster speaker embeddings using agglomerative clustering.
+    """Cluster speaker embeddings using spectral clustering.
 
-    Uses sklearn AgglomerativeClustering with cosine distance.
-    Falls back to greedy clustering if sklearn is unavailable.
-    Caps the number of clusters at MAX_SPEAKERS to prevent over-segmentation.
+    Uses cosine similarity as affinity and eigengap heuristic to
+    estimate the number of speakers (unless num_speakers is specified).
+    This is the standard approach used by pyannote.audio, FunASR, etc.
     """
-    from sklearn.cluster import AgglomerativeClustering
-    from sklearn.metrics.pairwise import cosine_distances
+    from sklearn.cluster import SpectralClustering
 
     # Collect valid (index, embedding) pairs
     valid = [(i, emb) for i, emb in enumerate(embeddings) if emb is not None]
@@ -796,41 +854,43 @@ def _cluster_embeddings(
     norms[norms == 0] = 1.0
     emb_matrix = emb_matrix / norms
 
-    # Compute cosine distance matrix
-    dist_matrix = cosine_distances(emb_matrix)
+    # Compute cosine similarity matrix (affinity)
+    # Clamp to [0, 1] since spectral clustering needs non-negative affinity
+    sim_matrix = emb_matrix @ emb_matrix.T
+    sim_matrix = np.clip(sim_matrix, 0.0, 1.0)
+    np.fill_diagonal(sim_matrix, 1.0)
 
-    # Phase 1: cluster with distance threshold (cosine distance = 1 - similarity)
-    distance_threshold = 1.0 - SIMILARITY_THRESHOLD
-    clustering = AgglomerativeClustering(
-        n_clusters=None,
-        distance_threshold=distance_threshold,
-        metric="precomputed",
-        linkage="average",
+    # Determine number of speakers
+    if num_speakers and 2 <= num_speakers <= MAX_SPEAKERS:
+        n_clusters = num_speakers
+        logger.info(
+            "Diarization: using user-specified %d speakers", n_clusters,
+        )
+    else:
+        n_clusters = _estimate_num_speakers(sim_matrix)
+        # Sanity check: cap at reasonable range
+        n_clusters = min(n_clusters, min(MAX_SPEAKERS, len(valid)))
+        logger.info(
+            "Diarization: estimated %d speakers via eigengap", n_clusters,
+        )
+
+    # Spectral clustering with precomputed affinity
+    clustering = SpectralClustering(
+        n_clusters=n_clusters,
+        affinity="precomputed",
+        random_state=42,
+        assign_labels="kmeans",
+        n_init=10,
     )
-    labels = clustering.fit_predict(dist_matrix)
-    n_clusters = len(set(labels))
+    labels = clustering.fit_predict(sim_matrix)
+    actual_clusters = len(set(labels))
 
     logger.info(
-        "Diarization clustering: %d embeddings → %d clusters (threshold=%.2f)",
-        len(valid), n_clusters, distance_threshold,
+        "Diarization spectral clustering: %d embeddings → %d clusters",
+        len(valid), actual_clusters,
     )
 
-    # Phase 2: if too many clusters, re-cluster with capped n_clusters
-    if n_clusters > MAX_SPEAKERS:
-        logger.info(
-            "Diarization: %d clusters exceeds max %d, re-clustering",
-            n_clusters, MAX_SPEAKERS,
-        )
-        clustering = AgglomerativeClustering(
-            n_clusters=MAX_SPEAKERS,
-            metric="precomputed",
-            linkage="average",
-        )
-        labels = clustering.fit_predict(dist_matrix)
-        n_clusters = MAX_SPEAKERS
-
     # Build speaker map with sequential numbering
-    # AgglomerativeClustering labels may not be sequential (e.g. 0, 2, 5)
     unique_labels = sorted(set(labels))
     label_remap = {old: new + 1 for new, old in enumerate(unique_labels)}
 
