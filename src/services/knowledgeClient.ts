@@ -106,6 +106,18 @@ export async function configureKnowledge(
     }
   }
 
+  // Build pipeline toggle configuration
+  const pipelineConfig = {
+    enable_hallucination_detection: general.enableHallucinationDetection,
+    enable_itn: general.enableItn,
+    enable_filler_filter: general.enableSpeechCleaning,
+    enable_llm_correction: general.enableLlmCorrection,
+    enable_segmentation: general.enableSegmentation,
+    enable_punctuation: general.enablePunctuation,
+    enable_diarization: general.enableDiarization,
+    enable_embedding: general.enableDiarization, // Embedding depends on diarization
+  };
+
   const { cacheDir, enableHfMirror, hfMirror } = general;
   const resp = await tauriFetch(`${ASR_BASE_URL}/config`, {
     method: "POST",
@@ -115,6 +127,7 @@ export async function configureKnowledge(
       embedding_config: embeddingConfig,
       rerank_config: rerankConfig,
       llm_config: llmConfig,
+      pipeline_config: pipelineConfig,
       cache_dir: cacheDir || "",
       hf_mirror: (enableHfMirror && hfMirror) || "",
     }),

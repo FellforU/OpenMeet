@@ -44,6 +44,10 @@ interface GeneralConfig {
   cleaningIntensity: "light" | "medium" | "heavy"; // Cleaning intensity
   enableSegmentation: boolean;       // Enable semantic segmentation
   enableHallucinationDetection: boolean; // Enable hallucination detection
+  enableItn: boolean;                // Enable inverse text normalization
+  enablePunctuation: boolean;        // Enable punctuation restoration
+  enableDiarization: boolean;        // Enable speaker diarization
+  enableLlmCorrection: boolean;     // Enable LLM-based ASR error correction
 }
 
 // Parse a compound model reference like "openai/gpt-4o"
@@ -109,6 +113,10 @@ const defaultState = {
     cleaningIntensity: "medium" as const,
     enableSegmentation: true,
     enableHallucinationDetection: true,
+    enableItn: true,
+    enablePunctuation: true,
+    enableDiarization: true,
+    enableLlmCorrection: true,
   },
   llmProviders: {
     ollama: { enabled: true, host: "http://localhost:11434", model: "qwen2.5:7b", modelByType: { LLM: "qwen2.5:7b" } },

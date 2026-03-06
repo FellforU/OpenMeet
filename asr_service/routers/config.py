@@ -52,11 +52,24 @@ class LLMConfig(BaseModel):
     host: str | None = None  # Ollama host
 
 
+class PipelineToggle(BaseModel):
+    """Toggle switches for post-processing pipeline steps."""
+    enable_hallucination_detection: bool = True
+    enable_itn: bool = True
+    enable_filler_filter: bool = True
+    enable_llm_correction: bool = True
+    enable_segmentation: bool = True
+    enable_punctuation: bool = True
+    enable_diarization: bool = True
+    enable_embedding: bool = True
+
+
 class ConfigRequest(BaseModel):
     app_data_dir: str
     embedding_config: EmbeddingConfig | None = None
     rerank_config: EmbeddingConfig | None = None
     llm_config: LLMConfig | None = None
+    pipeline_config: PipelineToggle | None = None
     cache_dir: str | None = None
     hf_mirror: str | None = None
 
@@ -97,6 +110,11 @@ async def set_config(req: ConfigRequest):
             api_key=rc.api_key,
             api_url=rc.api_url,
         )
+
+    # Apply pipeline toggle configuration
+    if req.pipeline_config:
+        from asr_service.services.post_processing import set_pipeline_config
+        set_pipeline_config(req.pipeline_config.model_dump())
 
     # Apply LLM configuration if provided
     if req.llm_config and _llm_client_ref:

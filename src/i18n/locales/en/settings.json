@@ -52,7 +52,15 @@
     "enableSegmentation": "Enable Semantic Segmentation",
     "enableSegmentationDesc": "Automatically split transcript into paragraphs based on time gaps and semantics",
     "enableHallucinationDetection": "Enable Hallucination Detection",
-    "enableHallucinationDetectionDesc": "Automatically detect and remove hallucinated text from ASR output"
+    "enableHallucinationDetectionDesc": "Automatically detect and remove hallucinated text from ASR output",
+    "enableItn": "Enable Text Normalization",
+    "enableItnDesc": "Automatically convert spoken numbers, dates, etc. to written form",
+    "enablePunctuation": "Enable Punctuation Restoration",
+    "enablePunctuationDesc": "Automatically add punctuation to unpunctuated transcript",
+    "enableDiarization": "Enable Speaker Diarization",
+    "enableDiarizationDesc": "Automatically identify and label different speakers",
+    "enableLlmCorrection": "Enable AI Correction",
+    "enableLlmCorrectionDesc": "Use system-configured LLM to fix ASR errors (homophones, proper nouns, etc.)"
   },
   "llm": {
     "title": "LLM Provider Configuration",

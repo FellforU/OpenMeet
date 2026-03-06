@@ -19,10 +19,20 @@ logger = logging.getLogger(__name__)
 # Module-level LLM client reference, set by main.py
 _llm_client = None
 
+# Module-level pipeline toggle config, set by /config endpoint
+_pipeline_toggles: dict = {}
+
 
 def set_llm_client(client):
     global _llm_client
     _llm_client = client
+
+
+def set_pipeline_config(toggles: dict):
+    """Store pipeline toggle settings from frontend."""
+    global _pipeline_toggles
+    _pipeline_toggles = toggles
+    logger.info("Pipeline config updated: %s", toggles)
 
 
 @dataclass
@@ -43,7 +53,16 @@ class PostProcessingPipeline:
     """Orchestrates post-processing steps after transcription completes."""
 
     def __init__(self, config: Optional[PipelineConfig] = None) -> None:
-        self._config = config or PipelineConfig()
+        if config is not None:
+            self._config = config
+        elif _pipeline_toggles:
+            # Build config from frontend toggle settings
+            self._config = PipelineConfig(**{
+                k: v for k, v in _pipeline_toggles.items()
+                if hasattr(PipelineConfig, k)
+            })
+        else:
+            self._config = PipelineConfig()
 
     # Engines that already produce punctuated output — skip CT-Transformer
     PUNCTUATED_ENGINES = {"qwen3", "whisper"}

@@ -277,6 +277,21 @@ function GeneralSettings() {
         <div className="flex items-center justify-between">
           <div>
             <label className="text-sm font-medium">
+              {t("general.enableItn")}
+            </label>
+            <p className="text-xs text-muted-foreground">
+              {t("general.enableItnDesc")}
+            </p>
+          </div>
+          <Switch
+            checked={general.enableItn}
+            onCheckedChange={(v) => setGeneral({ enableItn: v })}
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <label className="text-sm font-medium">
               {t("general.enableSpeechCleaning")}
             </label>
             <p className="text-xs text-muted-foreground">
@@ -315,6 +330,21 @@ function GeneralSettings() {
         <div className="flex items-center justify-between">
           <div>
             <label className="text-sm font-medium">
+              {t("general.enableLlmCorrection")}
+            </label>
+            <p className="text-xs text-muted-foreground">
+              {t("general.enableLlmCorrectionDesc")}
+            </p>
+          </div>
+          <Switch
+            checked={general.enableLlmCorrection}
+            onCheckedChange={(v) => setGeneral({ enableLlmCorrection: v })}
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <label className="text-sm font-medium">
               {t("general.enableSegmentation")}
             </label>
             <p className="text-xs text-muted-foreground">
@@ -324,6 +354,36 @@ function GeneralSettings() {
           <Switch
             checked={general.enableSegmentation}
             onCheckedChange={(v) => setGeneral({ enableSegmentation: v })}
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <label className="text-sm font-medium">
+              {t("general.enablePunctuation")}
+            </label>
+            <p className="text-xs text-muted-foreground">
+              {t("general.enablePunctuationDesc")}
+            </p>
+          </div>
+          <Switch
+            checked={general.enablePunctuation}
+            onCheckedChange={(v) => setGeneral({ enablePunctuation: v })}
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <label className="text-sm font-medium">
+              {t("general.enableDiarization")}
+            </label>
+            <p className="text-xs text-muted-foreground">
+              {t("general.enableDiarizationDesc")}
+            </p>
+          </div>
+          <Switch
+            checked={general.enableDiarization}
+            onCheckedChange={(v) => setGeneral({ enableDiarization: v })}
           />
         </div>
       </div>
