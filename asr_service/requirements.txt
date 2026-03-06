@@ -21,6 +21,7 @@ qwen-asr>=0.3,<1.0
 # VAD / Diarization / ITN (optional, lazy-loaded with try-except)
 torch>=2.0,<3.0
 torchaudio>=2.0,<3.0
+pypinyin>=0.50,<1.0
 pyannote-audio>=4.0,<5.0
 WeTextProcessing>=1.0,<2.0
 

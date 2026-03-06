@@ -11,6 +11,7 @@ from typing import Optional
 import numpy as np
 
 from asr_service.models.job import Segment
+from asr_service.processors.forced_alignment import ForcedAligner
 from asr_service.processors.model_utils import resolve_modelscope_model
 
 logger = logging.getLogger(__name__)
@@ -83,6 +84,7 @@ class CAMPPlusDiarizer:
 
     def __init__(self):
         self._model = None
+        self._aligner = ForcedAligner()
 
     def _resolve_model_path(self) -> Optional[str]:
         """Find local CAMPPlus model."""
@@ -240,9 +242,13 @@ class CAMPPlusDiarizer:
 
         result = await asyncio.to_thread(_diarize)
 
-        # Sliding window returns a timeline list[(start, end, speaker)]
-        if isinstance(result, list) and result and isinstance(result[0], tuple):
-            return self._apply_timeline_to_segments(segments, result)
+        # Sliding window returns (timeline, audio_np, sr) tuple
+        if isinstance(result, tuple) and len(result) == 3:
+            timeline, audio_np_out, sr_out = result
+            if isinstance(timeline, list) and timeline:
+                return await self._apply_timeline_to_segments(
+                    segments, timeline, audio_np_out, sr_out,
+                )
 
         # Normal path returns a speaker_map dict
         speaker_map = result
@@ -381,90 +387,107 @@ class CAMPPlusDiarizer:
         if len(timeline) > 10:
             logger.info("  ... and %d more regions", len(timeline) - 10)
 
-        return timeline
+        return (timeline, audio_np, sr)
 
-    def _apply_timeline_to_segments(
-        self, segments: list[Segment], timeline: list[tuple[float, float, str]],
+    async def _apply_timeline_to_segments(
+        self,
+        segments: list[Segment],
+        timeline: list[tuple[float, float, str]],
+        audio_np: Optional[np.ndarray] = None,
+        sr: int = 16000,
     ) -> list[Segment]:
         """Rebuild segments from speaker timeline using sentence-level assignment.
 
         For zero-duration segments (Qwen3-ASR), the original segment boundaries
-        don't reflect actual speech timing. Instead of per-segment splitting:
-        1. Concatenate all text and build a global char→time mapping
-        2. Split full text into sentences by punctuation
-        3. Assign each sentence a speaker from the timeline
-        4. Group consecutive same-speaker sentences into new segments
+        don't reflect actual speech timing. This method:
+        1. Concatenates all text and splits into sentences
+        2. Uses wav2vec2 forced alignment (MMS_FA) to get precise sentence timestamps
+        3. Falls back to char-position interpolation if alignment unavailable
+        4. Assigns each sentence a speaker from the timeline
+        5. Groups consecutive same-speaker sentences into new segments
         """
         if not timeline:
             return segments
 
-        total_audio_end = timeline[-1][1]  # End of last timeline region
+        total_audio_end = timeline[-1][1]
 
-        # Build global char→time mapping from segment timestamps + text lengths
-        # Each segment's text maps to a time range estimated from its timestamp
-        char_time_anchors: list[tuple[int, float]] = []  # (char_offset, time)
-        total_text = ""
-        for i, seg in enumerate(segments):
-            char_time_anchors.append((len(total_text), seg.start))
-            total_text += seg.text
-
+        # Concatenate all segment text
+        total_text = "".join(seg.text for seg in segments)
         total_chars = len(total_text)
         if total_chars == 0:
             return segments
 
-        # Add end anchor
-        char_time_anchors.append((total_chars, total_audio_end))
-
-        def _char_to_time(char_pos: int) -> float:
-            """Interpolate time for a character position."""
-            if char_pos <= 0:
-                return char_time_anchors[0][1]
-            if char_pos >= total_chars:
-                return total_audio_end
-
-            # Find surrounding anchors
-            for ai in range(len(char_time_anchors) - 1):
-                c0, t0 = char_time_anchors[ai]
-                c1, t1 = char_time_anchors[ai + 1]
-                if c0 <= char_pos <= c1:
-                    if c1 == c0:
-                        return t0
-                    frac = (char_pos - c0) / (c1 - c0)
-                    return t0 + frac * (t1 - t0)
-            return total_audio_end
-
-        # Split full text into sentences at punctuation boundaries
+        # Split into sentences
         sentences = _split_into_sentences(total_text)
         logger.info(
             "Diarization: %d chars total text → %d sentences",
             total_chars, len(sentences),
         )
 
-        # Assign speaker to each sentence based on its midpoint time
+        # --- Get sentence timestamps ---
+        # Strategy 1: wav2vec2 forced alignment (precise)
+        sentence_times: list[Optional[tuple[float, float]]] = [None] * len(sentences)
+        if audio_np is not None:
+            try:
+                sentence_times = await self._aligner.align_sentences(
+                    audio_np, sr, sentences,
+                )
+                aligned = sum(1 for t in sentence_times if t is not None)
+                logger.info(
+                    "Forced alignment: %d/%d sentences aligned",
+                    aligned, len(sentences),
+                )
+            except Exception as e:
+                logger.warning("Forced alignment failed, using interpolation: %s", e)
+
+        # Strategy 2: interpolation fallback for unaligned sentences
+        has_unaligned = any(t is None for t in sentence_times)
+        if has_unaligned:
+            # Build char→time interpolation from segment timestamps
+            char_time_anchors: list[tuple[int, float]] = []
+            offset = 0
+            for seg in segments:
+                char_time_anchors.append((offset, seg.start))
+                offset += len(seg.text)
+            char_time_anchors.append((total_chars, total_audio_end))
+
+            def _interp(char_pos: int) -> float:
+                if char_pos <= 0:
+                    return char_time_anchors[0][1]
+                if char_pos >= total_chars:
+                    return total_audio_end
+                for ai in range(len(char_time_anchors) - 1):
+                    c0, t0 = char_time_anchors[ai]
+                    c1, t1 = char_time_anchors[ai + 1]
+                    if c0 <= char_pos <= c1:
+                        if c1 == c0:
+                            return t0
+                        return t0 + (char_pos - c0) / (c1 - c0) * (t1 - t0)
+                return total_audio_end
+
+            # Fill in unaligned sentences with interpolation
+            char_pos = 0
+            for i, sent in enumerate(sentences):
+                if sentence_times[i] is None:
+                    s_start = _interp(char_pos)
+                    s_end = _interp(char_pos + len(sent))
+                    sentence_times[i] = (s_start, s_end)
+                char_pos += len(sent)
+
+        # --- Assign speakers and build output segments ---
         sentence_assignments: list[tuple[str, str, float, float]] = []
-        char_pos = 0
-        for sent in sentences:
-            sent_start_char = char_pos
-            sent_end_char = char_pos + len(sent)
-            mid_char = (sent_start_char + sent_end_char) // 2
-            mid_time = _char_to_time(mid_char)
-            start_time = _char_to_time(sent_start_char)
-            end_time = _char_to_time(sent_end_char)
-
-            # Find speaker at midpoint time
+        for i, sent in enumerate(sentences):
+            s_start, s_end = sentence_times[i]  # type: ignore[misc]
+            mid_time = (s_start + s_end) / 2.0
             spk = _find_nearest_speaker(mid_time, timeline)
-            sentence_assignments.append((sent, spk, start_time, end_time))
-            char_pos = sent_end_char
+            sentence_assignments.append((sent, spk, s_start, s_end))
 
-        # Group consecutive same-speaker sentences into segments
+        # Group consecutive same-speaker sentences
         result: list[Segment] = []
         if not sentence_assignments:
             return segments
 
-        cur_text = sentence_assignments[0][0]
-        cur_spk = sentence_assignments[0][1]
-        cur_start = sentence_assignments[0][2]
-        cur_end = sentence_assignments[0][3]
+        cur_text, cur_spk, cur_start, cur_end = sentence_assignments[0]
 
         for sent, spk, s_time, e_time in sentence_assignments[1:]:
             if spk == cur_spk:
@@ -482,7 +505,6 @@ class CAMPPlusDiarizer:
                 cur_start = s_time
                 cur_end = e_time
 
-        # Flush last group
         if cur_text.strip():
             result.append(Segment(
                 start=cur_start, end=cur_end,
