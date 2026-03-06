@@ -121,10 +121,26 @@ class PyAnnoteDiarizer:
 
                 diarization = pipeline_ref(audio_input, **kwargs)
 
+                # Handle different return types from pyannote versions
+                # Newer versions may return DiarizeOutput; extract annotation
+                if hasattr(diarization, "itertracks"):
+                    annotation = diarization
+                elif hasattr(diarization, "annotation"):
+                    annotation = diarization.annotation
+                elif isinstance(diarization, tuple):
+                    annotation = diarization[0]
+                else:
+                    logger.warning(
+                        "Unexpected pyannote output type: %s, attrs: %s",
+                        type(diarization).__name__,
+                        [a for a in dir(diarization) if not a.startswith("_")],
+                    )
+                    return []
+
                 # Build speaker timeline: [(start, end, speaker), ...]
                 timeline: list[tuple[float, float, str]] = []
                 speaker_set: set[str] = set()
-                for turn, _, speaker in diarization.itertracks(yield_label=True):
+                for turn, _, speaker in annotation.itertracks(yield_label=True):
                     timeline.append((turn.start, turn.end, speaker))
                     speaker_set.add(speaker)
 
