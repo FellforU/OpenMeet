@@ -1,6 +1,7 @@
 """Post-processing pipeline for completed transcriptions.
 
-Orchestrates: Hallucination Detection → ITN → Filler Filter → Punctuation → Diarization.
+Orchestrates: Hallucination Detection → ITN → Filler Filter → LLM Correction
+→ Segmentation → Punctuation → Diarization → Embedding.
 Summary generation is handled by the frontend via llmClient.ts (Map-Reduce).
 Auto-triggers when a job transitions to COMPLETED status.
 """
@@ -15,6 +16,14 @@ from asr_service.processors.diarization.factory import create_embedding_extracto
 
 logger = logging.getLogger(__name__)
 
+# Module-level LLM client reference, set by main.py
+_llm_client = None
+
+
+def set_llm_client(client):
+    global _llm_client
+    _llm_client = client
+
 
 @dataclass
 class PipelineConfig:
@@ -26,6 +35,7 @@ class PipelineConfig:
     enable_punctuation: bool = True
     enable_diarization: bool = True
     enable_embedding: bool = True
+    enable_llm_correction: bool = True
     segmentation_strategy: str = "hybrid"  # time/semantic/hybrid
 
 
@@ -41,7 +51,8 @@ class PostProcessingPipeline:
     async def run(self, job: TranscriptionJob) -> None:
         """Run the full post-processing pipeline on a completed job.
 
-        Steps: Hallucination Detection → ITN → Filler Filter → Segmentation → Punctuation → Diarization → Embedding
+        Steps: Hallucination Detection → ITN → Filler Filter → LLM Correction
+        → Segmentation → Punctuation → Diarization → Embedding.
         Each step is fault-tolerant — failure skips to next step.
         Summary generation is handled by the frontend (Map-Reduce).
         """
@@ -82,14 +93,23 @@ class PostProcessingPipeline:
             except Exception as e:
                 logger.warning("Filler filter step failed: %s", e)
 
-        # Step 4: Semantic segmentation (paragraph boundaries)
+        # Step 4: LLM-based ASR error correction
+        if self._config.enable_llm_correction and _llm_client is not None:
+            try:
+                from asr_service.processors.llm_correction import LLMCorrector
+                corrector = LLMCorrector(_llm_client)
+                segments = await corrector.correct(segments)
+            except Exception as e:
+                logger.warning("LLM correction step failed: %s", e)
+
+        # Step 5: Semantic segmentation (paragraph boundaries)
         if self._config.enable_segmentation:
             try:
                 segments = pipeline.segmenter.process(segments)
             except Exception as e:
                 logger.warning("Segmentation step failed: %s", e)
 
-        # Step 5: Punctuation restoration (skip for engines that already produce punctuation)
+        # Step 6: Punctuation restoration (skip for engines that already produce punctuation)
         if self._config.enable_punctuation and job.engine not in self.PUNCTUATED_ENGINES:
             try:
                 if pipeline.punctuator is not None:
@@ -99,14 +119,14 @@ class PostProcessingPipeline:
         elif job.engine in self.PUNCTUATED_ENGINES:
             logger.info("Skipping punctuation for engine '%s' (already punctuated)", job.engine)
 
-        # Step 6: Speaker diarization
+        # Step 7: Speaker diarization
         if self._config.enable_diarization and job.audio_path:
             try:
                 segments = await pipeline.diarizer.process(job.audio_path, segments)
             except Exception as e:
                 logger.warning("Diarization step failed: %s", e)
 
-        # Step 7: Extract speaker embeddings for voiceprint matching
+        # Step 8: Extract speaker embeddings for voiceprint matching
         if self._config.enable_embedding and job.audio_path:
             try:
                 extractor = create_embedding_extractor()

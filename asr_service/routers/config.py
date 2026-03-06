@@ -10,6 +10,7 @@ router = APIRouter(tags=["config"])
 _knowledge_initializer = None
 _embedder_ref = None
 _reranker_ref = None
+_llm_client_ref = None
 
 
 def set_knowledge_initializer(fn):
@@ -27,6 +28,11 @@ def set_reranker(reranker):
     _reranker_ref = reranker
 
 
+def set_llm_client(client):
+    global _llm_client_ref
+    _llm_client_ref = client
+
+
 class EmbeddingConfig(BaseModel):
     provider: str = "local"
     model: str = ""
@@ -38,10 +44,19 @@ class HfMirrorRequest(BaseModel):
     url: str = ""
 
 
+class LLMConfig(BaseModel):
+    provider: str = ""
+    model: str = ""
+    api_key: str | None = None
+    api_url: str | None = None
+    host: str | None = None  # Ollama host
+
+
 class ConfigRequest(BaseModel):
     app_data_dir: str
     embedding_config: EmbeddingConfig | None = None
     rerank_config: EmbeddingConfig | None = None
+    llm_config: LLMConfig | None = None
     cache_dir: str | None = None
     hf_mirror: str | None = None
 
@@ -81,6 +96,17 @@ async def set_config(req: ConfigRequest):
             model_name=rc.model,
             api_key=rc.api_key,
             api_url=rc.api_url,
+        )
+
+    # Apply LLM configuration if provided
+    if req.llm_config and _llm_client_ref:
+        lc = req.llm_config
+        _llm_client_ref.configure(
+            provider=lc.provider,
+            model=lc.model,
+            api_key=lc.api_key,
+            api_url=lc.api_url,
+            host=lc.host,
         )
 
     # Initialize knowledge modules if not already

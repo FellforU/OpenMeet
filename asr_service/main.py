@@ -26,11 +26,13 @@ from asr_service.knowledge.mcp_tools import MCPTools
 from asr_service.knowledge.rag import RAGPipeline
 from asr_service.knowledge.reranker import Reranker
 from asr_service.services.ollama_client import OllamaClient
+from asr_service.services.llm_client import LLMClient
 from asr_service.config import get_lance_path, get_sqlite_path
 
 _embedder = Embedder()
 _reranker = Reranker()
 _ollama = OllamaClient()
+_llm_client = LLMClient()
 _knowledge_initialized = False
 _last_embedding_dimension: int | None = None
 
@@ -65,6 +67,11 @@ async def init_knowledge():
 config_router.set_knowledge_initializer(init_knowledge)
 config_router.set_embedder(_embedder)
 config_router.set_reranker(_reranker)
+config_router.set_llm_client(_llm_client)
+
+# Inject LLM client into post-processing pipeline
+from asr_service.services.post_processing import set_llm_client as _set_pp_llm
+_set_pp_llm(_llm_client)
 
 
 def _log_gpu_info():

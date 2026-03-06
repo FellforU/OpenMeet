@@ -133,16 +133,36 @@ class CAMPPlusDiarizer:
         def _diarize():
             try:
                 waveform, sr = _load_audio(audio_path)
+                logger.info(
+                    "Diarization: loaded audio %s, shape=%s, sr=%d",
+                    audio_path, waveform.shape, sr,
+                )
                 # Convert to mono
                 if waveform.shape[0] > 1:
                     waveform = waveform.mean(dim=0, keepdim=True)
                 # Resample to 16kHz
                 if sr != 16000:
-                    waveform = torchaudio.transforms.Resample(sr, 16000)(waveform)
+                    import torchaudio as _ta
+                    waveform = _ta.transforms.Resample(sr, 16000)(waveform)
                     sr = 16000
 
                 audio_np = waveform.squeeze(0).numpy()
                 total_samples = len(audio_np)
+                total_dur = total_samples / sr
+                logger.info(
+                    "Diarization: %d samples, %.1fs, %d input segments",
+                    total_samples, total_dur, len(segments),
+                )
+
+                # Log input segment timestamps for debugging
+                for i, seg in enumerate(segments[:5]):
+                    logger.info(
+                        "  seg[%d]: %.2f-%.2f (%.2fs) text='%s'",
+                        i, seg.start, seg.end, seg.end - seg.start,
+                        seg.text[:40],
+                    )
+                if len(segments) > 5:
+                    logger.info("  ... and %d more segments", len(segments) - 5)
 
                 # Build sub-segments: if a segment is too long (e.g. 30s chunk
                 # from engines without timestamps), split it via energy-based
@@ -151,20 +171,29 @@ class CAMPPlusDiarizer:
                 for i, seg in enumerate(segments):
                     duration = seg.end - seg.start
                     if duration > max_seg_dur:
-                        # Split long segment using energy-based VAD
                         vad_segs = _energy_vad_split(
                             audio_np, sr, seg.start, seg.end, total_samples,
                         )
-                        if vad_segs:
-                            for vs, ve in vad_segs:
-                                sub_segments.append((i, vs, ve))
-                        else:
-                            sub_segments.append((i, seg.start, seg.end))
+                        for vs, ve in vad_segs:
+                            sub_segments.append((i, vs, ve))
                     else:
                         sub_segments.append((i, seg.start, seg.end))
 
+                logger.info(
+                    "Diarization: %d sub-segments after VAD split",
+                    len(sub_segments),
+                )
+                for j, (oi, ss, se) in enumerate(sub_segments[:8]):
+                    logger.info(
+                        "  sub[%d]: orig=%d, %.2f-%.2f (%.2fs)",
+                        j, oi, ss, se, se - ss,
+                    )
+                if len(sub_segments) > 8:
+                    logger.info("  ... and %d more sub-segments", len(sub_segments) - 8)
+
                 # Extract embedding per sub-segment
                 sub_embeddings: list[Optional[np.ndarray]] = []
+                valid_count = 0
                 for _, ss, se in sub_segments:
                     start_sample = int(ss * sr)
                     end_sample = min(int(se * sr), total_samples)
@@ -176,13 +205,43 @@ class CAMPPlusDiarizer:
 
                     try:
                         result = model_ref.generate(input=chunk)
+                        if valid_count == 0:
+                            # Log first result structure for debugging
+                            logger.info(
+                                "Diarization: first generate() result type=%s, value=%s",
+                                type(result).__name__,
+                                _summarize_result(result),
+                            )
                         emb = _extract_embedding(result)
                         sub_embeddings.append(emb)
-                    except Exception:
+                        if emb is not None:
+                            valid_count += 1
+                        elif valid_count == 0:
+                            logger.warning(
+                                "Diarization: _extract_embedding returned None for first sub-segment"
+                            )
+                    except Exception as exc:
+                        logger.warning("Embedding extraction failed for sub-segment: %s", exc)
                         sub_embeddings.append(None)
+
+                logger.info(
+                    "Diarization: %d/%d sub-segments got valid embeddings",
+                    valid_count, len(sub_segments),
+                )
+
+                if valid_count < 2:
+                    logger.warning(
+                        "Not enough valid embeddings for clustering (%d), "
+                        "need at least 2", valid_count,
+                    )
+                    return {}
 
                 # Cluster sub-segment embeddings
                 sub_speaker_map = _cluster_embeddings(sub_embeddings)
+                logger.info(
+                    "Diarization: clustering produced %d speaker labels",
+                    len(set(sub_speaker_map.values())) if sub_speaker_map else 0,
+                )
 
                 # Map back: for each original segment, pick the most frequent
                 # speaker label among its sub-segments (majority vote).
@@ -198,6 +257,10 @@ class CAMPPlusDiarizer:
                     counter = Counter(labels)
                     speaker_map[orig_idx] = counter.most_common(1)[0][0]
 
+                logger.info(
+                    "Diarization: final speaker_map has %d entries for %d segments",
+                    len(speaker_map), len(segments),
+                )
                 return speaker_map
             except Exception as e:
                 logger.warning("Diarization failed: %s", e, exc_info=True)
@@ -293,18 +356,52 @@ def _energy_vad_split(
     return regions if regions else [(seg_start, seg_end)]
 
 
+def _summarize_result(result) -> str:
+    """Summarize FunASR result structure for debugging."""
+    if result is None:
+        return "None"
+    if isinstance(result, np.ndarray):
+        return f"ndarray(shape={result.shape}, dtype={result.dtype})"
+    if isinstance(result, list):
+        parts = []
+        for i, item in enumerate(result[:3]):
+            if isinstance(item, dict):
+                keys = list(item.keys())
+                val_types = {k: type(v).__name__ for k, v in list(item.items())[:5]}
+                parts.append(f"dict(keys={keys}, types={val_types})")
+            elif isinstance(item, np.ndarray):
+                parts.append(f"ndarray(shape={item.shape})")
+            else:
+                parts.append(f"{type(item).__name__}({str(item)[:80]})")
+        return f"list[{len(result)}]: [{', '.join(parts)}]"
+    return f"{type(result).__name__}({str(result)[:100]})"
+
+
 def _extract_embedding(result) -> Optional[np.ndarray]:
     """Extract speaker embedding vector from FunASR CAMPPlus output."""
     if not result:
         return None
 
-    # FunASR returns list of dicts; embedding is in 'spk_embedding' key
+    # FunASR returns list of dicts; embedding key varies by version
     if isinstance(result, list) and len(result) > 0:
         item = result[0]
         if isinstance(item, dict):
-            emb = item.get("spk_embedding")
-            if emb is not None:
-                return np.asarray(emb, dtype=np.float32).flatten()
+            # Try known embedding keys
+            for key in ("spk_embedding", "embedding", "emb", "sv_embedding"):
+                emb = item.get(key)
+                if emb is not None:
+                    return np.asarray(emb, dtype=np.float32).flatten()
+            # Fallback: look for any ndarray value in the dict
+            for key, val in item.items():
+                if isinstance(val, np.ndarray) and val.ndim >= 1 and val.size > 10:
+                    return val.astype(np.float32).flatten()
+                if isinstance(val, list) and len(val) > 10:
+                    try:
+                        arr = np.asarray(val, dtype=np.float32)
+                        if arr.ndim >= 1:
+                            return arr.flatten()
+                    except (ValueError, TypeError):
+                        continue
         # Some versions return the embedding directly as ndarray
         if isinstance(item, np.ndarray):
             return item.flatten()
