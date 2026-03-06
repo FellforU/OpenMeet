@@ -164,20 +164,62 @@ class CAMPPlusDiarizer:
                 if len(segments) > 5:
                     logger.info("  ... and %d more segments", len(segments) - 5)
 
+                # Check if timestamps are missing (start == end for all segments).
+                # This happens with engines like Qwen3-ASR that don't produce
+                # per-segment timestamps.  In this case, ignore segment
+                # boundaries and run VAD on the entire audio to find speech
+                # regions, then map them back to original segments by position.
+                zero_dur_count = sum(
+                    1 for seg in segments if seg.end - seg.start < 0.01
+                )
+                use_full_audio_vad = zero_dur_count > len(segments) * 0.8
+
+                if use_full_audio_vad:
+                    logger.info(
+                        "Diarization: %d/%d segments have zero duration, "
+                        "running VAD on full audio",
+                        zero_dur_count, len(segments),
+                    )
+
                 # Build sub-segments: if a segment is too long (e.g. 30s chunk
                 # from engines without timestamps), split it via energy-based
                 # VAD so each sub-segment maps to one speaker.
                 sub_segments: list[tuple[int, float, float]] = []  # (orig_idx, start, end)
-                for i, seg in enumerate(segments):
-                    duration = seg.end - seg.start
-                    if duration > max_seg_dur:
-                        vad_segs = _energy_vad_split(
-                            audio_np, sr, seg.start, seg.end, total_samples,
-                        )
-                        for vs, ve in vad_segs:
-                            sub_segments.append((i, vs, ve))
-                    else:
-                        sub_segments.append((i, seg.start, seg.end))
+
+                if use_full_audio_vad:
+                    # Run VAD on the entire audio to find speech regions
+                    vad_segs = _energy_vad_split(
+                        audio_np, sr, 0.0, total_dur, total_samples,
+                    )
+                    logger.info(
+                        "Diarization: full-audio VAD found %d speech regions",
+                        len(vad_segs),
+                    )
+                    # Map each VAD region to the nearest original segment
+                    # by matching the region's midpoint to segment timestamps
+                    seg_times = [seg.start for seg in segments]
+                    for vs, ve in vad_segs:
+                        mid = (vs + ve) / 2.0
+                        # Find the closest segment by timestamp
+                        best_idx = 0
+                        best_dist = abs(mid - seg_times[0])
+                        for si, st in enumerate(seg_times):
+                            d = abs(mid - st)
+                            if d < best_dist:
+                                best_dist = d
+                                best_idx = si
+                        sub_segments.append((best_idx, vs, ve))
+                else:
+                    for i, seg in enumerate(segments):
+                        duration = seg.end - seg.start
+                        if duration > max_seg_dur:
+                            vad_segs = _energy_vad_split(
+                                audio_np, sr, seg.start, seg.end, total_samples,
+                            )
+                            for vs, ve in vad_segs:
+                                sub_segments.append((i, vs, ve))
+                        else:
+                            sub_segments.append((i, seg.start, seg.end))
 
                 logger.info(
                     "Diarization: %d sub-segments after VAD split",

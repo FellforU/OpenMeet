@@ -66,7 +66,7 @@ interface TranscriptionStore {
   addStreamSegment: (segment: Segment) => void;
   startAutoPersist: (projectId: string) => void;
   stopAutoPersist: () => void;
-  persistSegments: (projectId: string) => Promise<void>;
+  persistSegments: (projectId: string, skipIndex?: boolean) => Promise<void>;
   cancelTranscription: () => void;
   persistSummary: (projectId: string) => Promise<void>;
   clearHighlight: () => void;
@@ -583,7 +583,8 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
     if (autoPersistTimerId) clearInterval(autoPersistTimerId);
     autoPersistTimerId = setInterval(async () => {
       try {
-        await get().persistSegments(projectId);
+        // Skip indexing during auto-persist to avoid repeated API calls
+        await get().persistSegments(projectId, true);
       } catch {
         // Ignore persist errors during recording — will retry next interval
       }
@@ -597,14 +598,17 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
     }
   },
 
-  persistSegments: async (projectId: string) => {
+  persistSegments: async (projectId: string, skipIndex = false) => {
     const { segments } = get();
     await invoke("db_save_segments", {
       projectId,
       segments: segments.map(segmentToRust),
     });
-    // Trigger knowledge indexing in background
-    indexProject(projectId).catch(() => {});
+    // Only trigger indexing on explicit saves (e.g. after post-processing),
+    // NOT during auto-persist intervals to avoid repeated API calls.
+    if (!skipIndex) {
+      indexProject(projectId).catch(() => {});
+    }
   },
 
   persistSummary: async (projectId: string) => {

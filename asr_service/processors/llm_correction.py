@@ -15,8 +15,10 @@ from asr_service.services.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
 
-# Max characters per LLM correction chunk
-_CHUNK_SIZE = 2000
+# Max characters per LLM correction chunk.
+# Most cloud LLMs support 32K-128K context. Use a large default to avoid
+# unnecessary splitting. Only split for very long meetings (500+ segments).
+_CHUNK_SIZE = 30000
 
 _CORRECTION_PROMPT = """你是一个专业的语音转录校对助手。以下是 ASR（语音识别）系统输出的会议转录文本，每行前有编号 [N]。
 
@@ -32,7 +34,7 @@ _CORRECTION_PROMPT = """你是一个专业的语音转录校对助手。以下�
 - 保持原始编号格式 [N]，每行一条
 - 只输出修正后的文本，不要其他解释
 
-## 待校对文本（第{batch_idx}/{batch_total}批）
+## 待校对文本
 {text}"""
 
 # Pattern to parse "[N] text" lines from LLM response
@@ -80,13 +82,12 @@ class LLMCorrector:
         # Process each chunk sequentially
         corrected_map: dict[int, str] = {}
         for ci, chunk in enumerate(chunks):
-            prompt = _CORRECTION_PROMPT.format(
-                batch_idx=ci + 1,
-                batch_total=len(chunks),
-                text=chunk,
-            )
+            prompt = _CORRECTION_PROMPT.format(text=chunk)
             try:
-                response = await self._llm.generate(prompt)
+                # Use large max_tokens since output mirrors input size
+                response = await self._llm.generate(
+                    prompt, max_tokens=8000,
+                )
                 # Parse [N] corrected_text lines
                 for match in _LINE_PATTERN.finditer(response):
                     idx = int(match.group(1))
