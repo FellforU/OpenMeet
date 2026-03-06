@@ -115,6 +115,9 @@ class CAMPPlusDiarizer:
     # Segments longer than this (seconds) will be split via energy-based VAD
     # before embedding extraction, so each sub-segment maps to one speaker.
     MAX_SEGMENT_FOR_EMBEDDING = 5.0
+    # Minimum window duration (seconds) for reliable speaker embedding.
+    # Short VAD segments are merged into windows of at least this length.
+    MIN_WINDOW_FOR_EMBEDDING = 1.5
 
     async def process(
         self, audio_path: str, segments: list[Segment]
@@ -188,6 +191,8 @@ class CAMPPlusDiarizer:
                 # VAD so each sub-segment maps to one speaker.
                 sub_segments: list[tuple[int, float, float]] = []  # (orig_idx, start, end)
 
+                min_win = self.MIN_WINDOW_FOR_EMBEDDING
+
                 if use_full_audio_vad:
                     # Run VAD on the entire audio to find speech regions
                     vad_segs = _energy_vad_split(
@@ -197,12 +202,17 @@ class CAMPPlusDiarizer:
                         "Diarization: full-audio VAD found %d speech regions",
                         len(vad_segs),
                     )
-                    # Map each VAD region to the nearest original segment
-                    # by matching the region's midpoint to segment timestamps
+                    # Merge adjacent VAD segments into windows >= min_win
+                    # seconds so CAMPPlus gets enough audio for good embeddings
+                    merged_vad = _merge_vad_segments(vad_segs, min_win, max_seg_dur)
+                    logger.info(
+                        "Diarization: merged %d VAD regions → %d windows",
+                        len(vad_segs), len(merged_vad),
+                    )
+                    # Map each merged window to the nearest original segment
                     seg_times = [seg.start for seg in segments]
-                    for vs, ve in vad_segs:
+                    for vs, ve in merged_vad:
                         mid = (vs + ve) / 2.0
-                        # Find the closest segment by timestamp
                         best_idx = 0
                         best_dist = abs(mid - seg_times[0])
                         for si, st in enumerate(seg_times):
@@ -398,6 +408,59 @@ def _energy_vad_split(
         regions.append((rs, seg_end))
 
     return regions if regions else [(seg_start, seg_end)]
+
+
+def _merge_vad_segments(
+    vad_segs: list[tuple[float, float]],
+    min_duration: float = 1.5,
+    max_duration: float = 5.0,
+    max_gap: float = 0.5,
+) -> list[tuple[float, float]]:
+    """Merge short adjacent VAD segments into longer windows.
+
+    Short audio segments produce noisy speaker embeddings. This merges
+    adjacent segments (within max_gap seconds) until each window is at
+    least min_duration seconds, capped at max_duration.
+    """
+    if not vad_segs:
+        return vad_segs
+
+    merged: list[tuple[float, float]] = []
+    cur_start, cur_end = vad_segs[0]
+
+    for vs, ve in vad_segs[1:]:
+        gap = vs - cur_end
+        merged_dur = ve - cur_start
+
+        # Merge if: gap is small AND merged window won't exceed max
+        if gap <= max_gap and merged_dur <= max_duration:
+            cur_end = ve
+        else:
+            merged.append((cur_start, cur_end))
+            cur_start, cur_end = vs, ve
+
+    merged.append((cur_start, cur_end))
+
+    # Second pass: merge any remaining short windows with neighbors
+    if len(merged) > 1:
+        final: list[tuple[float, float]] = [merged[0]]
+        for ms, me in merged[1:]:
+            prev_s, prev_e = final[-1]
+            prev_dur = prev_e - prev_s
+            cur_dur = me - ms
+            gap = ms - prev_e
+
+            # If previous window is too short, extend it
+            if prev_dur < min_duration and gap <= max_gap * 3 and (me - prev_s) <= max_duration:
+                final[-1] = (prev_s, me)
+            # If current window is too short, merge into previous
+            elif cur_dur < min_duration and gap <= max_gap * 3 and (me - prev_s) <= max_duration:
+                final[-1] = (prev_s, me)
+            else:
+                final.append((ms, me))
+        merged = final
+
+    return merged
 
 
 def _summarize_result(result) -> str:

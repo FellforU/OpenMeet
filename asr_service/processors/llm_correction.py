@@ -7,6 +7,7 @@ Uses system-configured LLM to fix common ASR recognition errors:
 """
 
 import logging
+import math
 import re
 from typing import Optional
 
@@ -39,6 +40,8 @@ _CORRECTION_PROMPT = """你是一个专业的语音转录校对助手。以下�
 
 # Pattern to parse "[N] text" lines from LLM response
 _LINE_PATTERN = re.compile(r"^\[(\d+)\]\s*(.+)", re.MULTILINE)
+# Pattern to strip <think>...</think> reasoning blocks from model output
+_THINK_PATTERN = re.compile(r"<think>.*?</think>", re.DOTALL)
 
 
 class LLMCorrector:
@@ -85,15 +88,34 @@ class LLMCorrector:
             prompt = _CORRECTION_PROMPT.format(text=chunk)
             try:
                 # Use large max_tokens since output mirrors input size
+                # Estimate max_tokens: output mirrors input + overhead.
+                # Chinese: ~1.5 tokens per char; add 20% headroom.
+                chunk_tokens = max(8000, math.ceil(len(chunk) * 1.5 * 1.2))
                 response = await self._llm.generate(
-                    prompt, max_tokens=8000,
+                    prompt, max_tokens=chunk_tokens,
+                )
+                # Strip <think>...</think> blocks (DeepSeek R1, etc.)
+                response = _THINK_PATTERN.sub("", response).strip()
+                # Log response snippet for debugging
+                resp_lines = response.split("\n") if response else []
+                logger.info(
+                    "LLM correction chunk %d/%d: response %d chars, "
+                    "%d lines, first 3: %s",
+                    ci + 1, len(chunks), len(response), len(resp_lines),
+                    resp_lines[:3],
                 )
                 # Parse [N] corrected_text lines
+                matches_found = 0
                 for match in _LINE_PATTERN.finditer(response):
                     idx = int(match.group(1))
                     corrected = match.group(2).strip()
                     if corrected and 0 <= idx < len(segments):
                         corrected_map[idx] = corrected
+                        matches_found += 1
+                logger.info(
+                    "LLM correction chunk %d/%d: parsed %d matches",
+                    ci + 1, len(chunks), matches_found,
+                )
             except Exception as e:
                 logger.warning(
                     "LLM correction chunk %d/%d failed: %s",
