@@ -97,6 +97,13 @@ class PyAnnoteDiarizer:
 
         pipeline_ref = self._pipeline
 
+        # Preload audio as waveform dict to bypass torchcodec/AudioDecoder
+        # pyannote accepts {"waveform": Tensor(channel, time), "sample_rate": int}
+        import torch
+        import torchaudio
+        waveform, sample_rate = torchaudio.load(audio_path)
+        audio_input = {"waveform": waveform, "sample_rate": sample_rate}
+
         # Run pyannote diarization
         def _diarize():
             try:
@@ -105,7 +112,7 @@ class PyAnnoteDiarizer:
                     kwargs["min_speakers"] = num_speakers
                     kwargs["max_speakers"] = num_speakers
 
-                diarization = pipeline_ref(audio_path, **kwargs)
+                diarization = pipeline_ref(audio_input, **kwargs)
 
                 # Build speaker timeline: [(start, end, speaker), ...]
                 timeline: list[tuple[float, float, str]] = []
