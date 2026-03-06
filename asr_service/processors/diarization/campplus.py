@@ -17,22 +17,53 @@ logger = logging.getLogger(__name__)
 
 
 def _load_audio(audio_path: str):
-    """Load audio file with torchaudio, falling back across backends.
+    """Load audio file, returning (waveform, sample_rate).
 
-    Newer torchaudio (>=2.5) defaults to torchcodec which may not be
-    installed.  Try multiple backends in order: soundfile → ffmpeg → sox.
+    waveform shape: (1, N) float32 tensor — mono.
+    Avoids torchaudio.load() which requires torchcodec on newer versions.
+    Falls back through: soundfile → wave (stdlib) → torchaudio.
     """
     import torch
+
+    # Strategy 1: soundfile (cross-platform, supports WAV/FLAC/OGG)
+    try:
+        import soundfile as sf
+
+        data, sr = sf.read(audio_path, dtype="float32")
+        # soundfile returns (N,) for mono, (N, C) for multi-channel
+        if data.ndim == 2:
+            data = data.mean(axis=1)
+        return torch.from_numpy(data).unsqueeze(0), sr
+    except Exception:
+        pass
+
+    # Strategy 2: wave (stdlib, WAV-only but zero dependencies)
+    try:
+        import wave
+
+        with wave.open(audio_path, "rb") as wf:
+            sr = wf.getframerate()
+            n_frames = wf.getnframes()
+            n_channels = wf.getnchannels()
+            sampwidth = wf.getsampwidth()
+            raw = wf.readframes(n_frames)
+
+        # Convert raw PCM bytes to float32
+        if sampwidth == 2:
+            arr = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+        elif sampwidth == 4:
+            arr = np.frombuffer(raw, dtype=np.int32).astype(np.float32) / 2147483648.0
+        else:
+            arr = np.frombuffer(raw, dtype=np.uint8).astype(np.float32) / 128.0 - 1.0
+
+        if n_channels > 1:
+            arr = arr.reshape(-1, n_channels).mean(axis=1)
+        return torch.from_numpy(arr).unsqueeze(0), sr
+    except Exception:
+        pass
+
+    # Strategy 3: torchaudio (last resort — may need torchcodec)
     import torchaudio
-
-    # Try explicit backends first to avoid torchcodec requirement
-    for backend in ("soundfile", "ffmpeg", "sox"):
-        try:
-            return torchaudio.load(audio_path, backend=backend)
-        except Exception:
-            continue
-
-    # Last resort: default backend (may require torchcodec)
     return torchaudio.load(audio_path)
 
 

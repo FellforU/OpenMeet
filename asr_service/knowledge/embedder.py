@@ -123,35 +123,125 @@ class Embedder:
 
         return await asyncio.to_thread(_encode)
 
-    async def _embed_remote(self, texts: list[str]) -> np.ndarray:
-        """Embed using OpenAI-compatible embedding API."""
-        import httpx
+    # Provider-specific configuration for embedding API calls.
+    # - default_url: fallback when api_url is not configured
+    # - extra_payload: additional fields merged into request body
+    # - batch_size: max texts per API call (avoids provider batch limits)
+    # Providers not listed here use OpenAI-compatible defaults.
+    _PROVIDER_CONFIG: dict[str, dict] = {
+        "ollama": {
+            "default_url": "http://localhost:11434/api/embed",
+            "batch_size": 32,
+        },
+        "qwen": {
+            # DashScope text-embedding-v3 requires dimensions; v2 ignores it.
+            # Batch limit: 6 texts per request for compatible-mode API.
+            "extra_payload": {"dimensions": 1024, "encoding_format": "float"},
+            "batch_size": 6,
+        },
+        "zhipu": {
+            "extra_payload": {"dimensions": 1024},
+            "batch_size": 16,
+        },
+        "openai": {"batch_size": 100},
+        "deepseek": {"batch_size": 16},
+        "siliconflow": {"batch_size": 32},
+        "volcengine": {"batch_size": 16},
+    }
 
-        # Determine API URL based on provider
-        if self._api_url:
-            url = self._api_url
-        elif self._provider == "ollama":
-            url = "http://localhost:11434/api/embed"
-        else:
-            url = "https://api.openai.com/v1/embeddings"
+    # Default batch size for providers not in _PROVIDER_CONFIG
+    _DEFAULT_BATCH_SIZE = 16
 
+    def _build_embed_request(
+        self, texts: list[str]
+    ) -> tuple[str, dict[str, str], dict]:
+        """Build (url, headers, payload) for the embedding API call.
+
+        Adapts request format based on provider configuration.
+        """
+        cfg = self._PROVIDER_CONFIG.get(self._provider, {})
+
+        # URL: prefer configured api_url, then provider default, then OpenAI
+        url = (
+            self._api_url
+            or cfg.get("default_url")
+            or "https://api.openai.com/v1/embeddings"
+        )
+
+        # Headers
         headers: dict[str, str] = {"Content-Type": "application/json"}
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
 
-        payload = {"model": self._model_name, "input": texts}
+        # Payload: base + provider-specific extra fields
+        payload: dict = {"model": self._model_name, "input": texts}
+        extra = cfg.get("extra_payload")
+        if extra:
+            payload.update(extra)
+
+        return url, headers, payload
+
+    def _get_batch_size(self) -> int:
+        """Return max texts per API call for the current provider."""
+        cfg = self._PROVIDER_CONFIG.get(self._provider, {})
+        return cfg.get("batch_size", self._DEFAULT_BATCH_SIZE)
+
+    async def _embed_remote(self, texts: list[str]) -> np.ndarray:
+        """Embed using remote embedding API with automatic batching.
+
+        Supports Ollama, OpenAI-compatible, and provider-specific formats.
+        Splits large input into batches per provider limits.
+        """
+        import httpx
+
+        batch_size = self._get_batch_size()
+
+        # Split into batches
+        if len(texts) <= batch_size:
+            batches = [texts]
+        else:
+            batches = [
+                texts[i:i + batch_size]
+                for i in range(0, len(texts), batch_size)
+            ]
+            logger.info(
+                "Splitting %d texts into %d batches (batch_size=%d, provider=%s)",
+                len(texts), len(batches), batch_size, self._provider,
+            )
+
+        all_embeddings: list[np.ndarray] = []
 
         async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
+            for batch_idx, batch in enumerate(batches):
+                url, headers, payload = self._build_embed_request(batch)
 
-            # Handle Ollama response format
-            if self._provider == "ollama" and "embeddings" in data:
-                return np.array(data["embeddings"])
+                resp = await client.post(url, json=payload, headers=headers)
+                if resp.status_code != 200:
+                    logger.warning(
+                        "Embedding API error: status=%d, provider=%s, model=%s, "
+                        "url=%s, batch=%d/%d, texts=%d, response=%s",
+                        resp.status_code, self._provider, self._model_name,
+                        url, batch_idx + 1, len(batches), len(batch),
+                        resp.text[:500],
+                    )
+                resp.raise_for_status()
+                data = resp.json()
 
-            # OpenAI-compatible format
-            if "data" in data:
-                return np.array([d["embedding"] for d in data["data"]])
+                # Ollama format: {"embeddings": [[...]]}
+                if self._provider == "ollama" and "embeddings" in data:
+                    all_embeddings.append(np.array(data["embeddings"]))
+                    continue
 
-            raise ValueError(f"Unexpected embedding API response format: {list(data.keys())}")
+                # OpenAI-compatible format: {"data": [{"embedding": [...]}]}
+                if "data" in data:
+                    all_embeddings.append(
+                        np.array([d["embedding"] for d in data["data"]])
+                    )
+                    continue
+
+                raise ValueError(
+                    f"Unexpected embedding response from {self._provider}: "
+                    f"{list(data.keys())}"
+                )
+
+        return np.vstack(all_embeddings) if len(all_embeddings) > 1 else all_embeddings[0]
