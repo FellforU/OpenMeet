@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Loader2, Sparkles, FileText, RefreshCw, Wand2, MessageSquareText } from "lucide-react";
+import { Loader2, Sparkles, FileText, RefreshCw, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
 import {
@@ -13,7 +13,7 @@ import { useTranscriptionStore } from "../../stores/transcriptionStore";
 import { useProjectStore } from "../../stores/projectStore";
 import { useEngineStore } from "../../stores/engineStore";
 import { useRecordingStore } from "../../stores/recordingStore";
-import { generateMeetingSummary, correctTranscriptErrors } from "../../services/llmClient";
+import { generateMeetingSummary } from "../../services/llmClient";
 import { reprocessSegments } from "../../services/asrClient";
 
 export function RegenerateButton() {
@@ -31,7 +31,7 @@ export function RegenerateButton() {
   const processingStep = useRecordingStore((s) => s.processingStep);
   const { selectedEngine, selectedModelSize, selectedLanguage } = useEngineStore();
 
-  const [generating, setGenerating] = useState<"summary" | "transcript" | "postprocess" | "correction" | null>(null);
+  const [generating, setGenerating] = useState<"summary" | "transcript" | "postprocess" | null>(null);
 
   const isJobBusy = jobStatus === "running" || jobStatus === "post_processing";
   const isRecording = recordingStatus !== "idle";
@@ -120,34 +120,6 @@ export function RegenerateButton() {
     }
   };
 
-  const handleCorrection = async () => {
-    if (segments.length === 0) return;
-    setGenerating("correction");
-    try {
-      const correctedTexts = await correctTranscriptErrors(
-        segments.map((s) => ({ text: s.text }))
-      );
-
-      const newSegments = segments.map((s, i) => ({
-        ...s,
-        text: correctedTexts[i] ?? s.text,
-      }));
-
-      setSegments(newSegments);
-
-      if (activeProjectId) {
-        await persistSegments(activeProjectId);
-      }
-
-      toast.success(t("regenerate.correctionSuccess"));
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error(t("regenerate.correctionFailed", { message: msg }));
-    } finally {
-      setGenerating(null);
-    }
-  };
-
   // Show spinner when generating
   if (generating) {
     const labelKey =
@@ -155,9 +127,7 @@ export function RegenerateButton() {
         ? "regenerate.summaryGenerating"
         : generating === "postprocess"
           ? "regenerate.postProcessing"
-          : generating === "correction"
-            ? "regenerate.correctionRunning"
-            : "regenerate.transcriptGenerating";
+          : "regenerate.transcriptGenerating";
     return (
       <Button variant="outline" size="sm" disabled>
         <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
@@ -185,12 +155,6 @@ export function RegenerateButton() {
           <DropdownMenuItem onClick={handleReprocess}>
             <Wand2 className="mr-2 h-4 w-4" />
             {t("regenerate.postProcess")}
-          </DropdownMenuItem>
-        )}
-        {hasSegments && (
-          <DropdownMenuItem onClick={handleCorrection}>
-            <MessageSquareText className="mr-2 h-4 w-4" />
-            {t("regenerate.correction")}
           </DropdownMenuItem>
         )}
         {hasSegments && (
