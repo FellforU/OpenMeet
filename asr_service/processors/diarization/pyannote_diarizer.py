@@ -52,9 +52,9 @@ class PyAnnoteDiarizer:
                     "pyannote/speaker-diarization-3.1",
                     token=hf_token,
                 )
-                # Force CPU to avoid competing with ASR for GPU memory
                 import torch
-                pipeline = pipeline.to(torch.device("cpu"))
+                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                pipeline = pipeline.to(device)
                 logger.info("pyannote speaker-diarization-3.1 loaded")
                 return pipeline
             except Exception as e:
