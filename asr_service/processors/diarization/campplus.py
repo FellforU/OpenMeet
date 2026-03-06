@@ -115,9 +115,12 @@ class CAMPPlusDiarizer:
     # Segments longer than this (seconds) will be split via energy-based VAD
     # before embedding extraction, so each sub-segment maps to one speaker.
     MAX_SEGMENT_FOR_EMBEDDING = 5.0
-    # Minimum window duration (seconds) for reliable speaker embedding.
-    # Short VAD segments are merged into windows of at least this length.
-    MIN_WINDOW_FOR_EMBEDDING = 1.5
+    # Sliding window parameters for zero-duration segment fallback.
+    # Window must be long enough for good embeddings but short enough
+    # to contain only one speaker (typical turn gap ~300ms).
+    WINDOW_SIZE = 1.5       # seconds per window
+    WINDOW_STEP = 0.75      # seconds step (50% overlap)
+    MIN_WINDOW_ENERGY = 0.01  # Skip silent windows
 
     async def process(
         self, audio_path: str, segments: list[Segment]
@@ -186,33 +189,38 @@ class CAMPPlusDiarizer:
                         zero_dur_count, len(segments),
                     )
 
-                # Build sub-segments: if a segment is too long (e.g. 30s chunk
-                # from engines without timestamps), split it via energy-based
-                # VAD so each sub-segment maps to one speaker.
+                # Build sub-segments for embedding extraction.
                 sub_segments: list[tuple[int, float, float]] = []  # (orig_idx, start, end)
 
-                min_win = self.MIN_WINDOW_FOR_EMBEDDING
-
                 if use_full_audio_vad:
-                    # Run VAD on the entire audio to find speech regions
-                    vad_segs = _energy_vad_split(
-                        audio_np, sr, 0.0, total_dur, total_samples,
-                    )
-                    logger.info(
-                        "Diarization: full-audio VAD found %d speech regions",
-                        len(vad_segs),
-                    )
-                    # Merge adjacent VAD segments into windows >= min_win
-                    # seconds so CAMPPlus gets enough audio for good embeddings
-                    merged_vad = _merge_vad_segments(vad_segs, min_win, max_seg_dur)
-                    logger.info(
-                        "Diarization: merged %d VAD regions → %d windows",
-                        len(vad_segs), len(merged_vad),
-                    )
-                    # Map each merged window to the nearest original segment
+                    # Use fixed-size sliding windows over entire audio.
+                    # Each window is short enough to contain only one
+                    # speaker but long enough for reliable embeddings.
+                    win_size = self.WINDOW_SIZE
+                    win_step = self.WINDOW_STEP
+                    min_energy = self.MIN_WINDOW_ENERGY
+                    win_samples = int(win_size * sr)
+
+                    # Build segment lookup: for each window, find the
+                    # nearest original segment by timestamp midpoint
                     seg_times = [seg.start for seg in segments]
-                    for vs, ve in merged_vad:
-                        mid = (vs + ve) / 2.0
+
+                    t = 0.0
+                    skipped = 0
+                    while t + win_size <= total_dur:
+                        s_samp = int(t * sr)
+                        e_samp = min(s_samp + win_samples, total_samples)
+                        win_audio = audio_np[s_samp:e_samp]
+
+                        # Skip silent windows
+                        rms = float(np.sqrt(np.mean(win_audio ** 2)))
+                        if rms < min_energy:
+                            skipped += 1
+                            t += win_step
+                            continue
+
+                        # Map to nearest original segment
+                        mid = t + win_size / 2.0
                         best_idx = 0
                         best_dist = abs(mid - seg_times[0])
                         for si, st in enumerate(seg_times):
@@ -220,7 +228,15 @@ class CAMPPlusDiarizer:
                             if d < best_dist:
                                 best_dist = d
                                 best_idx = si
-                        sub_segments.append((best_idx, vs, ve))
+                        sub_segments.append((best_idx, t, t + win_size))
+                        t += win_step
+
+                    logger.info(
+                        "Diarization: sliding window (%.1fs/%.1fs) → "
+                        "%d windows (%d silent skipped)",
+                        win_size, win_step,
+                        len(sub_segments), skipped,
+                    )
                 else:
                     for i, seg in enumerate(segments):
                         duration = seg.end - seg.start
