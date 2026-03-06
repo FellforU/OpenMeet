@@ -168,25 +168,32 @@ class PyAnnoteDiarizer:
         # Rename speakers to sequential "Speaker 1", "Speaker 2", etc.
         timeline = _rename_speakers(timeline)
 
-        # Decide whether to use sentence-level splitting:
-        # 1. Zero-duration segments (e.g., Qwen3 raw output)
-        # 2. Coarse segments (e.g., 30s chunks) where avg duration is too long
-        #    for accurate per-segment speaker assignment
+        # Compare ASR segment granularity vs pyannote turn granularity.
+        # If pyannote turns are finer than ASR segments, use sentence-level
+        # splitting to take advantage of pyannote's precise speaker boundaries.
+        avg_seg_dur = (
+            sum(seg.end - seg.start for seg in segments) / len(segments)
+            if segments else 0
+        )
+        avg_turn_dur = (
+            sum(te - ts for ts, te, _ in timeline) / len(timeline)
+            if timeline else 0
+        )
         zero_dur_count = sum(
             1 for seg in segments if seg.end - seg.start < 0.01
         )
-        total_dur = sum(seg.end - seg.start for seg in segments)
-        avg_dur = total_dur / len(segments) if segments else 0
         use_sentence_split = (
             zero_dur_count > len(segments) * 0.8
-            or avg_dur > 15.0
+            or avg_seg_dur > avg_turn_dur * 2
+        )
+
+        logger.info(
+            "pyannote: %d segs (avg %.1fs), %d turns (avg %.1fs), zero-dur=%d, sentence_split=%s",
+            len(segments), avg_seg_dur, len(timeline), avg_turn_dur,
+            zero_dur_count, use_sentence_split,
         )
 
         if use_sentence_split:
-            logger.info(
-                "pyannote: %d/%d zero-dur, avg_dur=%.1fs, using sentence-level splitting",
-                zero_dur_count, len(segments), avg_dur,
-            )
             return await self._apply_timeline_to_segments(
                 audio_path, segments, timeline,
             )
