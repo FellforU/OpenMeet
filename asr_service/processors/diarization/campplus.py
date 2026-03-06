@@ -125,7 +125,11 @@ class CAMPPlusDiarizer:
     async def process(
         self, audio_path: str, segments: list[Segment]
     ) -> list[Segment]:
-        """Assign speaker labels by extracting per-segment embeddings and clustering."""
+        """Assign speaker labels by extracting per-segment embeddings and clustering.
+
+        For zero-duration segments (Qwen3-ASR), builds a speaker timeline
+        using sliding windows, then splits segments at speaker change points.
+        """
         if not segments:
             return segments
 
@@ -145,10 +149,8 @@ class CAMPPlusDiarizer:
                     "Diarization: loaded audio %s, shape=%s, sr=%d",
                     audio_path, waveform.shape, sr,
                 )
-                # Convert to mono
                 if waveform.shape[0] > 1:
                     waveform = waveform.mean(dim=0, keepdim=True)
-                # Resample to 16kHz
                 if sr != 16000:
                     import torchaudio as _ta
                     waveform = _ta.transforms.Resample(sr, 16000)(waveform)
@@ -162,7 +164,6 @@ class CAMPPlusDiarizer:
                     total_samples, total_dur, len(segments),
                 )
 
-                # Log input segment timestamps for debugging
                 for i, seg in enumerate(segments[:5]):
                     logger.info(
                         "  seg[%d]: %.2f-%.2f (%.2fs) text='%s'",
@@ -172,149 +173,48 @@ class CAMPPlusDiarizer:
                 if len(segments) > 5:
                     logger.info("  ... and %d more segments", len(segments) - 5)
 
-                # Check if timestamps are missing (start == end for all segments).
-                # This happens with engines like Qwen3-ASR that don't produce
-                # per-segment timestamps.  In this case, ignore segment
-                # boundaries and run VAD on the entire audio to find speech
-                # regions, then map them back to original segments by position.
                 zero_dur_count = sum(
                     1 for seg in segments if seg.end - seg.start < 0.01
                 )
-                use_full_audio_vad = zero_dur_count > len(segments) * 0.8
+                use_sliding_window = zero_dur_count > len(segments) * 0.8
 
-                if use_full_audio_vad:
+                if use_sliding_window:
                     logger.info(
                         "Diarization: %d/%d segments have zero duration, "
-                        "running VAD on full audio",
+                        "using sliding window approach",
                         zero_dur_count, len(segments),
                     )
-
-                # Build sub-segments for embedding extraction.
-                sub_segments: list[tuple[int, float, float]] = []  # (orig_idx, start, end)
-
-                if use_full_audio_vad:
-                    # Use fixed-size sliding windows over entire audio.
-                    # Each window is short enough to contain only one
-                    # speaker but long enough for reliable embeddings.
-                    win_size = self.WINDOW_SIZE
-                    win_step = self.WINDOW_STEP
-                    min_energy = self.MIN_WINDOW_ENERGY
-                    win_samples = int(win_size * sr)
-
-                    # Build segment lookup: for each window, find the
-                    # nearest original segment by timestamp midpoint
-                    seg_times = [seg.start for seg in segments]
-
-                    t = 0.0
-                    skipped = 0
-                    while t + win_size <= total_dur:
-                        s_samp = int(t * sr)
-                        e_samp = min(s_samp + win_samples, total_samples)
-                        win_audio = audio_np[s_samp:e_samp]
-
-                        # Skip silent windows
-                        rms = float(np.sqrt(np.mean(win_audio ** 2)))
-                        if rms < min_energy:
-                            skipped += 1
-                            t += win_step
-                            continue
-
-                        # Map to nearest original segment
-                        mid = t + win_size / 2.0
-                        best_idx = 0
-                        best_dist = abs(mid - seg_times[0])
-                        for si, st in enumerate(seg_times):
-                            d = abs(mid - st)
-                            if d < best_dist:
-                                best_dist = d
-                                best_idx = si
-                        sub_segments.append((best_idx, t, t + win_size))
-                        t += win_step
-
-                    logger.info(
-                        "Diarization: sliding window (%.1fs/%.1fs) → "
-                        "%d windows (%d silent skipped)",
-                        win_size, win_step,
-                        len(sub_segments), skipped,
+                    return self._sliding_window_diarize(
+                        model_ref, audio_np, sr, total_dur, total_samples,
                     )
-                else:
-                    for i, seg in enumerate(segments):
-                        duration = seg.end - seg.start
-                        if duration > max_seg_dur:
-                            vad_segs = _energy_vad_split(
-                                audio_np, sr, seg.start, seg.end, total_samples,
-                            )
-                            for vs, ve in vad_segs:
-                                sub_segments.append((i, vs, ve))
-                        else:
-                            sub_segments.append((i, seg.start, seg.end))
 
-                logger.info(
-                    "Diarization: %d sub-segments after VAD split",
-                    len(sub_segments),
+                # Normal path: segments have valid timestamps
+                sub_segments: list[tuple[int, float, float]] = []
+                for i, seg in enumerate(segments):
+                    duration = seg.end - seg.start
+                    if duration > max_seg_dur:
+                        vad_segs = _energy_vad_split(
+                            audio_np, sr, seg.start, seg.end, total_samples,
+                        )
+                        for vs, ve in vad_segs:
+                            sub_segments.append((i, vs, ve))
+                    else:
+                        sub_segments.append((i, seg.start, seg.end))
+
+                embeddings = _extract_embeddings_batch(
+                    model_ref, audio_np, sr, total_samples,
+                    [(s, e) for _, s, e in sub_segments],
                 )
-                for j, (oi, ss, se) in enumerate(sub_segments[:8]):
-                    logger.info(
-                        "  sub[%d]: orig=%d, %.2f-%.2f (%.2fs)",
-                        j, oi, ss, se, se - ss,
-                    )
-                if len(sub_segments) > 8:
-                    logger.info("  ... and %d more sub-segments", len(sub_segments) - 8)
-
-                # Extract embedding per sub-segment
-                sub_embeddings: list[Optional[np.ndarray]] = []
-                valid_count = 0
-                for _, ss, se in sub_segments:
-                    start_sample = int(ss * sr)
-                    end_sample = min(int(se * sr), total_samples)
-                    chunk = audio_np[start_sample:end_sample]
-
-                    if len(chunk) < int(MIN_SEGMENT_DURATION * sr):
-                        sub_embeddings.append(None)
-                        continue
-
-                    try:
-                        result = model_ref.generate(input=chunk)
-                        if valid_count == 0:
-                            # Log first result structure for debugging
-                            logger.info(
-                                "Diarization: first generate() result type=%s, value=%s",
-                                type(result).__name__,
-                                _summarize_result(result),
-                            )
-                        emb = _extract_embedding(result)
-                        sub_embeddings.append(emb)
-                        if emb is not None:
-                            valid_count += 1
-                        elif valid_count == 0:
-                            logger.warning(
-                                "Diarization: _extract_embedding returned None for first sub-segment"
-                            )
-                    except Exception as exc:
-                        logger.warning("Embedding extraction failed for sub-segment: %s", exc)
-                        sub_embeddings.append(None)
-
+                valid_count = sum(1 for e in embeddings if e is not None)
                 logger.info(
                     "Diarization: %d/%d sub-segments got valid embeddings",
                     valid_count, len(sub_segments),
                 )
-
                 if valid_count < 2:
-                    logger.warning(
-                        "Not enough valid embeddings for clustering (%d), "
-                        "need at least 2", valid_count,
-                    )
                     return {}
 
-                # Cluster sub-segment embeddings
-                sub_speaker_map = _cluster_embeddings(sub_embeddings)
-                logger.info(
-                    "Diarization: clustering produced %d speaker labels",
-                    len(set(sub_speaker_map.values())) if sub_speaker_map else 0,
-                )
+                sub_speaker_map = _cluster_embeddings(embeddings)
 
-                # Map back: for each original segment, pick the most frequent
-                # speaker label among its sub-segments (majority vote).
                 from collections import Counter
                 seg_labels: dict[int, list[str]] = {}
                 for sub_idx, (orig_idx, _, _) in enumerate(sub_segments):
@@ -327,35 +227,243 @@ class CAMPPlusDiarizer:
                     counter = Counter(labels)
                     speaker_map[orig_idx] = counter.most_common(1)[0][0]
 
-                logger.info(
-                    "Diarization: final speaker_map has %d entries for %d segments",
-                    len(speaker_map), len(segments),
-                )
                 return speaker_map
             except Exception as e:
                 logger.warning("Diarization failed: %s", e, exc_info=True)
                 return {}
 
-        speaker_map = await asyncio.to_thread(_diarize)
+        result = await asyncio.to_thread(_diarize)
 
+        # Sliding window returns a timeline list[(start, end, speaker)]
+        if isinstance(result, list) and result and isinstance(result[0], tuple):
+            return self._apply_timeline_to_segments(segments, result)
+
+        # Normal path returns a speaker_map dict
+        speaker_map = result
         if not speaker_map:
-            logger.warning("Diarization produced empty speaker map, returning segments unchanged")
+            logger.warning("Diarization produced empty speaker map")
             return segments
 
-        # Apply speaker labels
         labeled = []
         for i, seg in enumerate(segments):
             speaker = speaker_map.get(i, seg.speaker)
-            labeled.append(
-                Segment(
-                    start=seg.start,
-                    end=seg.end,
-                    text=seg.text,
-                    speaker=speaker,
-                    confidence=seg.confidence,
-                )
-            )
+            labeled.append(Segment(
+                start=seg.start, end=seg.end, text=seg.text,
+                speaker=speaker, confidence=seg.confidence,
+            ))
         return labeled
+
+    def _sliding_window_diarize(
+        self, model_ref, audio_np, sr, total_dur, total_samples,
+    ):
+        """Build speaker timeline via sliding windows, return new segment list.
+
+        1. Extract embeddings with sliding windows
+        2. Cluster to get speaker labels per window
+        3. Smooth timeline (median filter)
+        4. Build speaker-attributed segments
+        """
+        win_size = self.WINDOW_SIZE
+        win_step = self.WINDOW_STEP
+        min_energy = self.MIN_WINDOW_ENERGY
+        win_samples = int(win_size * sr)
+
+        # Step 1: Extract embeddings for speech windows
+        windows: list[tuple[float, float]] = []  # (start, end) of each window
+        embeddings: list[Optional[np.ndarray]] = []
+        skipped = 0
+        valid_count = 0
+
+        t = 0.0
+        while t + win_size <= total_dur:
+            s_samp = int(t * sr)
+            e_samp = min(s_samp + win_samples, total_samples)
+            win_audio = audio_np[s_samp:e_samp]
+
+            rms = float(np.sqrt(np.mean(win_audio ** 2)))
+            if rms < min_energy:
+                skipped += 1
+                t += win_step
+                continue
+
+            windows.append((t, t + win_size))
+            try:
+                result = model_ref.generate(input=win_audio)
+                if valid_count == 0:
+                    logger.info(
+                        "Diarization: first generate() result type=%s, value=%s",
+                        type(result).__name__, _summarize_result(result),
+                    )
+                emb = _extract_embedding(result)
+                embeddings.append(emb)
+                if emb is not None:
+                    valid_count += 1
+            except Exception as exc:
+                logger.warning("Embedding extraction failed: %s", exc)
+                embeddings.append(None)
+
+            t += win_step
+
+        logger.info(
+            "Diarization: sliding window (%.1fs/%.1fs) → "
+            "%d windows, %d valid, %d silent skipped",
+            win_size, win_step, len(windows), valid_count, skipped,
+        )
+
+        if valid_count < 2:
+            logger.warning("Not enough valid embeddings for clustering")
+            return {}
+
+        # Step 2: Cluster embeddings
+        speaker_map = _cluster_embeddings(embeddings)
+        n_speakers = len(set(speaker_map.values())) if speaker_map else 0
+        logger.info("Diarization: clustering → %d speakers", n_speakers)
+
+        if not speaker_map:
+            return {}
+
+        # Step 3: Build speaker timeline and smooth it
+        # Create label array indexed by window position
+        labels = []
+        for wi in range(len(windows)):
+            labels.append(speaker_map.get(wi, ""))
+
+        # Temporal smoothing: median filter (window of 5)
+        # Replace each label with the most common among its neighbors
+        smoothed = list(labels)
+        radius = 2
+        for i in range(len(labels)):
+            if not labels[i]:
+                continue
+            neighborhood = []
+            for j in range(max(0, i - radius), min(len(labels), i + radius + 1)):
+                if labels[j]:
+                    neighborhood.append(labels[j])
+            if neighborhood:
+                from collections import Counter
+                smoothed[i] = Counter(neighborhood).most_common(1)[0][0]
+
+        # Log timeline sample
+        for i in range(min(20, len(windows))):
+            if smoothed[i]:
+                ws, we = windows[i]
+                logger.info(
+                    "  timeline[%d]: %.1f-%.1fs → %s%s",
+                    i, ws, we, smoothed[i],
+                    " (smoothed)" if smoothed[i] != labels[i] else "",
+                )
+
+        # Step 4: Build speaker timeline as list of (start, end, speaker)
+        timeline: list[tuple[float, float, str]] = []
+        for wi, (ws, we) in enumerate(windows):
+            spk = smoothed[wi]
+            if not spk:
+                continue
+            if timeline and timeline[-1][2] == spk:
+                # Extend current region
+                timeline[-1] = (timeline[-1][0], we, spk)
+            else:
+                timeline.append((ws, we, spk))
+
+        logger.info(
+            "Diarization: speaker timeline has %d regions",
+            len(timeline),
+        )
+        for i, (ts, te, spk) in enumerate(timeline[:10]):
+            logger.info("  region[%d]: %.1f-%.1fs %s", i, ts, te, spk)
+        if len(timeline) > 10:
+            logger.info("  ... and %d more regions", len(timeline) - 10)
+
+        return timeline
+
+    def _apply_timeline_to_segments(
+        self, segments: list[Segment], timeline: list[tuple[float, float, str]],
+    ) -> list[Segment]:
+        """Map speaker timeline regions to original segments.
+
+        For each segment, find the timeline region that contains its
+        timestamp. Uses binary-search style lookup for efficiency.
+        """
+        if not timeline:
+            return segments
+
+        result: list[Segment] = []
+        for seg in segments:
+            seg_t = seg.start
+            best_spk = ""
+
+            # Find the timeline region containing this timestamp
+            for ts, te, spk in timeline:
+                if ts <= seg_t <= te:
+                    best_spk = spk
+                    break
+                # Also handle segments slightly before first region
+                # or between regions (assign to nearest)
+                if seg_t < ts:
+                    # Before this region — check if close enough
+                    if ts - seg_t < 5.0:
+                        best_spk = spk
+                    break
+
+            # Fallback: find nearest region if no containing region found
+            if not best_spk:
+                min_dist = float("inf")
+                for ts, te, spk in timeline:
+                    # Distance from segment to region
+                    if seg_t < ts:
+                        d = ts - seg_t
+                    elif seg_t > te:
+                        d = seg_t - te
+                    else:
+                        d = 0.0
+                    if d < min_dist:
+                        min_dist = d
+                        best_spk = spk
+
+            result.append(Segment(
+                start=seg.start, end=seg.end, text=seg.text,
+                speaker=best_spk, confidence=seg.confidence,
+            ))
+
+        return result
+
+
+def _extract_embeddings_batch(
+    model_ref,
+    audio_np: np.ndarray,
+    sr: int,
+    total_samples: int,
+    time_ranges: list[tuple[float, float]],
+) -> list[Optional[np.ndarray]]:
+    """Extract speaker embeddings for a batch of audio time ranges."""
+    embeddings: list[Optional[np.ndarray]] = []
+    valid_count = 0
+
+    for ss, se in time_ranges:
+        start_sample = int(ss * sr)
+        end_sample = min(int(se * sr), total_samples)
+        chunk = audio_np[start_sample:end_sample]
+
+        if len(chunk) < int(MIN_SEGMENT_DURATION * sr):
+            embeddings.append(None)
+            continue
+
+        try:
+            result = model_ref.generate(input=chunk)
+            if valid_count == 0:
+                logger.info(
+                    "Diarization: first generate() result type=%s, value=%s",
+                    type(result).__name__, _summarize_result(result),
+                )
+            emb = _extract_embedding(result)
+            embeddings.append(emb)
+            if emb is not None:
+                valid_count += 1
+        except Exception as exc:
+            logger.warning("Embedding extraction failed: %s", exc)
+            embeddings.append(None)
+
+    return embeddings
 
 
 def _energy_vad_split(
@@ -608,10 +716,14 @@ def _cluster_embeddings(
         labels = clustering.fit_predict(dist_matrix)
         n_clusters = MAX_SPEAKERS
 
-    # Build speaker map
+    # Build speaker map with sequential numbering
+    # AgglomerativeClustering labels may not be sequential (e.g. 0, 2, 5)
+    unique_labels = sorted(set(labels))
+    label_remap = {old: new + 1 for new, old in enumerate(unique_labels)}
+
     speaker_map: dict[int, str] = {}
     for vi, label in enumerate(labels):
         seg_idx = valid[vi][0]
-        speaker_map[seg_idx] = f"Speaker {label + 1}"
+        speaker_map[seg_idx] = f"Speaker {label_remap[label]}"
 
     return speaker_map
