@@ -379,88 +379,122 @@ class CAMPPlusDiarizer:
     def _apply_timeline_to_segments(
         self, segments: list[Segment], timeline: list[tuple[float, float, str]],
     ) -> list[Segment]:
-        """Map speaker timeline to segments, splitting at speaker changes.
+        """Rebuild segments from speaker timeline using sentence-level assignment.
 
-        1. Estimate each segment's actual time range (start → next segment's start)
-        2. Find all timeline regions overlapping that range
-        3. If multiple speakers, split segment text proportionally
+        For zero-duration segments (Qwen3-ASR), the original segment boundaries
+        don't reflect actual speech timing. Instead of per-segment splitting:
+        1. Concatenate all text and build a global char→time mapping
+        2. Split full text into sentences by punctuation
+        3. Assign each sentence a speaker from the timeline
+        4. Group consecutive same-speaker sentences into new segments
         """
         if not timeline:
             return segments
 
-        # Estimate each segment's actual time range
-        seg_ranges: list[tuple[float, float]] = []
-        for i, seg in enumerate(segments):
-            seg_start = seg.start
-            if i + 1 < len(segments):
-                seg_end = segments[i + 1].start
-            else:
-                # Last segment: estimate duration from text length
-                # ~4 chars/second for Chinese speech
-                seg_end = seg_start + max(2.0, len(seg.text) / 4.0)
-            # Ensure minimum duration
-            if seg_end <= seg_start:
-                seg_end = seg_start + 2.0
-            seg_ranges.append((seg_start, seg_end))
+        total_audio_end = timeline[-1][1]  # End of last timeline region
 
+        # Build global char→time mapping from segment timestamps + text lengths
+        # Each segment's text maps to a time range estimated from its timestamp
+        char_time_anchors: list[tuple[int, float]] = []  # (char_offset, time)
+        total_text = ""
+        for i, seg in enumerate(segments):
+            char_time_anchors.append((len(total_text), seg.start))
+            total_text += seg.text
+
+        total_chars = len(total_text)
+        if total_chars == 0:
+            return segments
+
+        # Add end anchor
+        char_time_anchors.append((total_chars, total_audio_end))
+
+        def _char_to_time(char_pos: int) -> float:
+            """Interpolate time for a character position."""
+            if char_pos <= 0:
+                return char_time_anchors[0][1]
+            if char_pos >= total_chars:
+                return total_audio_end
+
+            # Find surrounding anchors
+            for ai in range(len(char_time_anchors) - 1):
+                c0, t0 = char_time_anchors[ai]
+                c1, t1 = char_time_anchors[ai + 1]
+                if c0 <= char_pos <= c1:
+                    if c1 == c0:
+                        return t0
+                    frac = (char_pos - c0) / (c1 - c0)
+                    return t0 + frac * (t1 - t0)
+            return total_audio_end
+
+        # Split full text into sentences at punctuation boundaries
+        sentences = _split_into_sentences(total_text)
+        logger.info(
+            "Diarization: %d chars total text → %d sentences",
+            total_chars, len(sentences),
+        )
+
+        # Assign speaker to each sentence based on its midpoint time
+        sentence_assignments: list[tuple[str, str, float, float]] = []
+        char_pos = 0
+        for sent in sentences:
+            sent_start_char = char_pos
+            sent_end_char = char_pos + len(sent)
+            mid_char = (sent_start_char + sent_end_char) // 2
+            mid_time = _char_to_time(mid_char)
+            start_time = _char_to_time(sent_start_char)
+            end_time = _char_to_time(sent_end_char)
+
+            # Find speaker at midpoint time
+            spk = _find_nearest_speaker(mid_time, timeline)
+            sentence_assignments.append((sent, spk, start_time, end_time))
+            char_pos = sent_end_char
+
+        # Group consecutive same-speaker sentences into segments
         result: list[Segment] = []
+        if not sentence_assignments:
+            return segments
 
-        for i, seg in enumerate(segments):
-            s_start, s_end = seg_ranges[i]
-            s_dur = s_end - s_start
+        cur_text = sentence_assignments[0][0]
+        cur_spk = sentence_assignments[0][1]
+        cur_start = sentence_assignments[0][2]
+        cur_end = sentence_assignments[0][3]
 
-            # Find all timeline regions overlapping this segment's range
-            overlapping: list[tuple[float, float, str]] = []
-            for ts, te, spk in timeline:
-                # Check overlap: region overlaps segment if not disjoint
-                if te > s_start and ts < s_end:
-                    # Clip to segment boundaries
-                    clip_s = max(ts, s_start)
-                    clip_e = min(te, s_end)
-                    if clip_e > clip_s:
-                        overlapping.append((clip_s, clip_e, spk))
-
-            if not overlapping:
-                # No overlap — find nearest timeline region
-                best_spk = _find_nearest_speaker(seg.start, timeline)
-                result.append(Segment(
-                    start=seg.start, end=seg.end, text=seg.text,
-                    speaker=best_spk, confidence=seg.confidence,
-                ))
-                continue
-
-            # Merge consecutive regions with same speaker
-            merged_regions: list[tuple[float, float, str]] = [overlapping[0]]
-            for clip_s, clip_e, spk in overlapping[1:]:
-                if spk == merged_regions[-1][2]:
-                    merged_regions[-1] = (merged_regions[-1][0], clip_e, spk)
-                else:
-                    merged_regions.append((clip_s, clip_e, spk))
-
-            if len(merged_regions) == 1:
-                # Single speaker — assign directly
-                result.append(Segment(
-                    start=seg.start, end=seg.end, text=seg.text,
-                    speaker=merged_regions[0][2], confidence=seg.confidence,
-                ))
-                continue
-
-            # Multiple speakers — split text proportionally
-            text = seg.text
-            text_len = len(text)
-            splits = _split_text_by_speakers(text, s_start, s_dur, merged_regions)
-
-            for sub_start, sub_end, sub_text, sub_spk in splits:
-                if sub_text.strip():
+        for sent, spk, s_time, e_time in sentence_assignments[1:]:
+            if spk == cur_spk:
+                cur_text += sent
+                cur_end = e_time
+            else:
+                if cur_text.strip():
                     result.append(Segment(
-                        start=sub_start, end=sub_end, text=sub_text.strip(),
-                        speaker=sub_spk, confidence=seg.confidence,
+                        start=cur_start, end=cur_end,
+                        text=cur_text.strip(),
+                        speaker=cur_spk, confidence=1.0,
                     ))
+                cur_text = sent
+                cur_spk = spk
+                cur_start = s_time
+                cur_end = e_time
+
+        # Flush last group
+        if cur_text.strip():
+            result.append(Segment(
+                start=cur_start, end=cur_end,
+                text=cur_text.strip(),
+                speaker=cur_spk, confidence=1.0,
+            ))
 
         logger.info(
-            "Diarization: split %d segments → %d segments with speaker labels",
+            "Diarization: rebuilt %d segments → %d segments with speaker labels",
             len(segments), len(result),
         )
+        for i, seg in enumerate(result[:10]):
+            logger.info(
+                "  result[%d]: %.1f-%.1fs %s text='%s'",
+                i, seg.start, seg.end, seg.speaker, seg.text[:50],
+            )
+        if len(result) > 10:
+            logger.info("  ... and %d more segments", len(result) - 10)
+
         return result
 
 
@@ -480,82 +514,31 @@ def _find_nearest_speaker(
     return best_spk
 
 
-def _split_text_by_speakers(
-    text: str,
-    seg_start: float,
-    seg_dur: float,
-    regions: list[tuple[float, float, str]],
-) -> list[tuple[float, float, str, str]]:
-    """Split text proportionally based on speaker timeline regions.
+def _split_into_sentences(text: str) -> list[str]:
+    """Split text into sentences at Chinese/English punctuation boundaries.
 
-    Returns list of (start_time, end_time, text_portion, speaker).
-    Splits at sentence boundaries (。！？.!?) when possible.
+    Each returned string includes its trailing punctuation.
+    E.g. "你好。再见！" → ["你好。", "再见！"]
     """
-    text_len = len(text)
-    if text_len == 0 or not regions:
-        return []
+    import re as _re
 
-    # Calculate the proportion of each speaker region
-    total_region_dur = sum(re - rs for rs, re, _ in regions)
-    if total_region_dur <= 0:
-        return [(seg_start, seg_start + seg_dur, text, regions[0][2])]
+    # Split after sentence-ending punctuation, keeping the delimiter
+    # Also split on comma/semicolon for finer granularity (speaker turns
+    # often happen at clause boundaries, not just sentence boundaries)
+    parts = _re.split(r"(?<=[。！？.!?，,；;])", text)
 
-    # Build split points as character positions
-    splits: list[tuple[float, float, str, str]] = []
-    char_pos = 0
-
-    for ri, (rs, re, spk) in enumerate(regions):
-        proportion = (re - rs) / total_region_dur
-        # For the last region, take all remaining text
-        if ri == len(regions) - 1:
-            target_end = text_len
+    # Filter empty strings and merge very short fragments (< 2 chars)
+    # into the previous sentence to avoid noise
+    sentences: list[str] = []
+    for part in parts:
+        if not part:
+            continue
+        if sentences and len(part.strip()) < 2:
+            sentences[-1] += part
         else:
-            target_end = min(text_len, int(char_pos + proportion * text_len))
+            sentences.append(part)
 
-        # Try to split at a sentence boundary near the target position
-        if target_end < text_len:
-            target_end = _find_sentence_boundary(text, target_end)
-
-        sub_text = text[char_pos:target_end]
-        if sub_text.strip():
-            splits.append((rs, re, sub_text, spk))
-
-        char_pos = target_end
-
-    return splits
-
-
-def _find_sentence_boundary(text: str, target_pos: int, search_range: int = 20) -> int:
-    """Find the nearest sentence boundary to target_pos.
-
-    Looks for punctuation marks (。！？.!?，,) within search_range
-    of the target position. Returns the position after the punctuation.
-    """
-    best_pos = target_pos
-    best_dist = search_range + 1
-
-    # Search around target for sentence-ending punctuation
-    start = max(0, target_pos - search_range)
-    end = min(len(text), target_pos + search_range)
-
-    for i in range(start, end):
-        if text[i] in "。！？.!?":
-            # Split after the punctuation
-            pos = i + 1
-            dist = abs(pos - target_pos)
-            if dist < best_dist:
-                best_dist = dist
-                best_pos = pos
-        elif text[i] in "，,、；;":
-            # Comma/semicolon — less preferred but still OK
-            pos = i + 1
-            dist = abs(pos - target_pos)
-            # Only use comma if no sentence-ending punctuation found
-            if dist < best_dist and best_dist > search_range:
-                best_dist = dist
-                best_pos = pos
-
-    return best_pos
+    return sentences if sentences else [text]
 
 
 def _extract_embeddings_batch(
