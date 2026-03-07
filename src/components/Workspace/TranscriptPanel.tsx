@@ -39,7 +39,8 @@ export function TranscriptPanel() {
   const isRecording = useRecordingStore((s) => s.status === "recording");
 
   const [editing, setEditing] = useState(false);
-  const [editText, setEditText] = useState("");
+  const [editInitialText, setEditInitialText] = useState("");
+  const editTextRef = useRef("");
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -116,7 +117,9 @@ export function TranscriptPanel() {
   }, [segments]);
 
   const handleStartEdit = () => {
-    setEditText(segmentsToMarkdown(segments));
+    const md = segmentsToMarkdown(segments);
+    editTextRef.current = md;
+    setEditInitialText(md);
     setEditing(true);
   };
 
@@ -124,7 +127,7 @@ export function TranscriptPanel() {
 
   const handleSave = () => {
     // Parse edited markdown back to segments, preserving timestamps from originals
-    const lines = editText.split("\n");
+    const lines = editTextRef.current.split("\n");
     const newSegments: Segment[] = [];
     let currentSpeaker = "";
     let segIdx = 0;
@@ -179,7 +182,7 @@ export function TranscriptPanel() {
 
   const handleCancel = () => {
     setEditing(false);
-    setEditText("");
+    editTextRef.current = "";
   };
 
   // Editing mode takes priority — never lose user's edit state
@@ -200,8 +203,8 @@ export function TranscriptPanel() {
           </div>
         </div>
         <MilkdownEditor
-          defaultValue={editText}
-          onChange={(md) => setEditText(md)}
+          defaultValue={editInitialText}
+          onChange={(md) => { editTextRef.current = md; }}
         />
       </div>
     );
