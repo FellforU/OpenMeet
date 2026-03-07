@@ -25,6 +25,9 @@ type ProcessingStep =
 
 export type AudioSource = "microphone" | "system" | "mixed";
 
+// Promise resolver for speaker count dialog
+let speakerCountResolve: ((value: number | undefined) => void) | null = null;
+
 interface RecordingStore {
   status: RecordingStatus;
   jobId: string | null;
@@ -33,12 +36,14 @@ interface RecordingStore {
   segmentCountAtStart: number;
   processingStep: ProcessingStep;
   audioSource: AudioSource;
+  showSpeakerCountDialog: boolean;
 
   setAudioSource: (source: AudioSource) => void;
   startRecording: (engine: string, modelSize: string, language: string | null) => Promise<void>;
   pauseRecording: () => Promise<void>;
   resumeRecording: () => Promise<void>;
   stopRecording: () => Promise<void>;
+  confirmSpeakerCount: (count: number | undefined) => void;
   reset: () => void;
 }
 
@@ -75,8 +80,21 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
   segmentCountAtStart: 0,
   processingStep: null,
   audioSource: "microphone" as AudioSource,
+  showSpeakerCountDialog: false,
 
-  setAudioSource: (source) => set({ audioSource: source }),
+  setAudioSource: (source) => {
+    set({ audioSource: source });
+    // Persist to settings
+    useSettingsStore.getState().setGeneral({ audioSource: source });
+  },
+
+  confirmSpeakerCount: (count) => {
+    set({ showSpeakerCountDialog: false });
+    if (speakerCountResolve) {
+      speakerCountResolve(count);
+      speakerCountResolve = null;
+    }
+  },
 
   startRecording: async (engine, modelSize, language) => {
     // Ensure ASR model is loaded before recording starts
@@ -361,9 +379,15 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
     // Run post-processing (ITN + punctuation + speaker diarization + voiceprint matching)
     const currentSessionSegmentCount = segments.length - capturedSegmentCountAtStart;
     if (capturedJobId && audioPath && currentSessionSegmentCount > 0) {
+      // Prompt user for speaker count before diarization
+      const numSpeakers = await new Promise<number | undefined>((resolve) => {
+        speakerCountResolve = resolve;
+        set({ showSpeakerCountDialog: true });
+      });
+
       set({ processingStep: "diarizing" });
       try {
-        await api.postProcessJob(capturedJobId, audioPath);
+        await api.postProcessJob(capturedJobId, audioPath, numSpeakers);
         const result = await tauriFetch(
           `http://127.0.0.1:18090/jobs/${capturedJobId}/result`,
           { method: "GET" }
@@ -485,6 +509,15 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
       streamSegmentCount: 0,
       segmentCountAtStart: 0,
       processingStep: null,
+      showSpeakerCountDialog: false,
     });
   },
 }));
+
+// Sync audioSource from persisted settings when settings are loaded
+useSettingsStore.subscribe((state) => {
+  const persisted = state.general.audioSource;
+  if (persisted && persisted !== useRecordingStore.getState().audioSource) {
+    useRecordingStore.setState({ audioSource: persisted as AudioSource });
+  }
+});

@@ -156,7 +156,11 @@ ALLOWED_AUDIO_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".mp4", ".m
 
 
 @router.post("/{job_id}/post-process", response_model=JobResponse)
-async def post_process_job(job_id: str, audio_path: Optional[str] = Query(None)):
+async def post_process_job(
+    job_id: str,
+    audio_path: Optional[str] = Query(None),
+    num_speakers: Optional[int] = Query(None),
+):
     """Trigger post-processing on a completed streaming job.
 
     Runs: ITN → Punctuation → Diarization (if audio_path provided)
@@ -185,7 +189,10 @@ async def post_process_job(job_id: str, audio_path: Optional[str] = Query(None))
             raise HTTPException(status_code=400, detail="Invalid audio file type")
         job.audio_path = resolved
 
-    pipeline = PostProcessingPipeline()
+    config = PipelineConfig()
+    if num_speakers is not None:
+        config.num_speakers = num_speakers
+    pipeline = PostProcessingPipeline(config=config)
     try:
         await pipeline.run(job)  # COMPLETED → POST_PROCESSING → READY
     except Exception as e:

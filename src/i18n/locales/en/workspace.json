@@ -75,7 +75,16 @@
     "correction": "AI Correction",
     "correctionRunning": "AI correcting...",
     "correctionSuccess": "AI correction completed",
-    "correctionFailed": "AI correction failed: {{message}}"
+    "correctionFailed": "AI correction failed: {{message}}",
+    "numSpeakers": "Number of speakers",
+    "numSpeakersPlaceholder": "Auto-detect"
+  },
+  "speakerCount": {
+    "title": "Set Number of Speakers",
+    "description": "Enter the number of speakers in the meeting to improve speaker identification accuracy. If unsure, skip and the system will auto-detect.",
+    "placeholder": "Enter number of speakers (e.g., 2)",
+    "confirm": "Confirm",
+    "skip": "Skip (auto-detect)"
   },
   "recording": {
     "start": "Start Recording",

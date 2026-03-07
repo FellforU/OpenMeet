@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
-import type { Segment, JobStatus, PipelineStep, Summary } from "../types";
+import type { Segment, JobStatus, PipelineStep, Summary, VoiceprintMatchResult } from "../types";
 import * as api from "../services/asrClient";
 import { loadAudioUrl } from "../services/audioLoader";
 import { tauriFetch } from "../services/httpProxy";
@@ -322,6 +322,29 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
             id: crypto.randomUUID(),
             ...s,
           }));
+
+          // Voiceprint matching: pass embeddings to Rust for library comparison
+          const embeddings: (number[] | null)[] = (data as { embeddings?: (number[] | null)[] }).embeddings || [];
+          if (embeddings.length > 0) {
+            try {
+              const { useSettingsStore } = await import("./settingsStore");
+              const threshold = useSettingsStore.getState().general.diarizationThreshold;
+              const matchResult = await invoke<VoiceprintMatchResult>(
+                "voiceprint_match",
+                { embeddings, threshold }
+              );
+              for (let i = 0; i < segments.length; i++) {
+                if (matchResult.assignments[i]) {
+                  segments[i] = { ...segments[i], voiceprintId: matchResult.assignments[i]! };
+                }
+                if (matchResult.speaker_names[i]) {
+                  segments[i] = { ...segments[i], speaker: matchResult.speaker_names[i]! };
+                }
+              }
+            } catch {
+              // Voiceprint matching failure is non-fatal
+            }
+          }
 
           // If regeneration produced empty results but we had segments, keep old ones
           if (segments.length === 0 && hadExistingSegments) {

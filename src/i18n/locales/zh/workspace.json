@@ -75,7 +75,16 @@
     "correction": "AI 纠错",
     "correctionRunning": "AI 纠错中...",
     "correctionSuccess": "AI 纠错完成",
-    "correctionFailed": "AI 纠错失败: {{message}}"
+    "correctionFailed": "AI 纠错失败: {{message}}",
+    "numSpeakers": "发言人数量",
+    "numSpeakersPlaceholder": "自动检测"
+  },
+  "speakerCount": {
+    "title": "设置发言人数量",
+    "description": "请输入会议中的发言人数量，有助于提高说话人识别准确率。如果不确定，可以跳过，系统将自动识别。",
+    "placeholder": "请输入发言人数量（如：2）",
+    "confirm": "确认",
+    "skip": "跳过（自动识别）"
   },
   "recording": {
     "start": "开始录制",

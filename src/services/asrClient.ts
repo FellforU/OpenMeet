@@ -101,12 +101,14 @@ export async function cancelJob(jobId: string): Promise<JobResponse> {
 
 export async function postProcessJob(
   jobId: string,
-  audioPath?: string
+  audioPath?: string,
+  numSpeakers?: number,
 ): Promise<JobResponse> {
-  const params = audioPath
-    ? `?audio_path=${encodeURIComponent(audioPath)}`
-    : "";
-  return fetchJson(`${ASR_BASE_URL}/jobs/${jobId}/post-process${params}`, {
+  const searchParams = new URLSearchParams();
+  if (audioPath) searchParams.set("audio_path", audioPath);
+  if (numSpeakers !== undefined) searchParams.set("num_speakers", String(numSpeakers));
+  const qs = searchParams.toString();
+  return fetchJson(`${ASR_BASE_URL}/jobs/${jobId}/post-process${qs ? `?${qs}` : ""}`, {
     method: "POST",
   });
 }

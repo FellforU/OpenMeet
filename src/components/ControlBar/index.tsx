@@ -1,6 +1,7 @@
 import { AudioPlayer } from "./AudioPlayer";
 import { ActionButtons } from "./ActionButtons";
 import { RegenerateButton } from "./RegenerateButton";
+import { SpeakerCountDialog } from "./SpeakerCountDialog";
 
 export function ControlBar() {
   return (
@@ -8,6 +9,7 @@ export function ControlBar() {
       <AudioPlayer />
       <ActionButtons />
       <RegenerateButton />
+      <SpeakerCountDialog />
     </div>
   );
 }

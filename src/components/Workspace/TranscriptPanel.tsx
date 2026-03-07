@@ -136,13 +136,15 @@ export function TranscriptPanel() {
       const trimmed = line.trim();
       if (!trimmed) continue;
 
-      // Detect speaker header: **SpeakerName:** or **SpeakerName**: or bold variations
-      const speakerMatch = trimmed.match(
-        /^\*\*(.+?)(?::\*\*|\*\*[:：]?)$/
-      );
+      // Detect speaker header: line is ONLY bold text, optionally followed by colon
+      // Matches: **Name:**  **Name：**  **Name**:  **Name**：  **Name**
+      const speakerMatch = trimmed.match(/^\*\*(.+?)\*\*\s*[:：]?\s*$/);
       if (speakerMatch) {
-        currentSpeaker = speakerMatch[1].replace(/:$/, "").trim();
-        continue;
+        const name = speakerMatch[1].replace(/[:：\s]+$/, "").trim();
+        if (name) {
+          currentSpeaker = name;
+          continue;
+        }
       }
 
       // Map to original segment for timestamps, or create new
@@ -188,8 +190,8 @@ export function TranscriptPanel() {
   // Editing mode takes priority — never lose user's edit state
   if (editing) {
     return (
-      <div className="flex h-full flex-col">
-        <div className="flex items-center gap-2 px-4 py-2">
+      <div className="flex h-full flex-col overflow-hidden">
+        <div className="sticky top-0 z-10 flex shrink-0 items-center gap-2 border-b bg-background px-4 py-2">
           <Badge variant="secondary">{t("transcript.editMode")}</Badge>
           <div className="ml-auto flex gap-2">
             <Button size="sm" onClick={handleSave}>
@@ -202,10 +204,12 @@ export function TranscriptPanel() {
             </Button>
           </div>
         </div>
-        <MilkdownEditor
-          defaultValue={editInitialText}
-          onChange={(md) => { editTextRef.current = md; }}
-        />
+        <div className="min-h-0 flex-1">
+          <MilkdownEditor
+            defaultValue={editInitialText}
+            onChange={(md) => { editTextRef.current = md; }}
+          />
+        </div>
       </div>
     );
   }

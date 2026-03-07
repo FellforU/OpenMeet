@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Loader2, Sparkles, FileText, RefreshCw, Wand2 } from "lucide-react";
+import { Loader2, Sparkles, FileText, RefreshCw, Wand2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
 import {
@@ -8,13 +8,18 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
 } from "../ui/dropdown-menu";
+import { invoke } from "@tauri-apps/api/core";
 import { useTranscriptionStore } from "../../stores/transcriptionStore";
 import { useProjectStore } from "../../stores/projectStore";
 import { useEngineStore } from "../../stores/engineStore";
 import { useRecordingStore } from "../../stores/recordingStore";
+import { useSettingsStore } from "../../stores/settingsStore";
 import { generateMeetingSummary } from "../../services/llmClient";
 import { reprocessSegments } from "../../services/asrClient";
+import type { Segment, VoiceprintMatchResult } from "../../types";
 
 export function RegenerateButton() {
   const { t } = useTranslation("workspace");
@@ -32,6 +37,7 @@ export function RegenerateButton() {
   const { selectedEngine, selectedModelSize, selectedLanguage } = useEngineStore();
 
   const [generating, setGenerating] = useState<"summary" | "transcript" | "postprocess" | null>(null);
+  const [numSpeakersInput, setNumSpeakersInput] = useState<string>("");
 
   const isJobBusy = jobStatus === "running" || jobStatus === "post_processing";
   const isRecording = recordingStatus !== "idle";
@@ -83,11 +89,17 @@ export function RegenerateButton() {
     if (segments.length === 0) return;
     setGenerating("postprocess");
     try {
-      // Count unique speakers to hint diarization
-      const uniqueSpeakers = new Set(
-        segments.map((s) => s.speaker).filter(Boolean)
-      );
-      const numSpeakers = uniqueSpeakers.size >= 2 ? uniqueSpeakers.size : undefined;
+      // Use user-specified speaker count, or auto-detect from unique speakers
+      const userNumSpeakers = numSpeakersInput ? parseInt(numSpeakersInput, 10) : NaN;
+      let numSpeakers: number | undefined;
+      if (!isNaN(userNumSpeakers) && userNumSpeakers >= 1) {
+        numSpeakers = userNumSpeakers;
+      } else {
+        const uniqueSpeakers = new Set(
+          segments.map((s) => s.speaker).filter(Boolean)
+        );
+        numSpeakers = uniqueSpeakers.size >= 2 ? uniqueSpeakers.size : undefined;
+      }
 
       const result = await reprocessSegments({
         segments: segments.map((s) => ({
@@ -103,7 +115,7 @@ export function RegenerateButton() {
         num_speakers: numSpeakers,
       });
 
-      const newSegments = result.segments.map((s) => ({
+      const newSegments: Segment[] = result.segments.map((s) => ({
         id: crypto.randomUUID(),
         start: s.start,
         end: s.end,
@@ -111,6 +123,28 @@ export function RegenerateButton() {
         speaker: s.speaker ?? null,
         confidence: s.confidence ?? null,
       }));
+
+      // Voiceprint matching with returned embeddings
+      const embeddings: (number[] | null)[] = result.embeddings || [];
+      if (embeddings.length > 0) {
+        try {
+          const threshold = useSettingsStore.getState().general.diarizationThreshold;
+          const matchResult = await invoke<VoiceprintMatchResult>(
+            "voiceprint_match",
+            { embeddings, threshold }
+          );
+          for (let i = 0; i < newSegments.length; i++) {
+            if (matchResult.assignments[i]) {
+              newSegments[i] = { ...newSegments[i], voiceprintId: matchResult.assignments[i]! };
+            }
+            if (matchResult.speaker_names[i]) {
+              newSegments[i] = { ...newSegments[i], speaker: matchResult.speaker_names[i]! };
+            }
+          }
+        } catch {
+          // Voiceprint matching failure is non-fatal
+        }
+      }
 
       setSegments(newSegments);
 
@@ -169,6 +203,26 @@ export function RegenerateButton() {
             <Sparkles className="mr-2 h-4 w-4" />
             {t("regenerate.summary")}
           </DropdownMenuItem>
+        )}
+        {hasSegments && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="flex items-center gap-2 text-xs font-normal text-muted-foreground">
+              <Users className="h-3.5 w-3.5" />
+              {t("regenerate.numSpeakers")}
+            </DropdownMenuLabel>
+            <div className="px-2 pb-1.5" onPointerDown={(e) => e.stopPropagation()}>
+              <input
+                type="number"
+                min="1"
+                max="20"
+                placeholder={t("regenerate.numSpeakersPlaceholder")}
+                value={numSpeakersInput}
+                onChange={(e) => setNumSpeakersInput(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+          </>
         )}
       </DropdownMenuContent>
     </DropdownMenu>

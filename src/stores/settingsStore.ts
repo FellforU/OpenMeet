@@ -49,6 +49,7 @@ interface GeneralConfig {
   enablePunctuation: boolean;        // Enable punctuation restoration
   enableDiarization: boolean;        // Enable speaker diarization
   enableLlmCorrection: boolean;     // Enable LLM-based ASR error correction
+  audioSource: "microphone" | "system" | "mixed"; // Recording audio source
 }
 
 // Parse a compound model reference like "openai/gpt-4o"
@@ -119,6 +120,7 @@ const defaultState = {
     enablePunctuation: true,
     enableDiarization: true,
     enableLlmCorrection: true,
+    audioSource: "microphone" as const,
   },
   llmProviders: {
     ollama: { enabled: true, host: "http://localhost:11434", model: "qwen2.5:7b", modelByType: { LLM: "qwen2.5:7b" } },
