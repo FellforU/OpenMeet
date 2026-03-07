@@ -1012,6 +1012,16 @@ pub fn voiceprint_update(
         ],
     )
     .map_err(|e| e.to_string())?;
+
+    // Sync speaker name to ALL segments across ALL projects that reference this voiceprint
+    if let Some(ref new_name) = metadata.name {
+        conn.execute(
+            "UPDATE segments SET speaker = ?1 WHERE voiceprint_id = ?2",
+            params![new_name, id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
     Ok(())
 }
 
