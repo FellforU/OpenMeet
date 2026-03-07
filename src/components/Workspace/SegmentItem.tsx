@@ -51,7 +51,16 @@ export const SegmentItem = memo(function SegmentItem({
           <span
             className={`inline-block h-2.5 w-2.5 rounded-full ${SPEAKER_DOT_COLORS[getSpeakerColorIndex(segment.speaker)]}`}
           />
-          <span className="text-sm font-semibold">{segment.speaker}</span>
+          <SpeakerBadge
+            speaker={segment.speaker}
+            voiceprintId={segment.voiceprintId}
+            onRename={onRenameSpeaker}
+            onAssignVoiceprint={
+              onAssignVoiceprint
+                ? (vpId, name) => onAssignVoiceprint(segment.id, vpId, name)
+                : undefined
+            }
+          />
           <span className="ml-auto text-xs text-muted-foreground">
             {formatTime(speakerTimeRange.start)} - {formatTime(speakerTimeRange.end)}
           </span>
