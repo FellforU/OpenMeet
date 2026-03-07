@@ -83,6 +83,12 @@ export function RegenerateButton() {
     if (segments.length === 0) return;
     setGenerating("postprocess");
     try {
+      // Count unique speakers to hint diarization
+      const uniqueSpeakers = new Set(
+        segments.map((s) => s.speaker).filter(Boolean)
+      );
+      const numSpeakers = uniqueSpeakers.size >= 2 ? uniqueSpeakers.size : undefined;
+
       const result = await reprocessSegments({
         segments: segments.map((s) => ({
           start: s.start,
@@ -94,6 +100,7 @@ export function RegenerateButton() {
         audio_path: audioFilePath || undefined,
         engine: selectedEngine,
         language: selectedLanguage === "auto" ? undefined : selectedLanguage,
+        num_speakers: numSpeakers,
       });
 
       const newSegments = result.segments.map((s) => ({

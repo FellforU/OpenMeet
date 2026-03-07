@@ -122,6 +122,7 @@ export interface ReprocessRequest {
   audio_path?: string;
   engine?: string;
   language?: string;
+  num_speakers?: number;
 }
 
 export interface ReprocessResponse {

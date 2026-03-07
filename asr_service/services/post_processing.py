@@ -47,6 +47,7 @@ class PipelineConfig:
     enable_embedding: bool = True
     enable_llm_correction: bool = True
     segmentation_strategy: str = "hybrid"  # time/semantic/hybrid
+    num_speakers: Optional[int] = None
 
 
 class PostProcessingPipeline:
@@ -141,7 +142,10 @@ class PostProcessingPipeline:
         # Step 7: Speaker diarization
         if self._config.enable_diarization and job.audio_path:
             try:
-                segments = await pipeline.diarizer.process(job.audio_path, segments)
+                segments = await pipeline.diarizer.process(
+                    job.audio_path, segments,
+                    num_speakers=self._config.num_speakers,
+                )
             except Exception as e:
                 logger.warning("Diarization step failed: %s", e)
 

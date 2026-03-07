@@ -8,7 +8,7 @@ import shutil
 from pathlib import Path
 
 from asr_service.models.job import TranscriptionJob, JobStatus
-from asr_service.services.post_processing import PostProcessingPipeline
+from asr_service.services.post_processing import PostProcessingPipeline, PipelineConfig
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -203,6 +203,7 @@ class ReprocessRequest(BaseModel):
     audio_path: Optional[str] = None
     engine: str = "whisper"
     language: Optional[str] = None
+    num_speakers: Optional[int] = None
 
 
 class ReprocessResponse(BaseModel):
@@ -244,7 +245,10 @@ async def reprocess_segments(req: ReprocessRequest):
         for s in req.segments
     ]
 
-    pipeline = PostProcessingPipeline()
+    config = PipelineConfig()
+    if req.num_speakers is not None:
+        config.num_speakers = req.num_speakers
+    pipeline = PostProcessingPipeline(config=config)
     try:
         await pipeline.run(job)
     except Exception as e:
