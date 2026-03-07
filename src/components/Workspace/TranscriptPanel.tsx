@@ -124,29 +124,40 @@ export function TranscriptPanel() {
 
   const handleSave = () => {
     // Parse edited markdown back to segments, preserving timestamps from originals
-    const lines = editText.split("\n").filter((l) => l.trim());
+    const lines = editText.split("\n");
     const newSegments: Segment[] = [];
     let currentSpeaker = "";
     let segIdx = 0;
 
     for (const line of lines) {
-      // Detect speaker header: **SpeakerName:**
-      const speakerMatch = line.match(/^\*\*(.+?):\*\*$/);
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      // Detect speaker header: **SpeakerName:** or **SpeakerName**: or bold variations
+      const speakerMatch = trimmed.match(
+        /^\*\*(.+?)(?::\*\*|\*\*[:：]?)$/
+      );
       if (speakerMatch) {
-        currentSpeaker = speakerMatch[1];
+        currentSpeaker = speakerMatch[1].replace(/:$/, "").trim();
         continue;
       }
+
       // Map to original segment for timestamps, or create new
-      const orig = segments[segIdx];
+      const orig = segIdx < segments.length ? segments[segIdx] : null;
       newSegments.push({
-        id: orig?.id ?? `seg-${segIdx}`,
+        id: orig?.id ?? crypto.randomUUID(),
         start: orig?.start ?? 0,
         end: orig?.end ?? 0,
-        text: line,
+        text: trimmed,
         speaker: currentSpeaker || orig?.speaker || null,
         confidence: orig?.confidence ?? null,
       });
       segIdx++;
+    }
+
+    if (newSegments.length === 0) {
+      toast.error(t("common:toast.emptyTranscript", "转录内容为空"));
+      return;
     }
 
     setSegments(newSegments);
@@ -171,29 +182,7 @@ export function TranscriptPanel() {
     setEditText("");
   };
 
-  // Empty state: recording but no segments yet
-  if (segments.length === 0 && isRecording) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
-        <div className="relative">
-          <Mic className="h-10 w-10" />
-          <span className="absolute -right-1 -top-1 h-3 w-3 animate-pulse rounded-full bg-red-500" />
-        </div>
-        <p className="text-sm">{t("transcript.waitingForSegments")}</p>
-      </div>
-    );
-  }
-
-  // Empty state: idle with no segments
-  if (segments.length === 0 && status === "idle") {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
-        <Mic className="h-10 w-10" />
-        <p className="text-sm">{t("transcript.empty")}</p>
-      </div>
-    );
-  }
-
+  // Editing mode takes priority — never lose user's edit state
   if (editing) {
     return (
       <div className="flex h-full flex-col">
@@ -214,6 +203,29 @@ export function TranscriptPanel() {
           defaultValue={editText}
           onChange={(md) => setEditText(md)}
         />
+      </div>
+    );
+  }
+
+  // Empty state: recording but no segments yet
+  if (segments.length === 0 && isRecording) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
+        <div className="relative">
+          <Mic className="h-10 w-10" />
+          <span className="absolute -right-1 -top-1 h-3 w-3 animate-pulse rounded-full bg-red-500" />
+        </div>
+        <p className="text-sm">{t("transcript.waitingForSegments")}</p>
+      </div>
+    );
+  }
+
+  // Empty state: idle with no segments
+  if (segments.length === 0 && status === "idle") {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
+        <Mic className="h-10 w-10" />
+        <p className="text-sm">{t("transcript.empty")}</p>
       </div>
     );
   }

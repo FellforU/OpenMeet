@@ -83,7 +83,11 @@ function EditorWithToolbar({ defaultValue, onChange }: MilkdownEditorProps) {
   const handleChange = useCallback(
     (md: string) => {
       markdownRef.current = md;
-      onChange?.(md);
+      try {
+        onChange?.(md);
+      } catch {
+        // Prevent editor crash from propagating
+      }
     },
     [onChange],
   );
