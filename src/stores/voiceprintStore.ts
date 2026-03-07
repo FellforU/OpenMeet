@@ -11,6 +11,7 @@ interface VoiceprintStore {
   loading: boolean;
 
   loadVoiceprints: () => Promise<void>;
+  createVoiceprint: (name: string) => Promise<VoiceprintInfo>;
   updateVoiceprint: (id: string, metadata: VoiceprintMetadata) => Promise<void>;
   deleteVoiceprint: (id: string) => Promise<void>;
   mergeVoiceprints: (sourceId: string, targetId: string) => Promise<void>;
@@ -33,6 +34,12 @@ export const useVoiceprintStore = create<VoiceprintStore>((set, get) => ({
     } finally {
       set({ loading: false });
     }
+  },
+
+  createVoiceprint: async (name) => {
+    const info = await invoke<VoiceprintInfo>("voiceprint_create", { name });
+    set({ voiceprints: [info, ...get().voiceprints] });
+    return info;
   },
 
   updateVoiceprint: async (id, metadata) => {

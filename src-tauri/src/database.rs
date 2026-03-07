@@ -1016,6 +1016,42 @@ pub fn voiceprint_update(
 }
 
 #[tauri::command]
+pub fn voiceprint_create(
+    state: State<DatabaseState>,
+    name: String,
+) -> Result<VoiceprintInfo, String> {
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    let now = chrono::Utc::now().to_rfc3339();
+    let id = uuid::Uuid::new_v4().to_string();
+
+    // Create placeholder embedding (192-dim zero vector for CAMPPlus compatibility)
+    let placeholder_embedding = vec![0u8; 192 * 4]; // 192 floats × 4 bytes
+
+    conn.execute(
+        "INSERT INTO voiceprints (id, name, embedding, sample_count, model_version, created_at, updated_at, last_seen_at)
+         VALUES (?1, ?2, ?3, 0, '', ?4, ?4, ?4)",
+        params![id, name, placeholder_embedding, now],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(VoiceprintInfo {
+        id,
+        name,
+        nickname: String::new(),
+        email: String::new(),
+        department: String::new(),
+        title: String::new(),
+        note: String::new(),
+        avatar_path: None,
+        sample_count: 0,
+        model_version: String::new(),
+        created_at: now.clone(),
+        updated_at: now.clone(),
+        last_seen_at: Some(now),
+    })
+}
+
+#[tauri::command]
 pub fn voiceprint_delete(state: State<DatabaseState>, id: String) -> Result<(), String> {
     let conn = state.conn.lock().map_err(|e| e.to_string())?;
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;

@@ -251,6 +251,7 @@ pub fn run() {
             database::get_app_data_dir,
             // Voiceprint commands
             database::voiceprint_list,
+            database::voiceprint_create,
             database::voiceprint_update,
             database::voiceprint_delete,
             database::voiceprint_merge,

@@ -275,6 +275,9 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
     // Capture project ID at polling start time so results persist to the
     // correct project even if the user switches meetings during transcription
     const targetProjectId = projectId || null;
+    // Track how many consecutive times we see "completed" without transition
+    // to post_processing/ready — after a threshold, treat it as final
+    let completedSeenCount = 0;
 
     const poll = async () => {
       if (pollAborted) return;
@@ -290,6 +293,24 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
             progress: jobResp.progress,
           },
         });
+
+        // Wait for post-processing to finish: "completed" means transcription
+        // is done but post-processing may still run (COMPLETED → POST_PROCESSING → READY).
+        // Keep polling until "ready" (embeddings available) or until "completed"
+        // stabilizes (post-processing won't run / failed).
+        if (jobResp.status === "completed") {
+          completedSeenCount++;
+          if (completedSeenCount < 5) {
+            // Keep polling — post-processing may still start
+            if (!pollAborted) {
+              pollTimeoutId = setTimeout(() => poll(), 1000);
+            }
+            return;
+          }
+          // Stayed at "completed" for 5 polls — treat as final
+        } else {
+          completedSeenCount = 0;
+        }
 
         if (jobResp.status === "completed" || jobResp.status === "ready") {
           // Fetch results
@@ -491,11 +512,28 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
 
     // Find voiceprintId associated with the old speaker name
     const affectedSeg = segments.find((s) => s.speaker === oldName && s.voiceprintId);
-    const voiceprintId = affectedSeg?.voiceprintId;
+    let voiceprintId = affectedSeg?.voiceprintId;
+
+    const { useVoiceprintStore } = await import("./voiceprintStore");
+
+    if (voiceprintId) {
+      // Update existing voiceprint name in library
+      useVoiceprintStore.getState().updateVoiceprint(voiceprintId, { name: newName }).catch(() => {});
+    } else {
+      // No voiceprint linked — create a new one in the library
+      try {
+        const newVp = await useVoiceprintStore.getState().createVoiceprint(newName);
+        voiceprintId = newVp.id;
+      } catch {
+        // Creation failure is non-fatal — segments still get renamed
+      }
+    }
 
     set({
       segments: segments.map((s) =>
-        s.speaker === oldName ? { ...s, speaker: newName } : s
+        s.speaker === oldName
+          ? { ...s, speaker: newName, voiceprintId: voiceprintId ?? s.voiceprintId }
+          : s
       ),
     });
 
@@ -504,12 +542,6 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
     const projectId = useProjectStore.getState().activeProjectId;
     if (projectId) {
       get().persistSegments(projectId).catch(() => {});
-    }
-
-    // Update voiceprint name in library
-    if (voiceprintId) {
-      const { useVoiceprintStore } = await import("./voiceprintStore");
-      useVoiceprintStore.getState().updateVoiceprint(voiceprintId, { name: newName }).catch(() => {});
     }
   },
 
