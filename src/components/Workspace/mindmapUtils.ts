@@ -4,10 +4,13 @@ import { RootTopic, Topic, Workbook } from "xmind-generator";
 
 // Layout constants
 const NODE_WIDTH = 240;
-const NODE_HEIGHT = 40;
+const MIN_NODE_HEIGHT = 40;
 const HORIZONTAL_GAP = 80;
 const ROOT_HORIZONTAL_GAP = 120;
 const VERTICAL_GAP = 16;
+const NODE_PADDING_Y = 12; // 6px top + 6px bottom
+const NODE_PADDING_X = 24; // 12px left + 12px right
+const LINE_HEIGHT_FACTOR = 1.4;
 
 interface LayoutResult {
   nodes: Node[];
@@ -263,6 +266,25 @@ export function summaryToNodes(summary: Summary): LayoutResult {
   return applyTreeLayout(nodes, edges);
 }
 
+/** Estimate node height based on text content and font size. */
+function estimateNodeHeight(label: string, fontSize: number): number {
+  const contentWidth = NODE_WIDTH - NODE_PADDING_X;
+  // Estimate average char width: CJK chars ≈ fontSize, Latin chars ≈ fontSize * 0.55
+  let totalWidth = 0;
+  for (const char of label) {
+    const cp = char.codePointAt(0) ?? 0;
+    const isCJK =
+      (cp >= 0x4e00 && cp <= 0x9fff) ||
+      (cp >= 0x3400 && cp <= 0x4dbf) ||
+      (cp >= 0x3000 && cp <= 0x303f) ||
+      (cp >= 0xff00 && cp <= 0xffef);
+    totalWidth += isCJK ? fontSize : fontSize * 0.55;
+  }
+  const lines = Math.max(1, Math.ceil(totalWidth / contentWidth));
+  const textHeight = lines * fontSize * LINE_HEIGHT_FACTOR;
+  return Math.max(MIN_NODE_HEIGHT, textHeight + NODE_PADDING_Y);
+}
+
 /** Simple tree layout: root on the left, branches to the right, leaves further right. */
 function applyTreeLayout(nodes: Node[], edges: Edge[]): LayoutResult {
   // Build adjacency from edges
@@ -273,21 +295,39 @@ function applyTreeLayout(nodes: Node[], edges: Edge[]): LayoutResult {
     childrenMap.set(edge.source, list);
   }
 
+  // Build a map of node data for height estimation
+  const nodeDataMap = new Map<string, { label: string; fontSize: number }>();
+  for (const node of nodes) {
+    const data = node.data as { label?: string; fontSize?: number };
+    nodeDataMap.set(node.id, {
+      label: data.label ?? "",
+      fontSize: data.fontSize ?? 12,
+    });
+  }
+
+  // Get the estimated rendered height for a single node
+  function getNodeHeight(nodeId: string): number {
+    const data = nodeDataMap.get(nodeId);
+    if (!data) return MIN_NODE_HEIGHT;
+    return estimateNodeHeight(data.label, data.fontSize);
+  }
+
   // Calculate subtree heights (memoized)
   const heightCache = new Map<string, number>();
   function getSubtreeHeight(nodeId: string): number {
     const cached = heightCache.get(nodeId);
     if (cached !== undefined) return cached;
     const children = childrenMap.get(nodeId) || [];
+    const selfHeight = getNodeHeight(nodeId);
     if (children.length === 0) {
-      heightCache.set(nodeId, NODE_HEIGHT);
-      return NODE_HEIGHT;
+      heightCache.set(nodeId, selfHeight);
+      return selfHeight;
     }
     const childrenHeight = children.reduce(
       (sum, childId) => sum + getSubtreeHeight(childId) + VERTICAL_GAP,
       -VERTICAL_GAP,
     );
-    const height = Math.max(NODE_HEIGHT, childrenHeight);
+    const height = Math.max(selfHeight, childrenHeight);
     heightCache.set(nodeId, height);
     return height;
   }
@@ -318,7 +358,7 @@ function applyTreeLayout(nodes: Node[], edges: Edge[]): LayoutResult {
         });
       } else {
         const subtreeH = getSubtreeHeight(nodeId);
-        positions.set(nodeId, { x, y: yStart + subtreeH / 2 - NODE_HEIGHT / 2 });
+        positions.set(nodeId, { x, y: yStart + subtreeH / 2 - getNodeHeight(nodeId) / 2 });
       }
     }
   }
