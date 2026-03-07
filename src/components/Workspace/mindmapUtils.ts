@@ -3,9 +3,10 @@ import type { Summary } from "../../types";
 import { RootTopic, Topic, Workbook } from "xmind-generator";
 
 // Layout constants
-const NODE_WIDTH = 180;
+const NODE_WIDTH = 240;
 const NODE_HEIGHT = 40;
-const HORIZONTAL_GAP = 60;
+const HORIZONTAL_GAP = 80;
+const ROOT_HORIZONTAL_GAP = 120;
 const VERTICAL_GAP = 16;
 
 interface LayoutResult {
@@ -300,10 +301,12 @@ function applyTreeLayout(nodes: Node[], edges: Edge[]): LayoutResult {
     if (children.length === 0) {
       positions.set(nodeId, { x, y: yStart });
     } else {
+      // Use larger gap between root and its branches
+      const gap = nodeId === "root" ? ROOT_HORIZONTAL_GAP : HORIZONTAL_GAP;
       let childY = yStart;
       for (const childId of children) {
         const childH = getSubtreeHeight(childId);
-        positionNode(childId, x + NODE_WIDTH + HORIZONTAL_GAP, childY);
+        positionNode(childId, x + NODE_WIDTH + gap, childY);
         childY += childH + VERTICAL_GAP;
       }
       const firstPos = positions.get(children[0]);
