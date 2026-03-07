@@ -57,8 +57,8 @@ interface TranscriptionStore {
   setDuration: (duration: number) => void;
   setPlaybackSpeed: (speed: number) => void;
   updateSegmentText: (id: string, text: string) => void;
-  updateSegmentSpeaker: (oldName: string, newName: string) => void;
-  assignSegmentVoiceprint: (segmentId: string, voiceprintId: string, name: string) => void;
+  updateSegmentSpeaker: (oldName: string, newName: string) => void | Promise<void>;
+  assignSegmentVoiceprint: (segmentId: string, voiceprintId: string, name: string) => void | Promise<void>;
   setSummary: (summary: Summary | null) => void;
   toggleActionItem: (index: number) => void;
   setPipelineStep: (step: PipelineStep) => void;
@@ -486,20 +486,58 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
     });
   },
 
-  updateSegmentSpeaker: (oldName, newName) => {
+  updateSegmentSpeaker: async (oldName, newName) => {
+    const segments = get().segments;
+
+    // Find voiceprintId associated with the old speaker name
+    const affectedSeg = segments.find((s) => s.speaker === oldName && s.voiceprintId);
+    const voiceprintId = affectedSeg?.voiceprintId;
+
     set({
-      segments: get().segments.map((s) =>
+      segments: segments.map((s) =>
         s.speaker === oldName ? { ...s, speaker: newName } : s
       ),
     });
+
+    // Persist to SQLite
+    const { useProjectStore } = await import("./projectStore");
+    const projectId = useProjectStore.getState().activeProjectId;
+    if (projectId) {
+      get().persistSegments(projectId).catch(() => {});
+    }
+
+    // Update voiceprint name in library
+    if (voiceprintId) {
+      const { useVoiceprintStore } = await import("./voiceprintStore");
+      useVoiceprintStore.getState().updateVoiceprint(voiceprintId, { name: newName }).catch(() => {});
+    }
   },
 
-  assignSegmentVoiceprint: (segmentId, voiceprintId, name) => {
+  assignSegmentVoiceprint: async (segmentId, voiceprintId, name) => {
+    // Update the target segment and all segments with the same old speaker name
+    const segments = get().segments;
+    const targetSeg = segments.find((s) => s.id === segmentId);
+    const oldSpeaker = targetSeg?.speaker;
+
     set({
-      segments: get().segments.map((s) =>
-        s.id === segmentId ? { ...s, voiceprintId, speaker: name } : s
-      ),
+      segments: segments.map((s) => {
+        if (s.id === segmentId) {
+          return { ...s, voiceprintId, speaker: name };
+        }
+        // Also update other segments from the same speaker
+        if (oldSpeaker && s.speaker === oldSpeaker) {
+          return { ...s, voiceprintId, speaker: name };
+        }
+        return s;
+      }),
     });
+
+    // Persist to SQLite
+    const { useProjectStore } = await import("./projectStore");
+    const projectId = useProjectStore.getState().activeProjectId;
+    if (projectId) {
+      get().persistSegments(projectId).catch(() => {});
+    }
   },
 
   setSummary: (summary) => set({ summary }),
