@@ -126,7 +126,8 @@ export function RegenerateButton() {
 
       // Voiceprint matching with returned embeddings
       const embeddings: (number[] | null)[] = result.embeddings || [];
-      if (embeddings.length > 0) {
+      const hasRealEmbeddings = embeddings.some((e) => e !== null);
+      if (hasRealEmbeddings) {
         try {
           const threshold = useSettingsStore.getState().general.diarizationThreshold;
           const matchResult = await invoke<VoiceprintMatchResult>(
@@ -143,6 +144,27 @@ export function RegenerateButton() {
           }
         } catch {
           // Voiceprint matching failure is non-fatal
+        }
+      }
+
+      // Auto-create voiceprints for unmatched speakers
+      const { useVoiceprintStore } = await import("../../stores/voiceprintStore");
+      const unmatchedSpeakers = new Set<string>();
+      for (const seg of newSegments) {
+        if (seg.speaker && !seg.voiceprintId) {
+          unmatchedSpeakers.add(seg.speaker);
+        }
+      }
+      for (const speaker of unmatchedSpeakers) {
+        try {
+          const vp = await useVoiceprintStore.getState().createVoiceprint(speaker);
+          for (let i = 0; i < newSegments.length; i++) {
+            if (newSegments[i].speaker === speaker && !newSegments[i].voiceprintId) {
+              newSegments[i] = { ...newSegments[i], voiceprintId: vp.id };
+            }
+          }
+        } catch {
+          // Non-fatal
         }
       }
 

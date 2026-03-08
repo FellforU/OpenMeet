@@ -114,6 +114,20 @@ def set_cache_dir(path: str | None):
         os.environ.pop("HF_HUB_CACHE", None)
         os.environ.pop("MODELSCOPE_CACHE", None)
 
+    # huggingface_hub caches HF_HUB_CACHE at import time; patch the live constant
+    # so models download to the configured directory instead of ~/.cache/huggingface/hub
+    try:
+        import huggingface_hub.constants as hf_constants
+        if path:
+            hf_constants.HF_HUB_CACHE = str(Path(path) / CACHE_SUBDIR_MODELS)
+        else:
+            # Reset to default
+            hf_constants.HF_HUB_CACHE = str(
+                Path.home() / ".cache" / "huggingface" / "hub"
+            )
+    except ImportError:
+        pass
+
 
 def get_cache_dir() -> str | None:
     """Return the root cache directory."""

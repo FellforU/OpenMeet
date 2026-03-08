@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Download, Trash2, Loader2, Settings as SettingsIcon, Play, CheckCircle2, FolderOpen, XCircle, Plus } from "lucide-react";
+import { Download, Trash2, Loader2, Settings as SettingsIcon, Play, CheckCircle2, FolderOpen, XCircle, Plus, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
@@ -380,6 +380,61 @@ export function ModelManager() {
   const [configuringAsr, setConfiguringAsr] = useState<string | null>(null);
   const [showCustomDialog, setShowCustomDialog] = useState(false);
 
+  // Pyannote diarization model state
+  const [pyannoteStatus, setPyannoteStatus] = useState<api.PyannoteStatus | null>(null);
+  const pyannotePollingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const fetchPyannoteStatus = useCallback(async () => {
+    try {
+      const status = await api.getPyannoteStatus();
+      setPyannoteStatus(status);
+      return status;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // Initial pyannote status check
+  useEffect(() => {
+    fetchPyannoteStatus();
+    return () => {
+      if (pyannotePollingRef.current) clearTimeout(pyannotePollingRef.current);
+    };
+  }, [fetchPyannoteStatus]);
+
+  const handlePyannoteDownload = async () => {
+    try {
+      await api.downloadPyannote();
+      // Start polling
+      const poll = async () => {
+        const status = await fetchPyannoteStatus();
+        if (status && status.phase === "downloading") {
+          pyannotePollingRef.current = setTimeout(poll, 1000);
+        } else if (status?.phase === "completed") {
+          toast.success(t("asr.pyannoteDownloadSuccess"));
+        } else if (status?.phase === "error") {
+          toast.error(t("asr.pyannoteDownloadFailed", { error: status.error ?? "" }));
+        }
+      };
+      pyannotePollingRef.current = setTimeout(poll, 1000);
+    } catch (err) {
+      toast.error(String(err));
+    }
+  };
+
+  const handlePyannoteCancelDownload = async () => {
+    if (pyannotePollingRef.current) {
+      clearTimeout(pyannotePollingRef.current);
+      pyannotePollingRef.current = null;
+    }
+    try {
+      await api.cancelPyannoteDownload();
+      await fetchPyannoteStatus();
+    } catch {
+      // Best effort
+    }
+  };
+
   useEffect(() => {
     fetchEngines();
   }, [fetchEngines]);
@@ -640,6 +695,118 @@ export function ModelManager() {
             <SettingsIcon className="mr-1.5 h-3.5 w-3.5" />
             {t("llm.configureBtn")}
           </Button>
+        </div>
+      </div>
+
+      {/* Post-processing models */}
+      <div className="space-y-3 border-t pt-4">
+        <div>
+          <h4 className="text-base font-semibold">{t("asr.postProcessTitle")}</h4>
+          <p className="text-sm text-muted-foreground">
+            {t("asr.postProcessSubtitle")}
+          </p>
+        </div>
+
+        <div className="grid gap-2">
+          {/* Pyannote diarization model */}
+          <div className="flex items-center gap-3 rounded-lg border border-border p-3">
+            <div
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
+              style={{ backgroundColor: "#6366F110" }}
+            >
+              <Users className="h-5 w-5 text-indigo-600" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="font-medium">pyannote</span>
+                <Badge variant="secondary" className="gap-1 text-[10px]">
+                  {t("asr.diarization")}
+                </Badge>
+                {pyannoteStatus?.downloaded && (
+                  <Badge variant="outline" className="gap-1 border-green-300 text-[10px] text-green-600">
+                    <CheckCircle2 className="h-2.5 w-2.5" />
+                    {t("common:downloadPhase.completed")}
+                  </Badge>
+                )}
+              </div>
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                {t("asr.pyannoteDesc")}
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {pyannoteStatus?.downloaded ? (
+                <Badge variant="outline" className="border-green-300 text-green-600">
+                  <CheckCircle2 className="mr-1 h-3 w-3" />
+                  {t("common:downloadPhase.completed")}
+                </Badge>
+              ) : pyannoteStatus?.phase === "downloading" ? (
+                <Button variant="outline" size="sm" disabled>
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  {t("common:downloadPhase.downloading")}
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handlePyannoteDownload}
+                >
+                  <Download className="mr-1.5 h-3.5 w-3.5" />
+                  {pyannoteStatus?.phase === "error"
+                    ? t("common:action.retry")
+                    : t("common:action.download")}
+                </Button>
+              )}
+            </div>
+          </div>
+          {/* Download progress */}
+          {pyannoteStatus?.phase === "downloading" && (
+            <div className="ml-13 space-y-1 px-3">
+              <div className="flex items-center gap-2 text-xs text-blue-600">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                <span>
+                  {t("common:downloadPhase.downloading")}
+                  {pyannoteStatus.elapsed_seconds > 0 && pyannoteStatus.downloaded_bytes > 0 && (
+                    <span className="ml-1 font-medium">
+                      {formatBytes(pyannoteStatus.downloaded_bytes / pyannoteStatus.elapsed_seconds)}/s
+                    </span>
+                  )}
+                </span>
+                <span className="text-muted-foreground">
+                  {formatElapsed(pyannoteStatus.elapsed_seconds)}
+                </span>
+                {pyannoteStatus.total_bytes > 0 && (
+                  <span className="ml-auto text-muted-foreground">
+                    {formatBytes(pyannoteStatus.downloaded_bytes)} / {formatBytes(pyannoteStatus.total_bytes)}
+                    {" "}({Math.min(100, Math.round((pyannoteStatus.downloaded_bytes / pyannoteStatus.total_bytes) * 100))}%)
+                  </span>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-1 h-5 w-5 p-0 text-muted-foreground hover:text-destructive"
+                  onClick={handlePyannoteCancelDownload}
+                >
+                  <XCircle className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              {pyannoteStatus.total_bytes > 0 && (
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-blue-100 dark:bg-blue-900/30">
+                  <div
+                    className="h-full rounded-full bg-blue-500 transition-all duration-500"
+                    style={{
+                      width: `${Math.min(100, Math.round((pyannoteStatus.downloaded_bytes / pyannoteStatus.total_bytes) * 100))}%`,
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+          {/* Download error */}
+          {pyannoteStatus?.phase === "error" && (
+            <div className="px-3 text-xs text-destructive">
+              {pyannoteStatus.error}
+            </div>
+          )}
         </div>
       </div>
 

@@ -150,15 +150,32 @@ class PostProcessingPipeline:
                 logger.warning("Diarization step failed: %s", e)
 
         # Step 8: Extract speaker embeddings for voiceprint matching
+        # Prefer pyannote's built-in embedding model (already loaded during
+        # diarization) over a separate ECAPA-TDNN model download
         if self._config.enable_embedding and job.audio_path:
+            job.embeddings = []
+            # Try pyannote first (uses wespeaker-voxceleb-resnet34-LM, no extra download)
             try:
-                extractor = create_embedding_extractor()
-                job.embeddings = await extractor.extract_embeddings(
-                    job.audio_path, segments
-                )
+                if hasattr(pipeline.diarizer, 'extract_embeddings'):
+                    job.embeddings = await pipeline.diarizer.extract_embeddings(
+                        job.audio_path, segments
+                    )
+                    has_valid = any(e is not None for e in job.embeddings)
+                    if has_valid:
+                        logger.info("Embeddings extracted via pyannote")
             except Exception as e:
-                logger.warning("Embedding extraction failed: %s", e)
-                job.embeddings = []
+                logger.warning("pyannote embedding extraction failed: %s", e)
+
+            # Fallback to ECAPA-TDNN if pyannote embeddings unavailable
+            if not job.embeddings or not any(e is not None for e in job.embeddings):
+                try:
+                    extractor = create_embedding_extractor()
+                    job.embeddings = await extractor.extract_embeddings(
+                        job.audio_path, segments
+                    )
+                except Exception as e:
+                    logger.warning("ECAPA-TDNN embedding extraction failed: %s", e)
+                    job.embeddings = []
         else:
             job.embeddings = []
 

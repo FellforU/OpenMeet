@@ -407,7 +407,8 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
 
           // Voiceprint matching: pass embeddings to Rust for library comparison
           const embeddings: (number[] | null)[] = data.embeddings || [];
-          if (embeddings.length > 0) {
+          const hasRealEmbeddings = embeddings.some((e) => e !== null);
+          if (hasRealEmbeddings) {
             try {
               const threshold = useSettingsStore.getState().general.diarizationThreshold;
               const matchResult = await invoke<VoiceprintMatchResult>(
@@ -424,6 +425,28 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
               }
             } catch {
               // Voiceprint matching failure is non-fatal
+            }
+          }
+
+          // Auto-create voiceprints for unmatched speakers (e.g. when embedding
+          // model is unavailable but diarization produced speaker labels)
+          const { useVoiceprintStore } = await import("./voiceprintStore");
+          const unmatchedSpeakers = new Set<string>();
+          for (const seg of postProcessedSegments) {
+            if (seg.speaker && !seg.voiceprintId) {
+              unmatchedSpeakers.add(seg.speaker);
+            }
+          }
+          for (const speaker of unmatchedSpeakers) {
+            try {
+              const vp = await useVoiceprintStore.getState().createVoiceprint(speaker);
+              for (let i = 0; i < postProcessedSegments.length; i++) {
+                if (postProcessedSegments[i].speaker === speaker && !postProcessedSegments[i].voiceprintId) {
+                  postProcessedSegments[i].voiceprintId = vp.id;
+                }
+              }
+            } catch {
+              // Non-fatal
             }
           }
 

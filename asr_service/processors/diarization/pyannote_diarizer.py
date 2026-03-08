@@ -48,10 +48,33 @@ class PyAnnoteDiarizer:
             try:
                 from pyannote.audio import Pipeline
 
-                pipeline = Pipeline.from_pretrained(
-                    "pyannote/speaker-diarization-3.1",
-                    token=hf_token,
-                )
+                # Try offline first to avoid slow HuggingFace network requests
+                # when the model is already cached locally
+                old_offline = os.environ.get("HF_HUB_OFFLINE")
+                os.environ["HF_HUB_OFFLINE"] = "1"
+                try:
+                    pipeline = Pipeline.from_pretrained(
+                        "pyannote/speaker-diarization-3.1",
+                        token=hf_token,
+                    )
+                    logger.info("pyannote loaded from local cache (offline mode)")
+                except Exception:
+                    # Local load failed — restore online mode and retry
+                    if old_offline is None:
+                        os.environ.pop("HF_HUB_OFFLINE", None)
+                    else:
+                        os.environ["HF_HUB_OFFLINE"] = old_offline
+                    logger.info("pyannote local cache miss, loading with network")
+                    pipeline = Pipeline.from_pretrained(
+                        "pyannote/speaker-diarization-3.1",
+                        token=hf_token,
+                    )
+                finally:
+                    # Restore original env
+                    if old_offline is None:
+                        os.environ.pop("HF_HUB_OFFLINE", None)
+                    else:
+                        os.environ["HF_HUB_OFFLINE"] = old_offline
                 import torch
                 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
                 pipeline = pipeline.to(device)
@@ -65,6 +88,85 @@ class PyAnnoteDiarizer:
 
     def is_available(self) -> bool:
         return self._pipeline is not None
+
+    async def extract_embeddings(
+        self,
+        audio_path: str,
+        segments: list[Segment],
+    ) -> list[Optional[list[float]]]:
+        """Extract per-segment speaker embeddings using pyannote's internal model.
+
+        Reuses the wespeaker-voxceleb-resnet34-LM model already loaded by
+        the diarization pipeline — no extra model download needed.
+
+        Returns a list aligned with segments (None for segments too short).
+        """
+        if not self._pipeline:
+            await self.load()
+        if not self._pipeline:
+            return [None] * len(segments)
+
+        # Access pyannote's internal embedding model
+        embedding_model = getattr(self._pipeline, '_embedding', None)
+        if embedding_model is None:
+            logger.warning("pyannote pipeline has no _embedding model")
+            return [None] * len(segments)
+
+        pipeline_ref = self._pipeline
+
+        def _extract():
+            import soundfile as sf
+            import torch
+
+            audio_data, sample_rate = sf.read(audio_path, dtype="float32")
+            waveform = torch.from_numpy(audio_data)
+            if waveform.ndim == 1:
+                waveform = waveform.unsqueeze(0)
+            else:
+                waveform = waveform.T
+            audio_input = {"waveform": waveform, "sample_rate": sample_rate}
+
+            # Get the embedding Inference object from pipeline
+            emb_model = getattr(pipeline_ref, '_embedding', None)
+            if emb_model is None:
+                return [None] * len(segments)
+
+            results: list[Optional[list[float]]] = []
+            for seg in segments:
+                duration = seg.end - seg.start
+                if duration < 0.3:
+                    results.append(None)
+                    continue
+
+                try:
+                    from pyannote.core import Segment as PySegment
+
+                    # Crop audio to segment and extract embedding
+                    py_seg = PySegment(seg.start, seg.end)
+                    embedding = emb_model.crop(audio_input, py_seg)
+
+                    # embedding is SlidingWindowFeature, average over frames
+                    emb_np = embedding.data
+                    if emb_np.ndim > 1:
+                        emb_np = emb_np.mean(axis=0)
+                    emb_np = emb_np.astype(np.float32).flatten()
+
+                    # L2 normalize
+                    norm = np.linalg.norm(emb_np)
+                    if norm > 0:
+                        emb_np = emb_np / norm
+
+                    results.append(emb_np.tolist())
+                except Exception as e:
+                    logger.debug("Embedding extraction failed for segment %.1f-%.1f: %s",
+                                 seg.start, seg.end, e)
+                    results.append(None)
+
+            valid = sum(1 for r in results if r is not None)
+            logger.info("pyannote embedding extraction: %d/%d segments", valid, len(segments))
+            return results
+
+        return await asyncio.to_thread(_extract)
 
     async def process(
         self,
@@ -85,6 +187,17 @@ class PyAnnoteDiarizer:
         """
         if not segments:
             return segments
+
+        # num_speakers=1 means single speaker — skip diarization entirely
+        if num_speakers == 1:
+            logger.info("num_speakers=1, skipping diarization — assigning all to 'Speaker 1'")
+            return [
+                Segment(
+                    start=seg.start, end=seg.end, text=seg.text,
+                    speaker="Speaker 1", confidence=seg.confidence,
+                )
+                for seg in segments
+            ]
 
         if not self._pipeline:
             await self.load()

@@ -334,3 +334,30 @@ export async function getModelPath(
     `${ASR_BASE_URL}/engines/${engineName}/model-path?model_size=${encodeURIComponent(modelSize)}`
   );
 }
+
+// --- Diarization (pyannote) Model API ---
+
+export interface PyannoteStatus {
+  downloaded: boolean;
+  phase: "idle" | "downloading" | "completed" | "error";
+  elapsed_seconds: number;
+  downloaded_bytes: number;
+  total_bytes: number;
+  error: string | null;
+}
+
+export async function getPyannoteStatus(): Promise<PyannoteStatus> {
+  return fetchJson(`${ASR_BASE_URL}/diarization/pyannote/status`);
+}
+
+export async function downloadPyannote(): Promise<{ status: string }> {
+  return fetchJson(`${ASR_BASE_URL}/diarization/pyannote/download`, {
+    method: "POST",
+  });
+}
+
+export async function cancelPyannoteDownload(): Promise<{ status: string }> {
+  return fetchJson(`${ASR_BASE_URL}/diarization/pyannote/cancel-download`, {
+    method: "POST",
+  });
+}
