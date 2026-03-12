@@ -19,7 +19,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../ui/select";
-import { useEngineStore } from "../../stores/engineStore";
+import {
+  useEngineStore,
+  ENGINE_KEYS,
+  CLOUD_ENGINES,
+  FALLBACK_MODEL_SIZES,
+  isEngineAvailable,
+  isCloudEngineConfigured,
+} from "../../stores/engineStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { ProviderCard } from "./ProviderCard";
 import { ProviderConfigModal } from "./ProviderConfigModal";
@@ -381,10 +388,23 @@ export function ModelManager() {
     cancelModelDownload,
     clearLoadingState,
     clearDownloadState,
+    selectedEngine,
+    selectedModelSize,
+    selectedLanguage,
+    setSelectedEngine,
+    setSelectedModelSize,
+    setSelectedLanguage,
   } = useEngineStore();
-  const { selectedLanguage, setSelectedLanguage } = useEngineStore();
   const { general, cloudAsr, setCloudAsr, autoDegradation, setAutoDegradation } =
     useSettingsStore();
+
+  // Compute available model sizes for current engine
+  const currentEngineInfo = engines.find((e) => e.name === selectedEngine);
+  const modelSizes = currentEngineInfo?.model_sizes?.length
+    ? currentEngineInfo.model_sizes
+    : FALLBACK_MODEL_SIZES[selectedEngine] || [];
+  const downloadedModelsSet = new Set(currentEngineInfo?.downloaded_models ?? []);
+  const isCloud = CLOUD_ENGINES.has(selectedEngine);
   const [unloadingKey, setUnloadingKey] = useState<string | null>(null);
   const [configuringVendor, setConfiguringVendor] = useState<string | null>(null);
   const [configuringAsr, setConfiguringAsr] = useState<string | null>(null);
@@ -624,6 +644,92 @@ export function ModelManager() {
                 {t(`common:language.${key}`)}
               </SelectItem>
             ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* ASR Engine */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium">
+          {t("asr.asrEngine")}
+        </label>
+        <p className="text-xs text-muted-foreground">
+          {t("asr.asrEngineDesc")}
+        </p>
+        <Select value={selectedEngine} onValueChange={setSelectedEngine}>
+          <SelectTrigger className="w-[280px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ENGINE_KEYS.map((key) => {
+              const available = isEngineAvailable(key, engines, cloudAsr);
+              return (
+                <SelectItem key={key} value={key} disabled={!available}>
+                  <div className="flex items-center gap-2">
+                    <span className={available ? "" : "text-muted-foreground"}>
+                      {t(`common:engine.${key}`)}
+                    </span>
+                    {!CLOUD_ENGINES.has(key) && engines.find((e) => e.name === key)?.is_loaded && (
+                      <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                        {t("common:status.loaded")}
+                      </Badge>
+                    )}
+                    {CLOUD_ENGINES.has(key) && isCloudEngineConfigured(key, cloudAsr) && (
+                      <Badge variant="outline" className="text-[10px] px-1 py-0 border-green-300 text-green-600">
+                        {t("common:status.apiReady")}
+                      </Badge>
+                    )}
+                  </div>
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* ASR Model Size */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium">
+          {t("asr.asrModelSize")}
+        </label>
+        <p className="text-xs text-muted-foreground">
+          {t("asr.asrModelSizeDesc")}
+        </p>
+        <Select
+          value={selectedModelSize}
+          onValueChange={setSelectedModelSize}
+          disabled={modelSizes.length === 0}
+        >
+          <SelectTrigger className="w-[280px]">
+            <SelectValue placeholder={modelSizes.length === 0 ? t("asr.noModelAvailable") : undefined} />
+          </SelectTrigger>
+          <SelectContent>
+            {modelSizes.map((size) => {
+              const sizeAvailable =
+                isCloud ||
+                downloadedModelsSet.has(size) ||
+                (currentEngineInfo?.is_loaded && currentEngineInfo.current_model_size === size);
+              return (
+                <SelectItem key={size} value={size} disabled={!sizeAvailable}>
+                  <div className="flex items-center gap-2">
+                    <span className={sizeAvailable ? "" : "text-muted-foreground"}>
+                      {size}
+                    </span>
+                    {currentEngineInfo?.is_loaded && currentEngineInfo.current_model_size === size && (
+                      <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                        {t("common:status.loaded")}
+                      </Badge>
+                    )}
+                    {downloadedModelsSet.has(size) &&
+                      !(currentEngineInfo?.is_loaded && currentEngineInfo.current_model_size === size) && (
+                        <Badge variant="outline" className="text-[10px] px-1 py-0 border-blue-300 text-blue-600">
+                          {t("common:downloadPhase.completed")}
+                        </Badge>
+                      )}
+                  </div>
+                </SelectItem>
+              );
+            })}
           </SelectContent>
         </Select>
       </div>
