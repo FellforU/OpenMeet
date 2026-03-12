@@ -9,6 +9,8 @@
     "voiceprint": "Voiceprints"
   },
   "general": {
+    "uiLanguage": "UI Language",
+    "uiLanguageDesc": "Set the display language for the application",
     "autoSummary": "Auto-generate summary",
     "autoSummaryDesc": "Automatically generate meeting summary after transcription completes",
     "exportFormat": "Default export format",

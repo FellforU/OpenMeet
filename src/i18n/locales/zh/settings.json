@@ -9,6 +9,8 @@
     "voiceprint": "音色库"
   },
   "general": {
+    "uiLanguage": "界面语言",
+    "uiLanguageDesc": "设置应用程序的显示语言",
     "autoSummary": "自动生成摘要",
     "autoSummaryDesc": "转录完成后自动生成会议摘要",
     "exportFormat": "默认导出格式",

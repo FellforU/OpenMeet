@@ -21,6 +21,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { ProjectItem } from "./ProjectItem";
 import { ProjectNameDialog } from "./ProjectNameDialog";
 import { useProjectStore } from "../../stores/projectStore";
+import { generateDefaultMeetingName } from "../../lib/meetingName";
 import { cn } from "@/lib/utils";
 import type { Project } from "../../types";
 
@@ -138,10 +139,9 @@ export function ProjectList() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
 
-  // Dialog state for creating items from folder context menu
+  // Dialog state for creating folders from context menu
   const [createDialog, setCreateDialog] = useState<{
     parentId: string;
-    mode: "meeting" | "folder";
   } | null>(null);
 
   const sensors = useSensors(
@@ -169,27 +169,24 @@ export function ProjectList() {
     [updateProject]
   );
 
-  const handleCreateMeeting = useCallback((parentId: string) => {
-    setCreateDialog({ parentId, mode: "meeting" });
-  }, []);
+  const handleCreateMeeting = useCallback(async (parentId: string) => {
+    await addProject(generateDefaultMeetingName(), parentId);
+    setExpandedFolders((prev) => new Set(prev).add(parentId));
+  }, [addProject]);
 
   const handleCreateSubfolder = useCallback((parentId: string) => {
-    setCreateDialog({ parentId, mode: "folder" });
+    setCreateDialog({ parentId });
   }, []);
 
   const handleCreateConfirm = useCallback(
     async (name: string) => {
       if (!createDialog) return;
-      if (createDialog.mode === "meeting") {
-        await addProject(name, createDialog.parentId);
-      } else {
-        await addFolder(name, createDialog.parentId);
-      }
+      await addFolder(name, createDialog.parentId);
       // Auto-expand parent folder
       setExpandedFolders((prev) => new Set(prev).add(createDialog.parentId));
       setCreateDialog(null);
     },
-    [createDialog, addProject, addFolder]
+    [createDialog, addFolder]
   );
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
@@ -344,10 +341,7 @@ export function ProjectList() {
     );
   }
 
-  const createDialogTitle =
-    createDialog?.mode === "meeting"
-      ? t("sidebar.newProjectTitle")
-      : t("sidebar.newFolderTitle");
+  const createDialogTitle = t("sidebar.newFolderTitle");
 
   return (
     <>
