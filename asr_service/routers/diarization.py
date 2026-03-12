@@ -51,6 +51,7 @@ class PyannoteStatus(BaseModel):
     downloaded_bytes: int = 0
     total_bytes: int = 0
     error: str | None = None
+    path: str | None = None
 
 
 def _get_pyannote_cache_dir() -> Path | None:
@@ -159,6 +160,8 @@ async def _do_download():
 async def get_pyannote_status():
     """Check if pyannote models are downloaded and get download progress."""
     downloaded = _is_pyannote_downloaded()
+    cache_dir = _get_pyannote_cache_dir()
+    model_path = str(cache_dir / "models--pyannote--speaker-diarization-3.1") if cache_dir and downloaded else None
 
     if _download_status and _download_status.get("phase") == DownloadPhase.DOWNLOADING:
         started_at = _download_status.get("started_at", 0)
@@ -169,6 +172,7 @@ async def get_pyannote_status():
             elapsed_seconds=round(elapsed, 1),
             downloaded_bytes=_get_downloaded_bytes(),
             total_bytes=PYANNOTE_ESTIMATED_SIZE,
+            path=model_path,
         )
 
     if _download_status and _download_status.get("phase") == DownloadPhase.ERROR:
@@ -176,17 +180,20 @@ async def get_pyannote_status():
             downloaded=downloaded,
             phase=DownloadPhase.ERROR,
             error=_download_status.get("error"),
+            path=model_path,
         )
 
     if _download_status and _download_status.get("phase") == DownloadPhase.COMPLETED:
         return PyannoteStatus(
             downloaded=True,
             phase=DownloadPhase.COMPLETED,
+            path=model_path,
         )
 
     return PyannoteStatus(
         downloaded=downloaded,
         phase=DownloadPhase.IDLE,
+        path=model_path,
     )
 
 

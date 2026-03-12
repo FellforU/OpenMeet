@@ -776,6 +776,19 @@ export function ModelManager() {
               </p>
             </div>
             <div className="flex items-center gap-1.5">
+              {pyannoteStatus?.downloaded && pyannoteStatus.path && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0"
+                  title={t("common:action.openFolder")}
+                  onClick={() => {
+                    invoke("reveal_file", { path: pyannoteStatus.path }).catch(() => {});
+                  }}
+                >
+                  <FolderOpen className="h-3.5 w-3.5" />
+                </Button>
+              )}
               {pyannoteStatus?.downloaded ? (
                 <Badge variant="outline" className="border-green-300 text-green-600">
                   <CheckCircle2 className="mr-1 h-3 w-3" />

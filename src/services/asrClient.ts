@@ -344,6 +344,7 @@ export interface PyannoteStatus {
   downloaded_bytes: number;
   total_bytes: number;
   error: string | null;
+  path: string | null;
 }
 
 export async function getPyannoteStatus(): Promise<PyannoteStatus> {
