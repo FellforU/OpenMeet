@@ -44,6 +44,7 @@ interface EngineStore {
   stopDownloadPolling: (engineName: string) => void;
   clearDownloadState: (engineName: string) => void;
   initFromSettings: () => void;
+  _autoLoadModel: (engineName: string, modelSize: string) => Promise<void>;
 }
 
 // Track polling timeouts per engine
@@ -217,12 +218,21 @@ export const useEngineStore = create<EngineStore>((set, get) => ({
     });
     // Persist to settings
     useSettingsStore.getState().setGeneral({ asrEngine: engine, asrModelSize: modelSize });
+    // Auto-load: unload current then load new (skip for cloud engines)
+    if (!CLOUD_ENGINES.has(engine)) {
+      get()._autoLoadModel(engine, modelSize);
+    }
   },
 
   setSelectedModelSize: (size) => {
+    const { selectedEngine } = get();
     set({ selectedModelSize: size });
     // Persist to settings
     useSettingsStore.getState().setGeneral({ asrModelSize: size });
+    // Auto-load: unload current then load new (skip for cloud engines)
+    if (!CLOUD_ENGINES.has(selectedEngine)) {
+      get()._autoLoadModel(selectedEngine, size);
+    }
   },
 
   setSelectedLanguage: (lang) => {
@@ -236,6 +246,10 @@ export const useEngineStore = create<EngineStore>((set, get) => ({
     });
     // Persist to settings
     useSettingsStore.getState().setGeneral({ asrEngine: recommended, asrModelSize: modelSize });
+    // Auto-load: unload current then load new (skip for cloud engines)
+    if (!CLOUD_ENGINES.has(recommended)) {
+      get()._autoLoadModel(recommended, modelSize);
+    }
   },
 
   initFromSettings: () => {
@@ -529,5 +543,22 @@ export const useEngineStore = create<EngineStore>((set, get) => ({
       const { [engineName]: _, ...rest } = state.downloadStates;
       return { downloadStates: rest };
     });
+  },
+
+  _autoLoadModel: async (engineName, modelSize) => {
+    const { engines } = get();
+    // Unload any currently loaded engine first
+    const loaded = engines.find((e) => e.is_loaded);
+    if (loaded) {
+      // If already on the same engine+model, skip
+      if (loaded.name === engineName && loaded.current_model_size === modelSize) return;
+      try {
+        await api.unloadEngineModel(loaded.name);
+      } catch {
+        // Best effort unload
+      }
+    }
+    // Load the new model
+    get().startModelLoad(engineName, modelSize);
   },
 }));

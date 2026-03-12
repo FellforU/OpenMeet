@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Download, Trash2, Loader2, Settings as SettingsIcon, Play, CheckCircle2, FolderOpen, XCircle, Plus, Users } from "lucide-react";
+import { Download, Loader2, Settings as SettingsIcon, CheckCircle2, FolderOpen, XCircle, Plus, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
@@ -140,21 +140,16 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-// Vendor card config modal with download/load split
+// Vendor card config modal for downloading models
 function VendorConfigModal({
   open,
   onClose,
   vendor,
   downloadedModels,
   loadedModels,
-  loadingState,
   downloadState,
-  unloadingKey,
   onDownload,
   onCancelDownload,
-  onCancelLoad,
-  onLoad,
-  onUnload,
   onRevealFolder,
 }: {
   open: boolean;
@@ -162,18 +157,12 @@ function VendorConfigModal({
   vendor: VendorDef;
   downloadedModels: Set<string>;
   loadedModels: Set<string>;
-  loadingState: { phase: string; modelSize: string; elapsedSeconds: number; error: string | null } | null;
   downloadState: { phase: string; modelSize: string; elapsedSeconds: number; downloadedBytes: number; totalBytes: number; error: string | null; modelName: string | null } | null;
-  unloadingKey: string | null;
   onDownload: (engine: string, size: string) => void;
   onCancelDownload: (engine: string) => void;
-  onCancelLoad: (engine: string) => void;
-  onLoad: (engine: string, size: string) => void;
-  onUnload: (engine: string) => void;
   onRevealFolder: (engine: string, size: string) => void;
 }) {
   const { t } = useTranslation("settings");
-  const isEngineLoading = loadingState && (loadingState.phase === "preparing" || loadingState.phase === "loading");
   const isEngineDownloading = downloadState && downloadState.phase === "downloading";
 
   return (
@@ -195,10 +184,7 @@ function VendorConfigModal({
             const key = `${vendor.engine}:${model.size}`;
             const isDownloaded = downloadedModels.has(key);
             const isLoaded = loadedModels.has(key);
-            const isThisModelLoading = isEngineLoading && loadingState?.modelSize === model.size;
             const isThisModelDownloading = isEngineDownloading && downloadState?.modelSize === model.size;
-            const isUnloading = unloadingKey === `${vendor.engine}:unload`;
-            const isThisModelBusy = isThisModelLoading || isThisModelDownloading || isUnloading;
 
             return (
               <div
@@ -239,42 +225,11 @@ function VendorConfigModal({
                         <FolderOpen className="h-3.5 w-3.5" />
                       </Button>
                     )}
-                    {isLoaded ? (
-                      // Loaded: show unload button
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        disabled={isThisModelBusy}
-                        onClick={() => onUnload(vendor.engine)}
-                      >
-                        {isUnloading ? (
-                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-                        )}
-                        {t("common:action.unload")}
-                      </Button>
-                    ) : isDownloaded ? (
-                      // Downloaded but not loaded: show load button
-                      <Button
-                        variant="default"
-                        size="sm"
-                        disabled={isThisModelBusy}
-                        onClick={() => onLoad(vendor.engine, model.size)}
-                      >
-                        {isThisModelLoading ? (
-                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Play className="mr-1.5 h-3.5 w-3.5" />
-                        )}
-                        {t("settings:asr.activate")}
-                      </Button>
-                    ) : (
-                      // Not downloaded: show download button
+                    {!isDownloaded && (
                       <Button
                         variant="outline"
                         size="sm"
-                        disabled={isThisModelBusy}
+                        disabled={!!isThisModelDownloading}
                         onClick={() => onDownload(vendor.engine, model.size)}
                       >
                         {isThisModelDownloading ? (
@@ -333,37 +288,10 @@ function VendorConfigModal({
                     )}
                   </div>
                 )}
-                {/* Loading progress */}
-                {isThisModelLoading && loadingState && (
-                  <div className="mt-2 flex items-center gap-2 text-xs text-blue-600">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    <span>
-                      {t(`common:loadPhase.${loadingState.phase}`)}
-                    </span>
-                    <span className="text-muted-foreground">
-                      {formatElapsed(loadingState.elapsedSeconds)}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="ml-1 h-5 w-5 p-0 text-muted-foreground hover:text-destructive"
-                      title={t("common:action.cancel")}
-                      onClick={() => onCancelLoad(vendor.engine)}
-                    >
-                      <XCircle className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                )}
                 {/* Download error */}
                 {downloadState?.phase === "error" && downloadState.modelSize === model.size && (
                   <div className="mt-2 text-xs text-destructive">
                     {downloadState.error}
-                  </div>
-                )}
-                {/* Load error */}
-                {loadingState?.phase === "error" && loadingState.modelSize === model.size && (
-                  <div className="mt-2 text-xs text-destructive">
-                    {loadingState.error}
                   </div>
                 )}
               </div>
@@ -382,8 +310,6 @@ export function ModelManager() {
     fetchEngines,
     loadingStates,
     downloadStates,
-    startModelLoad,
-    cancelModelLoad,
     startModelDownload,
     cancelModelDownload,
     clearLoadingState,
@@ -405,7 +331,6 @@ export function ModelManager() {
     : FALLBACK_MODEL_SIZES[selectedEngine] || [];
   const downloadedModelsSet = new Set(currentEngineInfo?.downloaded_models ?? []);
   const isCloud = CLOUD_ENGINES.has(selectedEngine);
-  const [unloadingKey, setUnloadingKey] = useState<string | null>(null);
   const [configuringVendor, setConfiguringVendor] = useState<string | null>(null);
   const [configuringAsr, setConfiguringAsr] = useState<string | null>(null);
   const [showCustomDialog, setShowCustomDialog] = useState(false);
@@ -538,15 +463,6 @@ export function ModelManager() {
     toast.info(t("asr.downloadCancelled"));
   };
 
-  const handleCancelLoad = async (engine: string) => {
-    await cancelModelLoad(engine);
-    toast.info(t("asr.loadCancelled"));
-  };
-
-  const handleLoad = (engine: string, size: string) => {
-    startModelLoad(engine, size);
-  };
-
   const handleRevealFolder = async (engine: string, size: string) => {
     try {
       const resp = await api.getModelPath(engine, size);
@@ -557,18 +473,6 @@ export function ModelManager() {
       }
     } catch (err) {
       toast.error(String(err));
-    }
-  };
-
-  const handleUnload = async (engine: string) => {
-    setUnloadingKey(`${engine}:unload`);
-    try {
-      await api.unloadEngineModel(engine);
-      await fetchEngines();
-    } catch (err) {
-      toast.error(String(err));
-    } finally {
-      setUnloadingKey(null);
     }
   };
 
@@ -999,14 +903,9 @@ export function ModelManager() {
           vendor={configuringVendorDef}
           downloadedModels={downloadedModels}
           loadedModels={loadedModels}
-          loadingState={loadingStates[configuringVendorDef.engine] ?? null}
           downloadState={downloadStates[configuringVendorDef.engine] ?? null}
-          unloadingKey={unloadingKey}
           onDownload={handleDownload}
           onCancelDownload={handleCancelDownload}
-          onCancelLoad={handleCancelLoad}
-          onLoad={handleLoad}
-          onUnload={handleUnload}
           onRevealFolder={handleRevealFolder}
         />
       )}
