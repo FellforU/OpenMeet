@@ -46,7 +46,7 @@ interface SettingsDialogProps {
 }
 
 function GeneralSettings() {
-  const { t, i18n } = useTranslation("settings");
+  const { t } = useTranslation("settings");
   const { general, setGeneral } = useSettingsStore();
 
   const [defaultCachePath, setDefaultCachePath] = useState("");
@@ -126,28 +126,6 @@ function GeneralSettings() {
 
   return (
     <div className="space-y-6 py-2">
-      {/* UI Language */}
-      <div className="space-y-2">
-        <label className="text-sm font-medium">
-          {t("general.uiLanguage")}
-        </label>
-        <p className="text-xs text-muted-foreground">
-          {t("general.uiLanguageDesc")}
-        </p>
-        <Select
-          value={i18n.language}
-          onValueChange={(v) => i18n.changeLanguage(v)}
-        >
-          <SelectTrigger className="w-[200px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="zh">中文</SelectItem>
-            <SelectItem value="en">English</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
       <div className="space-y-2">
         <label className="text-sm font-medium">
           {t("general.defaultLLMModel")}
