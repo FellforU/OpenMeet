@@ -7,7 +7,6 @@ export interface ProviderModelEntry {
   id: string;
   type: ModelType;
   enabled: boolean;
-  contextLength?: number;
 }
 
 interface LLMProviderConfig {

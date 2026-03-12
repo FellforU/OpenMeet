@@ -74,7 +74,7 @@ function mergeModels(
   const seen = new Set<string>();
   const result: ProviderModelEntry[] = [];
 
-  // Add all remote models, preserving existing enabled state and contextLength
+  // Add all remote models, preserving existing enabled state
   for (const id of remoteIds) {
     if (seen.has(id)) continue;
     seen.add(id);
@@ -83,7 +83,6 @@ function mergeModels(
       id,
       type: existing?.type ?? classifyModelType(id, presetModelsByType),
       enabled: existing?.enabled ?? true,
-      contextLength: existing?.contextLength,
     });
   }
 
@@ -97,7 +96,6 @@ function mergeModels(
         id,
         type: (existing?.type ?? type) as ModelType,
         enabled: existing?.enabled ?? false,
-        contextLength: existing?.contextLength,
       });
     }
   }
@@ -148,19 +146,8 @@ export function ProviderConfigModal({
       }
       setLocalFields(fieldValues);
 
-      // Initialize models from config.models or generate from presets
-      if (config.models && config.models.length > 0) {
-        setLocalModels(config.models);
-      } else {
-        // Generate initial model list from presets
-        const initial: ProviderModelEntry[] = [];
-        for (const [type, models] of Object.entries(presetModelsByType)) {
-          for (const id of models) {
-            initial.push({ id, type: type as ModelType, enabled: false });
-          }
-        }
-        setLocalModels(initial);
-      }
+      // Initialize models from saved config; empty if not yet fetched
+      setLocalModels(config.models && config.models.length > 0 ? config.models : []);
 
       setModelFilter("");
       setFetchError(null);
@@ -224,17 +211,6 @@ export function ProviderConfigModal({
   const handleToggleModel = (modelId: string, enabled: boolean) => {
     setLocalModels((prev) =>
       prev.map((m) => (m.id === modelId ? { ...m, enabled } : m))
-    );
-  };
-
-  const handleContextLengthChange = (modelId: string, value: string) => {
-    const num = value === "" ? undefined : parseInt(value, 10);
-    setLocalModels((prev) =>
-      prev.map((m) =>
-        m.id === modelId
-          ? { ...m, contextLength: num && num > 0 ? num : undefined }
-          : m
-      )
     );
   };
 
@@ -425,15 +401,6 @@ export function ProviderConfigModal({
                             >
                               {model.id}
                             </span>
-                            <input
-                              type="number"
-                              className="h-6 w-[70px] shrink-0 rounded border border-input bg-background px-1.5 text-xs text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-ring"
-                              placeholder="4096"
-                              value={model.contextLength ?? ""}
-                              onChange={(e) =>
-                                handleContextLengthChange(model.id, e.target.value)
-                              }
-                            />
                             <Switch
                               checked={model.enabled}
                               onCheckedChange={(val) =>
