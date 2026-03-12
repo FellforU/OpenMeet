@@ -1034,8 +1034,8 @@ pub fn voiceprint_create(
     let now = chrono::Utc::now().to_rfc3339();
     let id = uuid::Uuid::new_v4().to_string();
 
-    // Create placeholder embedding (192-dim zero vector for CAMPPlus compatibility)
-    let placeholder_embedding = vec![0u8; 192 * 4]; // 192 floats × 4 bytes
+    // Empty blob signals "no real embedding yet" — will be populated via passive learning
+    let placeholder_embedding = vec![0u8; 0];
 
     conn.execute(
         "INSERT INTO voiceprints (id, name, embedding, sample_count, model_version, created_at, updated_at, last_seen_at)
@@ -1148,12 +1148,34 @@ pub fn voiceprint_match(
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
 
+    // Determine input embedding dimension from first non-None embedding
+    let input_dim = embeddings.iter().find_map(|e| e.as_ref().map(|v| v.len())).unwrap_or(0);
+
+    // Split library into matchable (correct dim, has real embedding) vs reusable (no real embedding)
+    let mut matchable: Vec<&(String, String, Vec<u8>, i32)> = Vec::new();
+    let mut reusable: Vec<&(String, String, Vec<u8>, i32)> = Vec::new();
+
+    for entry in &library {
+        let blob_dim = entry.2.len() / 4;
+        if entry.3 == 0 || entry.2.is_empty() {
+            // sample_count == 0 or empty blob: no real embedding, can be reused
+            reusable.push(entry);
+        } else if blob_dim == input_dim && input_dim > 0 {
+            // Correct dimension with real embedding: can match
+            matchable.push(entry);
+        } else {
+            // Wrong dimension with real embedding: model migration needed, skip matching
+            // but still reusable (will overwrite old embedding with new model's)
+            reusable.push(entry);
+        }
+    }
+
     let threshold_f32 = threshold as f32;
     let mut assignments: Vec<Option<String>> = vec![None; embeddings.len()];
     let mut speaker_names: Vec<Option<String>> = vec![None; embeddings.len()];
     let mut new_ids: Vec<String> = Vec::new();
 
-    // 2. For each embedding, find best match in library
+    // 2. For each embedding, find best match in matchable library entries
     let mut unmatched: Vec<(usize, Vec<f32>)> = Vec::new();
 
     for (i, emb_opt) in embeddings.iter().enumerate() {
@@ -1166,12 +1188,12 @@ pub fn voiceprint_match(
         let mut best_id: Option<String> = None;
         let mut best_name: Option<String> = None;
 
-        for (vp_id, vp_name, vp_blob, _) in &library {
-            let sim = cosine_similarity_blob(emb, vp_blob);
+        for entry in &matchable {
+            let sim = cosine_similarity_blob(emb, &entry.2);
             if sim > best_sim {
                 best_sim = sim;
-                best_id = Some(vp_id.clone());
-                best_name = Some(vp_name.clone());
+                best_id = Some(entry.0.clone());
+                best_name = Some(entry.1.clone());
             }
         }
 
@@ -1186,22 +1208,12 @@ pub fn voiceprint_match(
     // 3. Cluster unmatched embeddings
     let clusters = greedy_cluster(&unmatched, threshold_f32);
 
-    // 4. For each cluster, create a new voiceprint entry
+    // 4. For each cluster: reuse existing voiceprints first, then create new ones
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
 
-    let existing_unknown: i32 = tx
-        .query_row(
-            "SELECT COUNT(*) FROM voiceprints WHERE name LIKE '未知说话人%'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(0);
+    let mut reusable_idx = 0;
 
-    for (cluster_idx, member_indices) in clusters.iter().enumerate() {
-        let vp_id = uuid::Uuid::new_v4().to_string();
-        let speaker_num = existing_unknown + cluster_idx as i32 + 1;
-        let name = format!("未知说话人 {}", speaker_num);
-
+    for member_indices in &clusters {
         let avg_emb = average_embeddings(
             &member_indices
                 .iter()
@@ -1210,34 +1222,107 @@ pub fn voiceprint_match(
         );
         let blob = f32_vec_to_blob(&avg_emb);
 
-        tx.execute(
-            "INSERT INTO voiceprints (id, name, embedding, sample_count, model_version, created_at, updated_at, last_seen_at)
-             VALUES (?1, ?2, ?3, ?4, '', ?5, ?5, ?5)",
-            params![vp_id, name, blob, member_indices.len() as i32, now],
-        )
-        .map_err(|e| e.to_string())?;
+        if reusable_idx < reusable.len() {
+            // Reuse existing voiceprint: update its embedding (dimension migration / first learn)
+            let reused = reusable[reusable_idx];
+            reusable_idx += 1;
 
-        new_ids.push(vp_id.clone());
+            tx.execute(
+                "UPDATE voiceprints SET embedding = ?1, sample_count = ?2, updated_at = ?3, last_seen_at = ?3 WHERE id = ?4",
+                params![blob, member_indices.len() as i32, now, reused.0],
+            )
+            .map_err(|e| e.to_string())?;
 
-        for &mi in member_indices {
-            let seg_idx = unmatched[mi].0;
-            assignments[seg_idx] = Some(vp_id.clone());
-            speaker_names[seg_idx] = Some(name.clone());
+            for &mi in member_indices {
+                let seg_idx = unmatched[mi].0;
+                assignments[seg_idx] = Some(reused.0.clone());
+                speaker_names[seg_idx] = Some(reused.1.clone());
+            }
+        } else {
+            // No reusable voiceprints left, create new one
+            let vp_id = uuid::Uuid::new_v4().to_string();
+            let existing_unknown: i32 = tx
+                .query_row(
+                    "SELECT COUNT(*) FROM voiceprints WHERE name LIKE '未知说话人%'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+            let name = format!("未知说话人 {}", existing_unknown + 1);
+
+            tx.execute(
+                "INSERT INTO voiceprints (id, name, embedding, sample_count, model_version, created_at, updated_at, last_seen_at)
+                 VALUES (?1, ?2, ?3, ?4, '', ?5, ?5, ?5)",
+                params![vp_id, name, blob, member_indices.len() as i32, now],
+            )
+            .map_err(|e| e.to_string())?;
+
+            new_ids.push(vp_id.clone());
+
+            for &mi in member_indices {
+                let seg_idx = unmatched[mi].0;
+                assignments[seg_idx] = Some(vp_id.clone());
+                speaker_names[seg_idx] = Some(name.clone());
+            }
         }
     }
 
-    // 5. Update last_seen_at for matched voiceprints (deduplicated)
-    let matched_ids: std::collections::HashSet<&String> = assignments
+    // 5. Passive learn: update matched voiceprints' embeddings (reinforcement + dimension migration)
+    let matched_ids: std::collections::HashSet<String> = assignments
         .iter()
         .filter_map(|a| a.as_ref())
         .filter(|id| !new_ids.contains(id))
+        .cloned()
         .collect();
+
     for vp_id in &matched_ids {
-        tx.execute(
-            "UPDATE voiceprints SET last_seen_at = ?1 WHERE id = ?2",
-            params![now, vp_id],
-        )
-        .ok();
+        // Collect all embeddings assigned to this voiceprint
+        let matched_embs: Vec<&Vec<f32>> = embeddings
+            .iter()
+            .enumerate()
+            .filter_map(|(i, e)| {
+                if assignments[i].as_ref() == Some(vp_id) {
+                    e.as_ref()
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if matched_embs.is_empty() {
+            continue;
+        }
+
+        let new_avg = average_embeddings(&matched_embs);
+
+        // Load current embedding for blending
+        let row: Option<(Vec<u8>, i32)> = tx
+            .query_row(
+                "SELECT embedding, sample_count FROM voiceprints WHERE id = ?1",
+                params![vp_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .ok();
+
+        if let Some((old_blob, count)) = row {
+            let max_count = 100;
+            let updated_blob = if old_blob.is_empty() || old_blob.len() / 4 != new_avg.len() {
+                // Empty or dimension mismatch: replace entirely with new embedding
+                f32_vec_to_blob(&new_avg)
+            } else if count >= max_count {
+                blend_embeddings(&old_blob, &new_avg, 0.95, 0.05)
+            } else {
+                let w_old = count as f32 / (count as f32 + 1.0);
+                let w_new = 1.0 / (count as f32 + 1.0);
+                blend_embeddings(&old_blob, &new_avg, w_old, w_new)
+            };
+            let new_count = (count + 1).min(max_count);
+            tx.execute(
+                "UPDATE voiceprints SET embedding = ?1, sample_count = ?2, updated_at = ?3, last_seen_at = ?3 WHERE id = ?4",
+                params![updated_blob, new_count, now, vp_id],
+            )
+            .ok();
+        }
     }
 
     tx.commit().map_err(|e| e.to_string())?;
