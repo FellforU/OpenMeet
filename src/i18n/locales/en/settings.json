@@ -191,6 +191,14 @@
   "knowledge": {
     "title": "Knowledge Base",
     "subtitle": "Configure Embedding and Rerank models for knowledge retrieval and Q&A",
+    "localTitle": "Local Embedding Models",
+    "localSubtitle": "Download open-source embedding models for local offline vectorization",
+    "localModels": "Local Models",
+    "setAsDefault": "Set as Default",
+    "setAsDefaultSuccess": "Set as default embedding model",
+    "inUse": "In Use",
+    "downloadSuccess": "{{model}} model downloaded",
+    "downloadFailed": "Model download failed: {{error}}",
     "enableRerank": "Enable Rerank",
     "enableRerankDesc": "Rerank search results before sending to LLM for improved answer quality"
   },

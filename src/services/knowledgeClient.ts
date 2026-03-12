@@ -48,18 +48,28 @@ export async function configureKnowledge(
   const embeddingRef = general.defaultEmbeddingModel;
   if (embeddingRef) {
     const { provider, model } = parseModelRef(embeddingRef);
-    const providerCfg = llmProviders[provider];
-    let apiUrl = EMBEDDING_ENDPOINTS[provider] ?? "";
-    // Ollama: use configured host for embedding
-    if (provider === "ollama" && providerCfg?.host) {
-      apiUrl = `${providerCfg.host}/api/embed`;
+    if (provider === "local") {
+      // Local embedding model: no API key or URL needed
+      embeddingConfig = {
+        provider: "local",
+        model,
+        api_key: null,
+        api_url: null,
+      };
+    } else {
+      const providerCfg = llmProviders[provider];
+      let apiUrl = EMBEDDING_ENDPOINTS[provider] ?? "";
+      // Ollama: use configured host for embedding
+      if (provider === "ollama" && providerCfg?.host) {
+        apiUrl = `${providerCfg.host}/api/embed`;
+      }
+      embeddingConfig = {
+        provider,
+        model,
+        api_key: providerCfg?.apiKey || null,
+        api_url: apiUrl || null,
+      };
     }
-    embeddingConfig = {
-      provider,
-      model,
-      api_key: providerCfg?.apiKey || null,
-      api_url: apiUrl || null,
-    };
   }
 
   // Build rerank configuration from settings

@@ -191,6 +191,14 @@
   "knowledge": {
     "title": "知识库配置",
     "subtitle": "配置用于知识检索和问答的 Embedding 和 Rerank 模型",
+    "localTitle": "本地 Embedding 模型",
+    "localSubtitle": "下载开源 Embedding 模型用于本地离线向量化",
+    "localModels": "本地模型",
+    "setAsDefault": "设为默认",
+    "setAsDefaultSuccess": "已设为默认 Embedding 模型",
+    "inUse": "使用中",
+    "downloadSuccess": "{{model}} 模型下载完成",
+    "downloadFailed": "模型下载失败：{{error}}",
     "enableRerank": "启用 Rerank 重排序",
     "enableRerankDesc": "搜索结果送入 LLM 前通过 Rerank 模型重排序，提升回答质量"
   },

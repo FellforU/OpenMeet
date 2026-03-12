@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronsUpDown, Check, Search } from "lucide-react";
+import { ChevronsUpDown, Check, Search, HardDrive } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -9,11 +9,19 @@ import { useSettingsStore, parseModelRef } from "../../stores/settingsStore";
 import type { ModelType } from "../../stores/settingsStore";
 import { LLM_PROVIDERS } from "./LLMProviderTab";
 
+export interface ExtraModelGroup {
+  providerKey: string;
+  providerName: string;
+  logoSrc: string;
+  models: GroupedModel[];
+}
+
 interface SystemModelSelectorProps {
   value: string;           // compound key "provider/model" or ""
   onChange: (ref: string) => void;
   modelType: ModelType;
   placeholder?: string;
+  extraGroups?: ExtraModelGroup[];
 }
 
 interface GroupedModel {
@@ -29,6 +37,7 @@ export function SystemModelSelector({
   onChange,
   modelType,
   placeholder,
+  extraGroups,
 }: SystemModelSelectorProps) {
   const { t } = useTranslation("settings");
   const [open, setOpen] = useState(false);
@@ -64,8 +73,12 @@ export function SystemModelSelector({
       }
     }
 
+    // Prepend extra groups (local models) if provided
+    if (extraGroups) {
+      return [...extraGroups, ...result];
+    }
     return result;
-  }, [llmProviders, modelType, t]);
+  }, [llmProviders, modelType, t, extraGroups]);
 
   const allModels = useMemo(
     () => groups.flatMap((g) => g.models),
@@ -91,10 +104,17 @@ export function SystemModelSelector({
   const displayLabel = useMemo(() => {
     if (!value) return "";
     const { provider, model } = parseModelRef(value);
+    // Check extraGroups first (local models)
+    if (extraGroups) {
+      for (const g of extraGroups) {
+        const found = g.models.find((m) => m.ref === value);
+        if (found) return `${g.providerName} > ${found.modelId}`;
+      }
+    }
     const providerDef = LLM_PROVIDERS.find((p) => p.key === provider);
     const providerName = providerDef ? t(`llm.${providerDef.key}`) : provider;
     return `${providerName} > ${model}`;
-  }, [value, t]);
+  }, [value, t, extraGroups]);
 
   const hasModels = allModels.length > 0;
 
@@ -137,11 +157,15 @@ export function SystemModelSelector({
                 <div key={group.providerKey}>
                   {/* Provider group header */}
                   <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-muted-foreground">
-                    <img
-                      src={group.logoSrc}
-                      alt={group.providerName}
-                      className="h-3.5 w-3.5"
-                    />
+                    {group.logoSrc ? (
+                      <img
+                        src={group.logoSrc}
+                        alt={group.providerName}
+                        className="h-3.5 w-3.5"
+                      />
+                    ) : (
+                      <HardDrive className="h-3.5 w-3.5" />
+                    )}
                     {group.providerName}
                   </div>
                   {/* Models */}

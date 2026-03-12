@@ -18,6 +18,7 @@ from asr_service.routers import mcp as mcp_router
 from asr_service.routers import chat as chat_router
 from asr_service.routers import custom as custom_router
 from asr_service.routers import diarization as diarization_router
+from asr_service.routers import embedding_models as embedding_models_router
 from asr_service.job_manager import JobManager
 from asr_service.knowledge.embedder import Embedder
 from asr_service.knowledge.vector_store import VectorStore
@@ -139,6 +140,7 @@ app.include_router(mcp_router.router)
 app.include_router(chat_router.router)
 app.include_router(custom_router.router)
 app.include_router(diarization_router.router)
+app.include_router(embedding_models_router.router)
 
 
 if __name__ == "__main__":

@@ -362,3 +362,57 @@ export async function cancelPyannoteDownload(): Promise<{ status: string }> {
     method: "POST",
   });
 }
+
+// --- Local Embedding Model API ---
+
+export interface EmbeddingModelInfo {
+  key: string;
+  repo_id: string;
+  name: string;
+  params: string;
+  dimension: number;
+  size_bytes: number;
+  vram_gb: number;
+  description_zh: string;
+  description_en: string;
+  languages: string[];
+  downloaded: boolean;
+  path: string | null;
+}
+
+export type EmbeddingDownloadPhase = "idle" | "downloading" | "completed" | "error";
+
+export interface EmbeddingDownloadStatus {
+  key: string;
+  phase: EmbeddingDownloadPhase;
+  elapsed_seconds: number;
+  downloaded_bytes: number;
+  total_bytes: number;
+  error: string | null;
+}
+
+export async function listEmbeddingModels(): Promise<EmbeddingModelInfo[]> {
+  return fetchJson(`${ASR_BASE_URL}/embedding/models`);
+}
+
+export async function downloadEmbeddingModel(
+  key: string
+): Promise<{ status: string }> {
+  return fetchJson(`${ASR_BASE_URL}/embedding/models/${key}/download`, {
+    method: "POST",
+  });
+}
+
+export async function getEmbeddingDownloadStatus(
+  key: string
+): Promise<EmbeddingDownloadStatus> {
+  return fetchJson(`${ASR_BASE_URL}/embedding/models/${key}/download-status`);
+}
+
+export async function cancelEmbeddingDownload(
+  key: string
+): Promise<{ status: string }> {
+  return fetchJson(`${ASR_BASE_URL}/embedding/models/${key}/cancel-download`, {
+    method: "POST",
+  });
+}
