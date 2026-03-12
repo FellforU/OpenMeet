@@ -132,6 +132,8 @@
   "asr": {
     "title": "ASR 模型管理",
     "subtitle": "管理语音识别引擎模型，下载模型用于离线使用",
+    "asrLanguage": "识别语言",
+    "asrLanguageDesc": "设置语音识别的目标语言，自动检测适用于大多数场景",
     "whisperGroup": "OpenAI Whisper 系列",
     "whisperGroupDesc": "英文和多语言转录最佳选择",
     "qwen3Group": "Qwen3-ASR 系列",

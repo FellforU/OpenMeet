@@ -132,6 +132,8 @@
   "asr": {
     "title": "ASR Model Manager",
     "subtitle": "Manage speech recognition engine models. Download models for offline use.",
+    "asrLanguage": "Recognition Language",
+    "asrLanguageDesc": "Set the target language for speech recognition. Auto-detect works for most scenarios.",
     "whisperGroup": "OpenAI Whisper Series",
     "whisperGroupDesc": "Best choice for English and multilingual transcription",
     "qwen3Group": "Qwen3-ASR Series",

@@ -12,12 +12,21 @@ import {
   DialogTitle,
 } from "../ui/dialog";
 import { invoke } from "@tauri-apps/api/core";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
 import { useEngineStore } from "../../stores/engineStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { ProviderCard } from "./ProviderCard";
 import { ProviderConfigModal } from "./ProviderConfigModal";
 import { CustomModelDialog } from "./CustomModelDialog";
 import * as api from "../../services/asrClient";
+
+const ASR_LANGUAGE_KEYS = ["auto", "zh", "en", "ja", "ko", "de", "fr", "es"] as const;
 
 import openaiSvg from "@lobehub/icons-static-svg/icons/openai.svg";
 import qwenSvg from "@lobehub/icons-static-svg/icons/qwen-color.svg";
@@ -373,6 +382,7 @@ export function ModelManager() {
     clearLoadingState,
     clearDownloadState,
   } = useEngineStore();
+  const { selectedLanguage, setSelectedLanguage } = useEngineStore();
   const { general, cloudAsr, setCloudAsr, autoDegradation, setAutoDegradation } =
     useSettingsStore();
   const [unloadingKey, setUnloadingKey] = useState<string | null>(null);
@@ -594,6 +604,28 @@ export function ModelManager() {
       <div>
         <h3 className="text-lg font-semibold">{t("asr.title")}</h3>
         <p className="text-sm text-muted-foreground">{t("asr.subtitle")}</p>
+      </div>
+
+      {/* ASR Recognition Language */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium">
+          {t("asr.asrLanguage")}
+        </label>
+        <p className="text-xs text-muted-foreground">
+          {t("asr.asrLanguageDesc")}
+        </p>
+        <Select value={selectedLanguage} onValueChange={setSelectedLanguage}>
+          <SelectTrigger className="w-[200px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ASR_LANGUAGE_KEYS.map((key) => (
+              <SelectItem key={key} value={key}>
+                {t(`common:language.${key}`)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Local ASR vendor cards */}
