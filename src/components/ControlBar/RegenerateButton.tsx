@@ -147,7 +147,25 @@ export function RegenerateButton() {
         }
       }
 
-      // Auto-create voiceprints for unmatched speakers
+      // Propagate voiceprintId from matched segments to unmatched segments
+      // with the same speaker label (e.g. short segments without embeddings)
+      const speakerToVoiceprint = new Map<string, string>();
+      for (const seg of newSegments) {
+        if (seg.speaker && seg.voiceprintId) {
+          speakerToVoiceprint.set(seg.speaker, seg.voiceprintId);
+        }
+      }
+      for (let i = 0; i < newSegments.length; i++) {
+        if (newSegments[i].speaker && !newSegments[i].voiceprintId) {
+          const vpId = speakerToVoiceprint.get(newSegments[i].speaker!);
+          if (vpId) {
+            newSegments[i] = { ...newSegments[i], voiceprintId: vpId };
+          }
+        }
+      }
+
+      // Auto-create voiceprints for still-unmatched speakers.
+      // createVoiceprint deduplicates by name — won't create duplicates.
       const { useVoiceprintStore } = await import("../../stores/voiceprintStore");
       const unmatchedSpeakers = new Set<string>();
       for (const seg of newSegments) {

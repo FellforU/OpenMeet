@@ -1032,6 +1032,39 @@ pub fn voiceprint_create(
 ) -> Result<VoiceprintInfo, String> {
     let conn = state.conn.lock().map_err(|e| e.to_string())?;
     let now = chrono::Utc::now().to_rfc3339();
+
+    // Dedup: if a voiceprint with the same name already exists, return it
+    let existing: Option<VoiceprintInfo> = conn
+        .query_row(
+            "SELECT id, name, nickname, email, department, title, note, avatar_path,
+                    sample_count, model_version, created_at, updated_at, last_seen_at
+             FROM voiceprints WHERE name = ?1 LIMIT 1",
+            params![name],
+            |row| {
+                Ok(VoiceprintInfo {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    nickname: row.get(2)?,
+                    email: row.get(3)?,
+                    department: row.get(4)?,
+                    title: row.get(5)?,
+                    note: row.get(6)?,
+                    avatar_path: row.get(7)?,
+                    sample_count: row.get(8)?,
+                    model_version: row.get(9)?,
+                    created_at: row.get(10)?,
+                    updated_at: row.get(11)?,
+                    last_seen_at: row.get(12)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+
+    if let Some(vp) = existing {
+        return Ok(vp);
+    }
+
     let id = uuid::Uuid::new_v4().to_string();
 
     // Empty blob signals "no real embedding yet" — will be populated via passive learning

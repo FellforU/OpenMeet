@@ -428,8 +428,26 @@ export const useRecordingStore = create<RecordingStore>((set, get) => ({
             }
           }
 
-          // Auto-create voiceprints for unmatched speakers (e.g. when embedding
-          // model is unavailable but diarization produced speaker labels)
+          // Propagate voiceprintId from matched segments to unmatched segments
+          // with the same speaker label (e.g. short segments without embeddings)
+          const speakerToVoiceprint = new Map<string, string>();
+          for (const seg of postProcessedSegments) {
+            if (seg.speaker && seg.voiceprintId) {
+              speakerToVoiceprint.set(seg.speaker, seg.voiceprintId);
+            }
+          }
+          for (const seg of postProcessedSegments) {
+            if (seg.speaker && !seg.voiceprintId) {
+              const vpId = speakerToVoiceprint.get(seg.speaker);
+              if (vpId) {
+                seg.voiceprintId = vpId;
+              }
+            }
+          }
+
+          // Auto-create voiceprints for still-unmatched speakers (e.g. when
+          // embedding model is unavailable but diarization produced speaker labels).
+          // createVoiceprint deduplicates by name — won't create duplicates.
           const { useVoiceprintStore } = await import("./voiceprintStore");
           const unmatchedSpeakers = new Set<string>();
           for (const seg of postProcessedSegments) {
