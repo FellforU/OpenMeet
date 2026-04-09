@@ -195,6 +195,7 @@ fn get_default_cache_dir() -> String {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let icon =
                 tauri::image::Image::from_bytes(include_bytes!("../icons/128x128.png"))?;
