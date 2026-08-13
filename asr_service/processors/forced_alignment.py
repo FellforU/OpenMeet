@@ -16,6 +16,16 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+try:
+    from pypinyin import pinyin as _pinyin, Style as _PinyinStyle
+except ImportError:
+    _pinyin = None
+    _PinyinStyle = None
+
+# Emission is computed in chunks: transformer attention is O(T²) in audio
+# length, so a single forward over a full meeting is unusably slow
+_EMISSION_CHUNK_SECONDS = 30.0
+
 
 class ForcedAligner:
     """Align text sentences to audio using MMS_FA wav2vec2 CTC forced alignment."""
@@ -25,6 +35,7 @@ class ForcedAligner:
         self._tokenizer = None
         self._aligner = None
         self._sample_rate = 16000
+        self._device = "cpu"
         self._available: Optional[bool] = None
 
     def _ensure_loaded(self) -> bool:
@@ -38,14 +49,25 @@ class ForcedAligner:
 
             bundle = torchaudio.pipelines.MMS_FA
             self._model = bundle.get_model().eval()
-            # Force CPU to avoid competing with ASR engine for GPU memory
-            self._model = self._model.cpu()
+            # Post-processing runs after the ASR engine is unloaded, so the
+            # GPU is free; fall back to CPU if the move fails
+            try:
+                if torch.cuda.is_available():
+                    self._model = self._model.cuda()
+                    self._device = "cuda"
+                else:
+                    self._model = self._model.cpu()
+                    self._device = "cpu"
+            except Exception:
+                self._model = self._model.cpu()
+                self._device = "cpu"
             self._tokenizer = bundle.get_tokenizer()
             self._aligner = bundle.get_aligner()
             self._sample_rate = bundle.sample_rate
             self._available = True
             logger.info(
-                "MMS_FA forced alignment model loaded (sr=%d)", self._sample_rate,
+                "MMS_FA forced alignment model loaded (sr=%d, device=%s)",
+                self._sample_rate, self._device,
             )
         except Exception as e:
             logger.warning("MMS_FA not available, will use interpolation fallback: %s", e)
@@ -118,10 +140,9 @@ class ForcedAligner:
             logger.warning("MMS_FA: no valid tokens after romanization")
             return [None] * len(sentences)
 
-        # Get CTC emission probabilities
+        # Get CTC emission probabilities (chunked to bound attention cost)
         try:
-            with torch.no_grad():
-                emission, _ = self._model(waveform.cpu())
+            emission = self._compute_emission(waveform)
         except Exception as e:
             logger.warning(
                 "MMS_FA emission failed (audio %.1fs, %d samples): %s",
@@ -161,6 +182,37 @@ class ForcedAligner:
         )
         return results
 
+    def _compute_emission(self, waveform):
+        """Compute CTC emissions in ~30s chunks concatenated along time.
+
+        Attention within a chunk is enough for frame-level CTC alignment,
+        and keeps memory/time linear in audio length.
+        """
+        import torch
+
+        chunk_samples = int(_EMISSION_CHUNK_SECONDS * self._sample_rate)
+        total = waveform.shape[1]
+
+        if total <= chunk_samples:
+            with torch.no_grad():
+                emission, _ = self._model(waveform.to(self._device))
+            return emission.cpu()
+
+        parts = []
+        offset = 0
+        while offset < total:
+            end = offset + chunk_samples
+            # Fold a short tail into the last chunk instead of running a
+            # sub-second forward pass
+            if total - end < self._sample_rate:
+                end = total
+            piece = waveform[:, offset:end].to(self._device)
+            with torch.no_grad():
+                emission, _ = self._model(piece)
+            parts.append(emission.cpu())
+            offset = end
+        return torch.cat(parts, dim=1)
+
 
 # ---------------------------------------------------------------------------
 # Text romanization for MMS_FA
@@ -173,17 +225,11 @@ def _romanize(text: str) -> str:
     ASCII letters → lowercase.
     Punctuation/digits/other → removed.
     """
-    try:
-        from pypinyin import pinyin, Style
-        has_pypinyin = True
-    except ImportError:
-        has_pypinyin = False
-
     parts: list[str] = []
     for char in text:
         if _is_cjk(char):
-            if has_pypinyin:
-                py = pinyin(char, style=Style.NORMAL)[0][0]
+            if _pinyin is not None:
+                py = _pinyin(char, style=_PinyinStyle.NORMAL)[0][0]
                 parts.append(py)
             # Without pypinyin, CJK chars are skipped (partial alignment)
         elif char.isascii() and char.isalpha():

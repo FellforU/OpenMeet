@@ -60,16 +60,32 @@ class CTTransformerPunctuator:
         texts = [s.text for s in segments]
 
         def _punctuate():
-            results = []
-            for text in texts:
+            results = list(texts)
+            todo = [i for i, t in enumerate(texts) if t and t.strip()]
+            if not todo:
+                return results
+
+            # Batch all texts in one generate() call — a per-text loop pays
+            # the funasr pipeline overhead once per segment
+            try:
+                batch = model_ref.generate(input=[texts[i] for i in todo])
+                if isinstance(batch, list) and len(batch) == len(todo):
+                    for i, item in zip(todo, batch):
+                        if isinstance(item, dict):
+                            results[i] = item.get("text", texts[i])
+                    return results
+            except Exception as e:
+                logger.warning(
+                    "Batch punctuation failed, falling back to per-text: %s", e,
+                )
+
+            for i in todo:
                 try:
-                    result = model_ref.generate(input=text)
+                    result = model_ref.generate(input=texts[i])
                     if isinstance(result, list) and result:
-                        results.append(result[0].get("text", text))
-                    else:
-                        results.append(text)
+                        results[i] = result[0].get("text", texts[i])
                 except Exception:
-                    results.append(text)
+                    pass
             return results
 
         punctuated = await asyncio.to_thread(_punctuate)

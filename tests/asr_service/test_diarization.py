@@ -14,14 +14,15 @@ from asr_service.processors.diarization.campplus import (
 from asr_service.processors.diarization.pyannote_diarizer import PyAnnoteDiarizer
 
 
-def test_factory_chinese_returns_campplus():
+def test_factory_chinese_returns_pyannote():
+    # pyannote 对所有语言优先，不可用时才在运行时回退 CAMPPlus
     d = create_diarizer("zh")
-    assert isinstance(d, CAMPPlusDiarizer)
+    assert isinstance(d, PyAnnoteDiarizer)
 
 
-def test_factory_cantonese_returns_campplus():
+def test_factory_cantonese_returns_pyannote():
     d = create_diarizer("yue")
-    assert isinstance(d, CAMPPlusDiarizer)
+    assert isinstance(d, PyAnnoteDiarizer)
 
 
 def test_factory_english_returns_pyannote():

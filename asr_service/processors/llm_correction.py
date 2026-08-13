@@ -6,6 +6,7 @@ Uses system-configured LLM to fix common ASR recognition errors:
 - Spoken number expressions
 """
 
+import asyncio
 import logging
 import math
 import re
@@ -17,9 +18,13 @@ from asr_service.services.llm_client import LLMClient
 logger = logging.getLogger(__name__)
 
 # Max characters per LLM correction chunk.
-# Most cloud LLMs support 32K-128K context. Use a large default to avoid
-# unnecessary splitting. Only split for very long meetings (500+ segments).
-_CHUNK_SIZE = 30000
+# Smaller chunks generate faster per request and run concurrently
+# (see _MAX_CONCURRENT_CHUNKS), so a long meeting is corrected in
+# parallel instead of one multi-minute serial generation.
+_CHUNK_SIZE = 8000
+
+# Concurrent LLM requests for correction chunks
+_MAX_CONCURRENT_CHUNKS = 4
 
 _CORRECTION_PROMPT = """你是一个专业的语音转录校对助手。以下是 ASR（语音识别）系统输出的会议转录文本，每行前有编号 [N]。
 
@@ -82,18 +87,21 @@ class LLMCorrector:
             len(segments), len(chunks),
         )
 
-        # Process each chunk sequentially
-        corrected_map: dict[int, str] = {}
-        for ci, chunk in enumerate(chunks):
+        # Process chunks concurrently (bounded) — serial chunks previously
+        # meant minutes of wall-clock for long meetings
+        semaphore = asyncio.Semaphore(_MAX_CONCURRENT_CHUNKS)
+
+        async def _correct_chunk(ci: int, chunk: str) -> dict[int, str]:
+            chunk_map: dict[int, str] = {}
             prompt = _CORRECTION_PROMPT.format(text=chunk)
             try:
-                # Use large max_tokens since output mirrors input size
                 # Estimate max_tokens: output mirrors input + overhead.
                 # Chinese: ~1.5 tokens per char; add 20% headroom.
                 chunk_tokens = max(8000, math.ceil(len(chunk) * 1.5 * 1.2))
-                response = await self._llm.generate(
-                    prompt, max_tokens=chunk_tokens,
-                )
+                async with semaphore:
+                    response = await self._llm.generate(
+                        prompt, max_tokens=chunk_tokens,
+                    )
                 # Strip <think>...</think> blocks (DeepSeek R1, etc.)
                 response = _THINK_PATTERN.sub("", response).strip()
                 # Log response snippet for debugging
@@ -105,16 +113,14 @@ class LLMCorrector:
                     resp_lines[:3],
                 )
                 # Parse [N] corrected_text lines
-                matches_found = 0
                 for match in _LINE_PATTERN.finditer(response):
                     idx = int(match.group(1))
                     corrected = match.group(2).strip()
                     if corrected and 0 <= idx < len(segments):
-                        corrected_map[idx] = corrected
-                        matches_found += 1
+                        chunk_map[idx] = corrected
                 logger.info(
                     "LLM correction chunk %d/%d: parsed %d matches",
-                    ci + 1, len(chunks), matches_found,
+                    ci + 1, len(chunks), len(chunk_map),
                 )
             except Exception as e:
                 logger.warning(
@@ -122,6 +128,14 @@ class LLMCorrector:
                     ci + 1, len(chunks), e,
                 )
                 # Skip failed chunk, keep original text
+            return chunk_map
+
+        chunk_maps = await asyncio.gather(
+            *(_correct_chunk(ci, chunk) for ci, chunk in enumerate(chunks))
+        )
+        corrected_map: dict[int, str] = {}
+        for chunk_map in chunk_maps:
+            corrected_map.update(chunk_map)
 
         if not corrected_map:
             logger.info("LLM correction: no corrections produced")

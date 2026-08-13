@@ -57,14 +57,16 @@ async def test_full_transcription_flow(client):
         # Step 3: Poll until completion (with timeout)
         # After transcription, PostProcessingPipeline runs and may
         # transition status from completed → post_processing → ready
+        # 本机 HF 缓存里存在真实 pyannote 模型时，后处理会真的加载它
+        # （约 3 秒），所以轮询预算要给足
         terminal_statuses = {"completed", "ready"}
-        for _ in range(50):
+        for _ in range(100):
             poll_resp = await client.get(f"/jobs/{job_id}")
             assert poll_resp.status_code == 200
             status = poll_resp.json()["status"]
             if status in terminal_statuses:
                 break
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(0.1)
         else:
             raise AssertionError("Job did not complete within timeout")
 
@@ -203,11 +205,11 @@ async def test_job_lifecycle_status_transitions(client):
 
         # RUNNING → COMPLETED → (post-processing) → READY
         terminal_statuses = {"completed", "ready"}
-        for _ in range(50):
+        for _ in range(100):
             poll = await client.get(f"/jobs/{job_id}")
             if poll.json()["status"] in terminal_statuses:
                 break
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(0.1)
 
         assert poll.json()["status"] in terminal_statuses
         assert poll.json()["progress"] == 100.0

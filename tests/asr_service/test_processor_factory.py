@@ -12,13 +12,14 @@ from asr_service.processors.diarization.pyannote_diarizer import PyAnnoteDiarize
 
 
 def test_chinese_pipeline():
+    # pyannote 对所有语言优先，不可用时才在运行时回退 CAMPPlus
     pipeline = create_pipeline("zh")
     assert isinstance(pipeline.vad, FSMNVadProcessor)
     assert isinstance(pipeline.punctuator, CTTransformerPunctuator)
     assert isinstance(pipeline.itn, ChineseITNProcessor)
     assert isinstance(pipeline.filler_filter, FillerFilterProcessor)
     assert isinstance(pipeline.hallucination_detector, HallucinationDetector)
-    assert isinstance(pipeline.diarizer, CAMPPlusDiarizer)
+    assert isinstance(pipeline.diarizer, PyAnnoteDiarizer)
 
 
 def test_cantonese_pipeline():
@@ -28,7 +29,7 @@ def test_cantonese_pipeline():
     assert isinstance(pipeline.itn, ChineseITNProcessor)
     assert isinstance(pipeline.filler_filter, FillerFilterProcessor)
     assert isinstance(pipeline.hallucination_detector, HallucinationDetector)
-    assert isinstance(pipeline.diarizer, CAMPPlusDiarizer)
+    assert isinstance(pipeline.diarizer, PyAnnoteDiarizer)
 
 
 def test_english_pipeline():

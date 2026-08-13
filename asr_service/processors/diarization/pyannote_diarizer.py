@@ -4,11 +4,12 @@ Industry-standard speaker diarization with ~16ms resolution.
 Supports all languages, overlapping speech detection, and automatic
 speaker count estimation.
 
-Requires: pyannote-audio>=3.0, HuggingFace token (for model download).
+Requires: pyannote-audio>=3.1 (4.x supported), HuggingFace token (for model download).
 Falls back gracefully if unavailable — caller should try CAMPPlus instead.
 """
 
 import asyncio
+import bisect
 import logging
 import os
 import re
@@ -20,6 +21,21 @@ from asr_service.models.job import Segment
 from asr_service.processors.forced_alignment import ForcedAligner
 
 logger = logging.getLogger(__name__)
+
+MIN_EMBEDDING_DURATION = 0.3
+
+
+def _read_mono_audio(audio_path: str) -> tuple[np.ndarray, int]:
+    """Read an audio file as mono float32, returning (samples, sample_rate).
+
+    Uses soundfile to avoid the torchcodec dependency of torchaudio.load().
+    """
+    import soundfile as sf
+
+    data, sr = sf.read(audio_path, dtype="float32")
+    if data.ndim > 1:
+        data = data.mean(axis=1)
+    return np.ascontiguousarray(data, dtype=np.float32), sr
 
 
 class PyAnnoteDiarizer:
@@ -33,6 +49,13 @@ class PyAnnoteDiarizer:
         self._pipeline = None
         self._aligner = ForcedAligner()
         self._load_attempted = False
+        # Per-speaker centroids from the last diarization run, so the
+        # embedding step can reuse them instead of re-running the model
+        self._speaker_centroids: dict[str, np.ndarray] = {}
+        self._centroids_audio_path: Optional[str] = None
+        # Inference result cached by precompute(), consumed by process():
+        # (audio_path, num_speakers, timeline, centroid_map)
+        self._precomputed: Optional[tuple] = None
 
     async def load(self) -> None:
         """Load pyannote pipeline. Only attempts once."""
@@ -93,86 +116,215 @@ class PyAnnoteDiarizer:
         self,
         audio_path: str,
         segments: list[Segment],
+        audio: Optional[tuple[np.ndarray, int]] = None,
     ) -> list[Optional[list[float]]]:
-        """Extract per-segment speaker embeddings using pyannote's internal model.
+        """Extract per-segment speaker embeddings.
 
-        Reuses the wespeaker-voxceleb-resnet34-LM model already loaded by
-        the diarization pipeline — no extra model download needed.
+        Fast path: reuses the per-speaker centroids that pyannote 4.x already
+        computed during diarization — zero extra inference.
+        Fallback: runs pyannote's internal embedding model per segment
+        (wespeaker-voxceleb-resnet34-LM, no extra model download).
 
         Returns a list aligned with segments (None for segments too short).
         """
+        if not segments:
+            return []
+
+        # Fast path: map each segment to its speaker's centroid from the
+        # diarization run on the same audio file
+        if self._speaker_centroids and self._centroids_audio_path == audio_path:
+            results: list[Optional[list[float]]] = []
+            hits = 0
+            for seg in segments:
+                emb = (
+                    self._speaker_centroids.get(seg.speaker)
+                    if seg.speaker else None
+                )
+                if emb is not None:
+                    results.append(emb.tolist())
+                    hits += 1
+                else:
+                    results.append(None)
+            if hits:
+                logger.info(
+                    "Embeddings reused from diarization centroids: %d/%d segments",
+                    hits, len(segments),
+                )
+                return results
+
         if not self._pipeline:
             await self.load()
         if not self._pipeline:
             return [None] * len(segments)
 
-        # Access pyannote's internal embedding model
-        embedding_model = getattr(self._pipeline, '_embedding', None)
-        if embedding_model is None:
+        # Access pyannote's internal embedding model (BaseInference, batched
+        # __call__ — the old Inference.crop() API does not exist in 3.x/4.x)
+        emb_model = getattr(self._pipeline, '_embedding', None)
+        if emb_model is None:
             logger.warning("pyannote pipeline has no _embedding model")
             return [None] * len(segments)
 
-        pipeline_ref = self._pipeline
+        if audio is None:
+            try:
+                audio = await asyncio.to_thread(_read_mono_audio, audio_path)
+            except Exception as e:
+                logger.warning("Audio loading for embedding failed: %s", e)
+                return [None] * len(segments)
+        audio_np, sample_rate = audio
 
         def _extract():
-            import soundfile as sf
             import torch
 
-            audio_data, sample_rate = sf.read(audio_path, dtype="float32")
-            waveform = torch.from_numpy(audio_data)
-            if waveform.ndim == 1:
-                waveform = waveform.unsqueeze(0)
-            else:
-                waveform = waveform.T
-            audio_input = {"waveform": waveform, "sample_rate": sample_rate}
+            data, sr = audio_np, sample_rate
+            target_sr = getattr(emb_model, "sample_rate", 16000)
+            if sr != target_sr:
+                import torchaudio
+                waveform_t = torch.from_numpy(data).unsqueeze(0)
+                waveform_t = torchaudio.functional.resample(waveform_t, sr, target_sr)
+                data, sr = waveform_t.squeeze(0).numpy(), target_sr
 
-            # Get the embedding Inference object from pipeline
-            emb_model = getattr(pipeline_ref, '_embedding', None)
-            if emb_model is None:
-                return [None] * len(segments)
-
-            results: list[Optional[list[float]]] = []
-            for seg in segments:
-                duration = seg.end - seg.start
-                if duration < 0.3:
-                    results.append(None)
+            results: list[Optional[list[float]]] = [None] * len(segments)
+            valid = 0
+            min_samples = int(MIN_EMBEDDING_DURATION * sr)
+            for i, seg in enumerate(segments):
+                start = int(seg.start * sr)
+                end = min(int(seg.end * sr), len(data))
+                if end - start < min_samples:
                     continue
-
                 try:
-                    from pyannote.core import Segment as PySegment
-
-                    # Crop audio to segment and extract embedding
-                    py_seg = PySegment(seg.start, seg.end)
-                    embedding = emb_model.crop(audio_input, py_seg)
-
-                    # embedding is SlidingWindowFeature, average over frames
-                    emb_np = embedding.data
-                    if emb_np.ndim > 1:
-                        emb_np = emb_np.mean(axis=0)
-                    emb_np = emb_np.astype(np.float32).flatten()
-
-                    # L2 normalize
-                    norm = np.linalg.norm(emb_np)
+                    chunk = torch.from_numpy(data[start:end]).reshape(1, 1, -1)
+                    # (1, dim) numpy array; NaN rows mean extraction failed
+                    emb = np.asarray(emb_model(chunk), dtype=np.float32).flatten()
+                    if not np.isfinite(emb).all():
+                        continue
+                    norm = np.linalg.norm(emb)
                     if norm > 0:
-                        emb_np = emb_np / norm
-
-                    results.append(emb_np.tolist())
+                        emb = emb / norm
+                    results[i] = emb.tolist()
+                    valid += 1
                 except Exception as e:
-                    logger.debug("Embedding extraction failed for segment %.1f-%.1f: %s",
-                                 seg.start, seg.end, e)
-                    results.append(None)
-
-            valid = sum(1 for r in results if r is not None)
-            logger.info("pyannote embedding extraction: %d/%d segments", valid, len(segments))
+                    logger.debug(
+                        "Embedding extraction failed for segment %.1f-%.1f: %s",
+                        seg.start, seg.end, e,
+                    )
+            logger.info(
+                "pyannote embedding extraction: %d/%d segments", valid, len(segments),
+            )
             return results
 
         return await asyncio.to_thread(_extract)
+
+    async def precompute(
+        self,
+        audio_path: str,
+        audio: Optional[tuple[np.ndarray, int]] = None,
+        num_speakers: Optional[int] = None,
+    ) -> None:
+        """Run the heavy pyannote inference ahead of time and cache the result.
+
+        Meant to run concurrently with the text-only pipeline steps (LLM
+        correction etc.) — diarization inference only needs audio, not text.
+        Never raises; on failure process() simply redoes the work.
+        """
+        self._precomputed = None
+        if num_speakers == 1:
+            return
+        try:
+            if not self._pipeline:
+                await self.load()
+            if not self._pipeline:
+                return
+            if audio is None:
+                audio = await asyncio.to_thread(_read_mono_audio, audio_path)
+            timeline, centroid_map = await self._run_inference(audio, num_speakers)
+            if timeline:
+                self._precomputed = (audio_path, num_speakers, timeline, centroid_map)
+        except Exception as e:
+            logger.warning("Diarization precompute failed: %s", e)
+
+    async def _run_inference(
+        self,
+        audio: tuple[np.ndarray, int],
+        num_speakers: Optional[int],
+    ) -> tuple[list[tuple[float, float, str]], dict[str, np.ndarray]]:
+        """Run the pyannote pipeline, returning (timeline, per-speaker centroids)."""
+        pipeline_ref = self._pipeline
+        audio_np, sample_rate = audio
+
+        def _diarize():
+            try:
+                # Preload audio as waveform dict to bypass torchcodec/AudioDecoder
+                # pyannote accepts {"waveform": Tensor(channel, time), "sample_rate": int}
+                import torch
+                waveform = torch.from_numpy(audio_np).unsqueeze(0)  # (1, samples)
+                audio_input = {"waveform": waveform, "sample_rate": sample_rate}
+
+                kwargs = {}
+                if num_speakers and num_speakers >= 2:
+                    kwargs["min_speakers"] = num_speakers
+                    kwargs["max_speakers"] = num_speakers
+
+                diarization = pipeline_ref(audio_input, **kwargs)
+
+                # Handle different return types from pyannote versions.
+                # 4.x returns DiarizeOutput with per-speaker centroids
+                # already computed — grab them so the embedding step is free.
+                centroids = None
+                if hasattr(diarization, "itertracks"):
+                    annotation = diarization
+                elif hasattr(diarization, "speaker_diarization"):
+                    annotation = diarization.speaker_diarization
+                    centroids = getattr(diarization, "speaker_embeddings", None)
+                elif hasattr(diarization, "annotation"):
+                    annotation = diarization.annotation
+                elif isinstance(diarization, tuple):
+                    annotation = diarization[0]
+                else:
+                    logger.warning(
+                        "Unexpected pyannote output type: %s, attrs: %s",
+                        type(diarization).__name__,
+                        [a for a in dir(diarization) if not a.startswith("_")],
+                    )
+                    return [], {}
+
+                # Per-speaker centroid map (rows aligned with annotation.labels())
+                centroid_map: dict[str, np.ndarray] = {}
+                if centroids is not None:
+                    for label, row in zip(annotation.labels(), centroids):
+                        row = np.asarray(row, dtype=np.float32).flatten()
+                        norm = np.linalg.norm(row)
+                        if row.size and np.isfinite(row).all() and norm > 0:
+                            centroid_map[label] = row / norm
+
+                # Build speaker timeline: [(start, end, speaker), ...]
+                timeline: list[tuple[float, float, str]] = []
+                speaker_set: set[str] = set()
+                for turn, _, speaker in annotation.itertracks(yield_label=True):
+                    timeline.append((turn.start, turn.end, speaker))
+                    speaker_set.add(speaker)
+
+                logger.info(
+                    "pyannote diarization: %d turns, %d speakers",
+                    len(timeline), len(speaker_set),
+                )
+                for i, (ts, te, spk) in enumerate(timeline[:10]):
+                    logger.info("  turn[%d]: %.2f-%.2fs %s", i, ts, te, spk)
+                if len(timeline) > 10:
+                    logger.info("  ... and %d more turns", len(timeline) - 10)
+
+                return timeline, centroid_map
+            except Exception as e:
+                logger.warning("pyannote diarization failed: %s", e, exc_info=True)
+                return [], {}
+
+        return await asyncio.to_thread(_diarize)
 
     async def process(
         self,
         audio_path: str,
         segments: list[Segment],
         num_speakers: Optional[int] = None,
+        audio: Optional[tuple[np.ndarray, int]] = None,
     ) -> list[Segment]:
         """Run speaker diarization and assign labels to segments.
 
@@ -184,6 +336,8 @@ class PyAnnoteDiarizer:
             audio_path: Path to audio file.
             segments: ASR output segments.
             num_speakers: Optional hint for number of speakers.
+            audio: Optional preloaded (mono float32 samples, sample_rate)
+                to avoid re-reading the file.
         """
         if not segments:
             return segments
@@ -208,78 +362,35 @@ class PyAnnoteDiarizer:
             fallback = create_campplus_fallback()
             return await fallback.process(audio_path, segments, num_speakers=num_speakers)
 
-        pipeline_ref = self._pipeline
-
-        # Preload audio as waveform dict to bypass torchcodec/AudioDecoder
-        # pyannote accepts {"waveform": Tensor(channel, time), "sample_rate": int}
-        # Use soundfile instead of torchaudio to avoid torchcodec dependency
-        import soundfile as sf
-        import torch
-        audio_data, sample_rate = sf.read(audio_path, dtype="float32")
-        # soundfile returns (samples,) for mono or (samples, channels) for multi-channel
-        waveform = torch.from_numpy(audio_data)
-        if waveform.ndim == 1:
-            waveform = waveform.unsqueeze(0)  # (1, samples)
+        # Reuse the inference result if precompute() already ran it
+        # (e.g. concurrently with the LLM correction step)
+        pre = self._precomputed
+        if pre and pre[0] == audio_path and pre[1] == num_speakers:
+            self._precomputed = None
+            timeline, centroid_map = pre[2], pre[3]
+            logger.info("pyannote: using precomputed diarization result")
         else:
-            waveform = waveform.T  # (channels, samples)
-        audio_input = {"waveform": waveform, "sample_rate": sample_rate}
-
-        # Run pyannote diarization
-        def _diarize():
-            try:
-                kwargs = {}
-                if num_speakers and num_speakers >= 2:
-                    kwargs["min_speakers"] = num_speakers
-                    kwargs["max_speakers"] = num_speakers
-
-                diarization = pipeline_ref(audio_input, **kwargs)
-
-                # Handle different return types from pyannote versions
-                # Newer versions may return DiarizeOutput; extract annotation
-                if hasattr(diarization, "itertracks"):
-                    annotation = diarization
-                elif hasattr(diarization, "speaker_diarization"):
-                    annotation = diarization.speaker_diarization
-                elif hasattr(diarization, "annotation"):
-                    annotation = diarization.annotation
-                elif isinstance(diarization, tuple):
-                    annotation = diarization[0]
-                else:
-                    logger.warning(
-                        "Unexpected pyannote output type: %s, attrs: %s",
-                        type(diarization).__name__,
-                        [a for a in dir(diarization) if not a.startswith("_")],
-                    )
-                    return []
-
-                # Build speaker timeline: [(start, end, speaker), ...]
-                timeline: list[tuple[float, float, str]] = []
-                speaker_set: set[str] = set()
-                for turn, _, speaker in annotation.itertracks(yield_label=True):
-                    timeline.append((turn.start, turn.end, speaker))
-                    speaker_set.add(speaker)
-
-                logger.info(
-                    "pyannote diarization: %d turns, %d speakers",
-                    len(timeline), len(speaker_set),
-                )
-                for i, (ts, te, spk) in enumerate(timeline[:10]):
-                    logger.info("  turn[%d]: %.2f-%.2fs %s", i, ts, te, spk)
-                if len(timeline) > 10:
-                    logger.info("  ... and %d more turns", len(timeline) - 10)
-
-                return timeline
-            except Exception as e:
-                logger.warning("pyannote diarization failed: %s", e, exc_info=True)
-                return []
-
-        timeline = await asyncio.to_thread(_diarize)
+            # Load audio once (mono float32) — reused by diarization, forced
+            # alignment and the embedding step
+            if audio is None:
+                try:
+                    audio = await asyncio.to_thread(_read_mono_audio, audio_path)
+                except Exception as e:
+                    logger.warning("Audio loading for diarization failed: %s", e)
+                    return segments
+            timeline, centroid_map = await self._run_inference(audio, num_speakers)
 
         if not timeline:
             return segments
 
         # Rename speakers to sequential "Speaker 1", "Speaker 2", etc.
-        timeline = _rename_speakers(timeline)
+        timeline, label_map = _rename_speakers(timeline)
+
+        # Keep centroids keyed by renamed labels for the embedding step
+        self._speaker_centroids = {
+            label_map[k]: v for k, v in centroid_map.items() if k in label_map
+        }
+        self._centroids_audio_path = audio_path if self._speaker_centroids else None
 
         # Compare ASR segment granularity vs pyannote turn granularity.
         # If pyannote turns are finer than ASR segments, use sentence-level
@@ -308,7 +419,7 @@ class PyAnnoteDiarizer:
 
         if use_sentence_split:
             return await self._apply_timeline_to_segments(
-                audio_path, segments, timeline,
+                audio_path, segments, timeline, audio=(audio_np, sample_rate),
             )
 
         # Normal path: assign speaker based on segment midpoint
@@ -319,6 +430,7 @@ class PyAnnoteDiarizer:
         audio_path: str,
         segments: list[Segment],
         timeline: list[tuple[float, float, str]],
+        audio: Optional[tuple[np.ndarray, int]] = None,
     ) -> list[Segment]:
         """Rebuild segments from pyannote timeline for zero-duration ASR output.
 
@@ -346,25 +458,23 @@ class PyAnnoteDiarizer:
         # --- Get sentence timestamps via forced alignment ---
         sentence_times: list[Optional[tuple[float, float]]] = [None] * len(sentences)
 
-        # Load audio for forced alignment (using soundfile to avoid torchcodec)
+        # Reuse preloaded audio; resample to 16kHz only if needed
         audio_np, sr = None, 16000
         try:
-            import soundfile as sf_align
-            audio_data, file_sr = sf_align.read(audio_path, dtype="float32")
-            # Convert to mono if multi-channel
-            if audio_data.ndim > 1:
-                audio_data = audio_data.mean(axis=1)
-            # Resample to 16kHz if needed
-            if file_sr != 16000:
-                import torchaudio
+            if audio is not None:
+                audio_np, sr = audio
+            else:
+                audio_np, sr = await asyncio.to_thread(_read_mono_audio, audio_path)
+            if sr != 16000:
                 import torch as th
-                waveform_t = th.from_numpy(audio_data).unsqueeze(0)
-                waveform_t = torchaudio.functional.resample(waveform_t, file_sr, 16000)
-                audio_data = waveform_t.squeeze(0).numpy()
-            audio_np = audio_data
-            sr = 16000
+                import torchaudio
+                waveform_t = th.from_numpy(audio_np).unsqueeze(0)
+                waveform_t = torchaudio.functional.resample(waveform_t, sr, 16000)
+                audio_np = waveform_t.squeeze(0).numpy()
+                sr = 16000
         except Exception as e:
             logger.warning("Audio loading for alignment failed: %s", e)
+            audio_np = None
 
         if audio_np is not None:
             try:
@@ -412,11 +522,12 @@ class PyAnnoteDiarizer:
                 char_pos += len(sent)
 
         # --- Assign speakers and build output ---
+        turn_index = _TimelineIndex(timeline)
         sentence_assignments: list[tuple[str, str, float, float]] = []
         for i, sent in enumerate(sentences):
             s_start, s_end = sentence_times[i]  # type: ignore[misc]
             mid_time = (s_start + s_end) / 2.0
-            spk = _find_speaker_at_time(timeline, mid_time)
+            spk = turn_index.speaker_at(mid_time)
             sentence_assignments.append((sent, spk or "Speaker 1", s_start, s_end))
 
         # Group consecutive same-speaker sentences
@@ -470,9 +581,11 @@ class PyAnnoteDiarizer:
 
 def _rename_speakers(
     timeline: list[tuple[float, float, str]],
-) -> list[tuple[float, float, str]]:
+) -> tuple[list[tuple[float, float, str]], dict[str, str]]:
     """Rename pyannote speaker labels (SPEAKER_00, SPEAKER_01, ...)
-    to sequential 'Speaker 1', 'Speaker 2', etc."""
+    to sequential 'Speaker 1', 'Speaker 2', etc.
+
+    Returns (renamed_timeline, original_label → new_label map)."""
     label_map: dict[str, str] = {}
     counter = 0
     result = []
@@ -481,31 +594,56 @@ def _rename_speakers(
             counter += 1
             label_map[spk] = f"Speaker {counter}"
         result.append((ts, te, label_map[spk]))
-    return result
+    return result, label_map
+
+
+class _TimelineIndex:
+    """Binary-search index over a start-sorted speaker timeline.
+
+    Replaces the O(turns) linear scan per lookup — matters when a long
+    meeting produces thousands of sentences × thousands of turns.
+    """
+
+    def __init__(self, timeline: list[tuple[float, float, str]]):
+        self._timeline = sorted(timeline, key=lambda t: t[0])
+        self._starts = [t[0] for t in self._timeline]
+        self._max_dur = max((te - ts for ts, te, _ in self._timeline), default=0.0)
+
+    def speaker_at(self, time: float) -> Optional[str]:
+        """Speaker whose turn contains the time point, else nearest turn."""
+        timeline = self._timeline
+        if not timeline:
+            return None
+
+        idx = bisect.bisect_right(self._starts, time) - 1
+
+        # Containing turn: only turns starting within max_dur before `time`
+        # can contain it (turns may overlap, so scan left)
+        j = idx
+        while j >= 0 and time - timeline[j][0] <= self._max_dur:
+            ts, te, spk = timeline[j]
+            if ts <= time <= te:
+                return spk
+            j -= 1
+
+        # Nearest turn: candidates are the neighbors of the insertion point
+        best_spk = None
+        min_dist = float("inf")
+        for k in (idx, idx + 1):
+            if 0 <= k < len(timeline):
+                ts, te, spk = timeline[k]
+                d = min(abs(time - ts), abs(time - te))
+                if d < min_dist:
+                    min_dist = d
+                    best_spk = spk
+        return best_spk
 
 
 def _find_speaker_at_time(
     timeline: list[tuple[float, float, str]], time: float,
 ) -> Optional[str]:
-    """Find the speaker active at a given time.
-
-    Returns the speaker whose turn contains the time point.
-    Falls back to the nearest turn if no exact match.
-    """
-    # Exact match
-    for ts, te, spk in timeline:
-        if ts <= time <= te:
-            return spk
-
-    # Nearest turn
-    best_spk = None
-    min_dist = float("inf")
-    for ts, te, spk in timeline:
-        d = min(abs(time - ts), abs(time - te))
-        if d < min_dist:
-            min_dist = d
-            best_spk = spk
-    return best_spk
+    """Find the speaker active at a given time (single-lookup convenience)."""
+    return _TimelineIndex(timeline).speaker_at(time)
 
 
 def _assign_speakers_by_overlap(
@@ -513,10 +651,11 @@ def _assign_speakers_by_overlap(
     timeline: list[tuple[float, float, str]],
 ) -> list[Segment]:
     """Assign speakers to segments with valid timestamps using overlap."""
+    turn_index = _TimelineIndex(timeline)
     result = []
     for seg in segments:
         seg_mid = (seg.start + seg.end) / 2
-        speaker = _find_speaker_at_time(timeline, seg_mid)
+        speaker = turn_index.speaker_at(seg_mid)
         result.append(Segment(
             start=seg.start, end=seg.end, text=seg.text,
             speaker=speaker or seg.speaker, confidence=seg.confidence,

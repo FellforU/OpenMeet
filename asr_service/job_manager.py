@@ -73,8 +73,11 @@ class JobManager:
 
             job.progress = 10.0
 
-            # Preprocess audio
+            # Preprocess audio; point the job at the 16kHz mono wav so
+            # post-processing (diarization/alignment/embedding) reuses it
+            # instead of re-reading and resampling the original file
             wav_path = await preprocess_audio(job.audio_path)
+            job.audio_path = wav_path
             job.progress = 15.0
 
             # Transcribe

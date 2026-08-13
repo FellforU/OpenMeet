@@ -6,6 +6,8 @@ Summary generation is handled by the frontend via llmClient.ts (Map-Reduce).
 Auto-triggers when a job transitions to COMPLETED status.
 """
 
+import asyncio
+import inspect
 import logging
 from dataclasses import dataclass, field
 from typing import Optional
@@ -113,6 +115,26 @@ class PostProcessingPipeline:
             except Exception as e:
                 logger.warning("Filler filter step failed: %s", e)
 
+        # Load audio ONCE for all audio-based steps (diarization, forced
+        # alignment, embedding) — previously each step re-read the full file
+        audio = None
+        if job.audio_path and (
+            self._config.enable_diarization or self._config.enable_embedding
+        ):
+            audio = await self._load_audio(job.audio_path)
+
+        # Kick off diarization inference in the background: it only needs
+        # audio, so it can overlap with the text-only steps below (the LLM
+        # correction network wait in particular)
+        diarization_task = None
+        if self._config.enable_diarization and job.audio_path:
+            precompute = getattr(pipeline.diarizer, "precompute", None)
+            if inspect.iscoroutinefunction(precompute):
+                diarization_task = asyncio.create_task(precompute(
+                    job.audio_path, audio=audio,
+                    num_speakers=self._config.num_speakers,
+                ))
+
         # Step 4: LLM-based ASR error correction
         if self._config.enable_llm_correction and _llm_client is not None:
             try:
@@ -139,26 +161,38 @@ class PostProcessingPipeline:
         elif job.engine in self.PUNCTUATED_ENGINES:
             logger.info("Skipping punctuation for engine '%s' (already punctuated)", job.engine)
 
-        # Step 7: Speaker diarization
+        # Step 7: Speaker diarization (inference may already be running
+        # in the background — wait for it, then assign speakers)
         if self._config.enable_diarization and job.audio_path:
             try:
+                if diarization_task is not None:
+                    await diarization_task
                 segments = await pipeline.diarizer.process(
                     job.audio_path, segments,
                     num_speakers=self._config.num_speakers,
+                    audio=audio,
                 )
+            except TypeError:
+                # Fallback diarizers may not accept the audio kwarg
+                try:
+                    segments = await pipeline.diarizer.process(
+                        job.audio_path, segments,
+                        num_speakers=self._config.num_speakers,
+                    )
+                except Exception as e:
+                    logger.warning("Diarization step failed: %s", e)
             except Exception as e:
                 logger.warning("Diarization step failed: %s", e)
 
         # Step 8: Extract speaker embeddings for voiceprint matching
-        # Prefer pyannote's built-in embedding model (already loaded during
-        # diarization) over a separate ECAPA-TDNN model download
+        # Prefer pyannote: reuses per-speaker centroids computed during
+        # diarization (free), else its built-in wespeaker embedding model
         if self._config.enable_embedding and job.audio_path:
             job.embeddings = []
-            # Try pyannote first (uses wespeaker-voxceleb-resnet34-LM, no extra download)
             try:
                 if hasattr(pipeline.diarizer, 'extract_embeddings'):
                     job.embeddings = await pipeline.diarizer.extract_embeddings(
-                        job.audio_path, segments
+                        job.audio_path, segments, audio=audio,
                     )
                     has_valid = any(e is not None for e in job.embeddings)
                     if has_valid:
@@ -171,7 +205,7 @@ class PostProcessingPipeline:
                 try:
                     extractor = create_embedding_extractor()
                     job.embeddings = await extractor.extract_embeddings(
-                        job.audio_path, segments
+                        job.audio_path, segments, audio=audio,
                     )
                 except Exception as e:
                     logger.warning("ECAPA-TDNN embedding extraction failed: %s", e)
@@ -181,6 +215,31 @@ class PostProcessingPipeline:
 
         job.segments = segments
         job.status = JobStatus.READY
+
+    @staticmethod
+    async def _load_audio(audio_path: str):
+        """Load audio as (mono float32 samples, sample_rate), or None.
+
+        Falls back to ffmpeg conversion for formats soundfile cannot read
+        (e.g. mp4/m4a passed to the /post-process endpoint).
+        """
+        from asr_service.processors.diarization.pyannote_diarizer import (
+            _read_mono_audio,
+        )
+
+        try:
+            return await asyncio.to_thread(_read_mono_audio, audio_path)
+        except Exception:
+            pass
+
+        try:
+            from asr_service.processors.audio_preprocessor import preprocess_audio
+
+            wav_path = await preprocess_audio(audio_path)
+            return await asyncio.to_thread(_read_mono_audio, wav_path)
+        except Exception as e:
+            logger.warning("Audio loading failed for %s: %s", audio_path, e)
+            return None
 
     @staticmethod
     def _release_gpu_memory() -> None:

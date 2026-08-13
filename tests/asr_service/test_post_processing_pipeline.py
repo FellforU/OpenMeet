@@ -109,10 +109,11 @@ async def test_run_calls_processors_in_order(pipeline, job):
         return segs
     mock_pp.punctuator.restore = mock_restore
 
-    async def mock_diarize(audio, segs):
+    async def mock_diarize(audio_path, segs, num_speakers=None, audio=None):
         call_order.append("diarization")
         return segs
     mock_pp.diarizer.process = mock_diarize
+    mock_pp.diarizer.extract_embeddings = AsyncMock(return_value=[])
 
     with patch("asr_service.services.post_processing.create_pipeline", return_value=mock_pp), \
          patch("asr_service.services.post_processing.create_embedding_extractor") as mock_ext:

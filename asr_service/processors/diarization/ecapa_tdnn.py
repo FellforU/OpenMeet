@@ -42,8 +42,10 @@ class EcapaTdnnExtractor:
                 import torch
                 from funasr import AutoModel
 
-                # Force CPU to avoid competing with ASR engine for GPU memory
-                return AutoModel(model=model_path, device="cpu")
+                # Post-processing runs after the ASR engine is unloaded,
+                # so the GPU is free to use here
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                return AutoModel(model=model_path, device=device)
             except Exception as e:
                 logger.warning("Failed to load ECAPA-TDNN from %s: %s", model_path, e)
                 return None
@@ -54,7 +56,10 @@ class EcapaTdnnExtractor:
         return self._model is not None
 
     async def extract_embeddings(
-        self, audio_path: str, segments: list[Segment]
+        self,
+        audio_path: str,
+        segments: list[Segment],
+        audio: Optional[tuple[np.ndarray, int]] = None,
     ) -> list[Optional[list[float]]]:
         """Extract one embedding per segment. Returns list aligned with segments.
 
@@ -69,12 +74,19 @@ class EcapaTdnnExtractor:
         model_ref = self._model
 
         def _extract():
-            from asr_service.processors.diarization.campplus import _load_audio
+            import torch
 
-            waveform, sr = _load_audio(audio_path)
-            if waveform.shape[0] > 1:
-                waveform = waveform.mean(dim=0, keepdim=True)
+            if audio is not None:
+                audio_np, sr = audio
+                waveform = torch.from_numpy(audio_np).unsqueeze(0)
+            else:
+                from asr_service.processors.diarization.campplus import _load_audio
+
+                waveform, sr = _load_audio(audio_path)
+                if waveform.shape[0] > 1:
+                    waveform = waveform.mean(dim=0, keepdim=True)
             if sr != 16000:
+                import torchaudio
                 waveform = torchaudio.transforms.Resample(sr, 16000)(waveform)
                 sr = 16000
 
