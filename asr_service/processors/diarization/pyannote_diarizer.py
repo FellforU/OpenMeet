@@ -11,8 +11,8 @@ Falls back gracefully if unavailable — caller should try CAMPPlus instead.
 import asyncio
 import bisect
 import logging
-import os
 import re
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -63,45 +63,38 @@ class PyAnnoteDiarizer:
             return
         self._load_attempted = True
 
-        hf_token = os.environ.get("HF_TOKEN") or os.environ.get(
-            "HUGGING_FACE_HUB_TOKEN"
-        )
-
         def _load():
             try:
                 from pyannote.audio import Pipeline
+                from asr_service.services import model_source
 
-                # Try offline first to avoid slow HuggingFace network requests
-                # when the model is already cached locally
-                old_offline = os.environ.get("HF_HUB_OFFLINE")
-                os.environ["HF_HUB_OFFLINE"] = "1"
-                try:
-                    pipeline = Pipeline.from_pretrained(
-                        "pyannote/speaker-diarization-3.1",
-                        token=hf_token,
+                # 魔搭下载目录（自包含仓库，config.yaml 引用相对路径）
+                ms_dir = model_source.local_path(
+                    "pyannote/speaker-diarization-community-1"
+                )
+                if not ms_dir:
+                    logger.warning(
+                        "pyannote load failed: model not downloaded — "
+                        "download it in Settings (via ModelScope)"
                     )
-                    logger.info("pyannote loaded from local cache (offline mode)")
-                except Exception:
-                    # Local load failed — restore online mode and retry
-                    if old_offline is None:
-                        os.environ.pop("HF_HUB_OFFLINE", None)
-                    else:
-                        os.environ["HF_HUB_OFFLINE"] = old_offline
-                    logger.info("pyannote local cache miss, loading with network")
-                    pipeline = Pipeline.from_pretrained(
-                        "pyannote/speaker-diarization-3.1",
-                        token=hf_token,
-                    )
-                finally:
-                    # Restore original env
-                    if old_offline is None:
-                        os.environ.pop("HF_HUB_OFFLINE", None)
-                    else:
-                        os.environ["HF_HUB_OFFLINE"] = old_offline
+                    return None
+
+                pipeline = None
+                for target in (ms_dir, str(Path(ms_dir) / "config.yaml")):
+                    try:
+                        pipeline = Pipeline.from_pretrained(target)
+                        break
+                    except Exception as e:
+                        logger.debug("load %s failed: %s", target, e)
+
+                if pipeline is None:
+                    logger.warning("pyannote load failed from %s", ms_dir)
+                    return None
+
                 import torch
                 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
                 pipeline = pipeline.to(device)
-                logger.info("pyannote speaker-diarization-3.1 loaded")
+                logger.info("pyannote community-1 ready (%s)", ms_dir)
                 return pipeline
             except Exception as e:
                 logger.warning("pyannote load failed: %s", e)
@@ -419,7 +412,7 @@ class PyAnnoteDiarizer:
 
         if use_sentence_split:
             return await self._apply_timeline_to_segments(
-                audio_path, segments, timeline, audio=(audio_np, sample_rate),
+                audio_path, segments, timeline, audio=audio,
             )
 
         # Normal path: assign speaker based on segment midpoint
@@ -455,6 +448,36 @@ class PyAnnoteDiarizer:
             total_chars, len(sentences),
         )
 
+        # --- Rough per-sentence estimates from char-position interpolation ---
+        # Used as the last-resort fallback, and by the Qwen aligner to
+        # window long audio (it can only align ~5 min per call)
+        char_time_anchors: list[tuple[int, float]] = []
+        offset = 0
+        for seg in segments:
+            char_time_anchors.append((offset, seg.start))
+            offset += len(seg.text)
+        char_time_anchors.append((total_chars, total_audio_end))
+
+        def _interp(char_pos: int) -> float:
+            if char_pos <= 0:
+                return char_time_anchors[0][1]
+            if char_pos >= total_chars:
+                return total_audio_end
+            for ai in range(len(char_time_anchors) - 1):
+                c0, t0 = char_time_anchors[ai]
+                c1, t1 = char_time_anchors[ai + 1]
+                if c0 <= char_pos <= c1:
+                    if c1 == c0:
+                        return t0
+                    return t0 + (char_pos - c0) / (c1 - c0) * (t1 - t0)
+            return total_audio_end
+
+        rough_times: list[tuple[float, float]] = []
+        char_pos = 0
+        for sent in sentences:
+            rough_times.append((_interp(char_pos), _interp(char_pos + len(sent))))
+            char_pos += len(sent)
+
         # --- Get sentence timestamps via forced alignment ---
         sentence_times: list[Optional[tuple[float, float]]] = [None] * len(sentences)
 
@@ -479,7 +502,7 @@ class PyAnnoteDiarizer:
         if audio_np is not None:
             try:
                 sentence_times = await self._aligner.align_sentences(
-                    audio_np, sr, sentences,
+                    audio_np, sr, sentences, rough_times=rough_times,
                 )
                 aligned = sum(1 for t in sentence_times if t is not None)
                 logger.info(
@@ -489,37 +512,10 @@ class PyAnnoteDiarizer:
             except Exception as e:
                 logger.warning("Forced alignment failed: %s", e)
 
-        # Interpolation fallback for unaligned sentences
-        has_unaligned = any(t is None for t in sentence_times)
-        if has_unaligned:
-            char_time_anchors: list[tuple[int, float]] = []
-            offset = 0
-            for seg in segments:
-                char_time_anchors.append((offset, seg.start))
-                offset += len(seg.text)
-            char_time_anchors.append((total_chars, total_audio_end))
-
-            def _interp(char_pos: int) -> float:
-                if char_pos <= 0:
-                    return char_time_anchors[0][1]
-                if char_pos >= total_chars:
-                    return total_audio_end
-                for ai in range(len(char_time_anchors) - 1):
-                    c0, t0 = char_time_anchors[ai]
-                    c1, t1 = char_time_anchors[ai + 1]
-                    if c0 <= char_pos <= c1:
-                        if c1 == c0:
-                            return t0
-                        return t0 + (char_pos - c0) / (c1 - c0) * (t1 - t0)
-                return total_audio_end
-
-            char_pos = 0
-            for i, sent in enumerate(sentences):
-                if sentence_times[i] is None:
-                    s_start = _interp(char_pos)
-                    s_end = _interp(char_pos + len(sent))
-                    sentence_times[i] = (s_start, s_end)
-                char_pos += len(sent)
+        # Fill unaligned sentences from the interpolation estimates
+        for i in range(len(sentences)):
+            if sentence_times[i] is None:
+                sentence_times[i] = rough_times[i]
 
         # --- Assign speakers and build output ---
         turn_index = _TimelineIndex(timeline)

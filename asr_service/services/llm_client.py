@@ -11,8 +11,9 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-# Default timeout for LLM API calls (seconds)
-_DEFAULT_TIMEOUT = 120.0
+# Default timeout for LLM API calls (seconds).
+# 云端模型（尤其带思考模式的）生成几千 token 可能超过 2 分钟
+_DEFAULT_TIMEOUT = 300.0
 
 
 # Provider-specific chat completion endpoints

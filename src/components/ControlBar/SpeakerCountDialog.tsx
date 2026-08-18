@@ -12,20 +12,25 @@ import {
 } from "../ui/dialog";
 import { useRecordingStore } from "../../stores/recordingStore";
 
-export function SpeakerCountDialog() {
+interface SpeakerCountPromptProps {
+  open: boolean;
+  /** 确认或跳过时回调；跳过时 count 为 undefined（自动识别） */
+  onSubmit: (count?: number) => void;
+}
+
+/** 发言人数量弹窗（展示组件），录音停止和重新后处理流程共用 */
+export function SpeakerCountPrompt({ open, onSubmit }: SpeakerCountPromptProps) {
   const { t } = useTranslation("workspace");
-  const open = useRecordingStore((s) => s.showSpeakerCountDialog);
-  const confirm = useRecordingStore((s) => s.confirmSpeakerCount);
   const [value, setValue] = useState("");
 
   const handleConfirm = () => {
     const num = parseInt(value, 10);
-    confirm(!isNaN(num) && num >= 1 ? num : undefined);
+    onSubmit(!isNaN(num) && num >= 1 ? num : undefined);
     setValue("");
   };
 
   const handleSkip = () => {
-    confirm(undefined);
+    onSubmit(undefined);
     setValue("");
   };
 
@@ -71,4 +76,11 @@ export function SpeakerCountDialog() {
       </DialogContent>
     </Dialog>
   );
+}
+
+/** 录音停止流程的包装：状态挂在 recordingStore 上 */
+export function SpeakerCountDialog() {
+  const open = useRecordingStore((s) => s.showSpeakerCountDialog);
+  const confirm = useRecordingStore((s) => s.confirmSpeakerCount);
+  return <SpeakerCountPrompt open={open} onSubmit={confirm} />;
 }

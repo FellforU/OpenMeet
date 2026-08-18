@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Lightbulb,
@@ -7,7 +7,6 @@ import {
   Calendar,
   Loader2,
   MessageSquare,
-  Pencil,
   Save,
   X,
   Link2,
@@ -39,6 +38,9 @@ interface ActionItem {
 
 interface SummaryPanelProps {
   onJumpToTranscript?: (time: number) => void;
+  /** 编辑状态由 Workspace 托管，编辑按钮显示在标签页行的导出按钮旁 */
+  editing?: boolean;
+  onEditingChange?: (editing: boolean) => void;
 }
 
 /** Find the longest common substring length between two strings. */
@@ -197,7 +199,11 @@ function formatSummaryToMarkdown(summary: {
   return lines.join("\n");
 }
 
-export function SummaryPanel({ onJumpToTranscript }: SummaryPanelProps) {
+export function SummaryPanel({
+  onJumpToTranscript,
+  editing = false,
+  onEditingChange,
+}: SummaryPanelProps) {
   const { t } = useTranslation("workspace");
   const summary = useTranscriptionStore((s) => s.summary);
   const setSummary = useTranscriptionStore((s) => s.setSummary);
@@ -205,8 +211,19 @@ export function SummaryPanel({ onJumpToTranscript }: SummaryPanelProps) {
   const segments = useTranscriptionStore((s) => s.segments);
   const pipelineStep = useTranscriptionStore((s) => s.job.pipelineStep);
 
-  const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState("");
+
+  // 进入编辑模式时初始化编辑内容
+  useEffect(() => {
+    if (editing && summary) {
+      setEditText(
+        summary.editedMarkdown ??
+          summary.rawMarkdown ??
+          formatSummaryToMarkdown(summary)
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing]);
 
   if (pipelineStep === "summarizing") {
     return (
@@ -244,18 +261,9 @@ export function SummaryPanel({ onJumpToTranscript }: SummaryPanelProps) {
     );
   }
 
-  const handleStartEdit = () => {
-    const displayText =
-      summary.editedMarkdown ??
-      summary.rawMarkdown ??
-      formatSummaryToMarkdown(summary);
-    setEditText(displayText);
-    setEditing(true);
-  };
-
   const handleSave = () => {
     setSummary({ ...summary, editedMarkdown: editText });
-    setEditing(false);
+    onEditingChange?.(false);
     toast.success(t("common:toast.summarySaved"));
 
     // Persist to SQLite
@@ -272,7 +280,7 @@ export function SummaryPanel({ onJumpToTranscript }: SummaryPanelProps) {
   };
 
   const handleCancel = () => {
-    setEditing(false);
+    onEditingChange?.(false);
     setEditText("");
   };
 
@@ -334,13 +342,6 @@ export function SummaryPanel({ onJumpToTranscript }: SummaryPanelProps) {
 
   return (
     <div className="h-full overflow-y-auto p-4">
-      <div className="mb-3 flex items-center justify-end">
-        <Button variant="outline" size="sm" onClick={handleStartEdit}>
-          <Pencil className="mr-1.5 h-4 w-4" />
-          {t("summary.editSummary")}
-        </Button>
-      </div>
-
       <div className="space-y-3">
         {topic && (
           <Card>

@@ -65,9 +65,14 @@ export type JobStatus =
 export type PipelineStep =
   | "loading_model"
   | "transcribing"
+  | "hallucination"
   | "itn"
+  | "filler"
+  | "llm_correction"
+  | "segmentation"
   | "punctuation"
   | "diarizing"
+  | "embedding"
   | "summarizing"
   | null;
 

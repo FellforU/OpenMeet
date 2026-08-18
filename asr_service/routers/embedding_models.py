@@ -6,15 +6,11 @@ and cache management via HuggingFace Hub.
 
 import asyncio
 import logging
-import os
 import time
 from enum import Enum
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-
-from asr_service import config
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +47,8 @@ EMBEDDING_MODELS: dict[str, dict] = {
         "dimension": 1024,
         "size_bytes": 1200 * 1024 * 1024,
         "vram_gb": 1.5,
-        "description_zh": "性价比最佳，C-MTEB 超越 BGE-M3 近 10%",
-        "description_en": "Best cost-performance, surpasses BGE-M3 on C-MTEB by ~10%",
+        "description_zh": "推荐默认。性价比最佳，C-MTEB 超越 BGE-M3 近 10%",
+        "description_en": "Recommended default. Best cost-performance, surpasses BGE-M3 on C-MTEB by ~10%",
         "languages": ["zh", "en", "multi"],
     },
     "qwen3-embedding-4b": {
@@ -123,43 +119,26 @@ def _validate_key(key: str) -> dict:
     return EMBEDDING_MODELS[key]
 
 
-def _get_model_cache_dir() -> Path:
-    cache_dir = config.get_model_cache_dir()
-    if cache_dir:
-        return Path(cache_dir)
-    return Path.home() / ".cache" / "huggingface" / "hub"
-
-
 def _is_model_downloaded(repo_id: str) -> bool:
-    cache_dir = _get_model_cache_dir()
-    dir_name = "models--" + repo_id.replace("/", "--")
-    model_dir = cache_dir / dir_name
-    if not model_dir.exists():
-        return False
-    snapshots = model_dir / "snapshots"
-    return snapshots.exists() and any(snapshots.iterdir())
+    """已下载判定：以魔搭下载目录的完整性标记为准。"""
+    from asr_service.services import model_source
+
+    return model_source.is_downloaded(repo_id)
 
 
 def _get_model_path(repo_id: str) -> str | None:
-    cache_dir = _get_model_cache_dir()
-    dir_name = "models--" + repo_id.replace("/", "--")
-    model_dir = cache_dir / dir_name
-    if model_dir.exists():
-        return str(model_dir)
-    return None
+    from asr_service.services import model_source
+
+    return model_source.local_path(repo_id)
 
 
 def _get_model_downloaded_bytes(repo_id: str) -> int:
-    cache_dir = _get_model_cache_dir()
-    dir_name = "models--" + repo_id.replace("/", "--")
-    model_dir = cache_dir / dir_name
-    if not model_dir.exists():
+    from asr_service.services import model_source
+
+    ms_dir = model_source.ms_model_dir(repo_id)
+    if not ms_dir.exists():
         return 0
-    total = 0
-    for f in model_dir.rglob("*"):
-        if f.is_file():
-            total += f.stat().st_size
-    return total
+    return sum(f.stat().st_size for f in ms_dir.rglob("*") if f.is_file())
 
 
 @router.get("/models", response_model=list[EmbeddingModelInfo])
@@ -194,25 +173,10 @@ async def _do_download(key: str, repo_id: str):
     }
 
     def _download():
-        from huggingface_hub import snapshot_download
+        # 统一走 ModelScope 国内源（repo_id 与 HF 同名同组织）
+        from asr_service.services import model_source
 
-        hf_token = os.environ.get("HF_TOKEN") or os.environ.get(
-            "HUGGING_FACE_HUB_TOKEN"
-        )
-        hf_endpoint = os.environ.get("HF_ENDPOINT")
-        cache_dir = str(_get_model_cache_dir())
-
-        kwargs: dict = {"repo_id": repo_id, "token": hf_token or None}
-        kwargs["cache_dir"] = cache_dir
-        if hf_endpoint:
-            kwargs["endpoint"] = hf_endpoint
-
-        logger.info(
-            "Downloading embedding model %s to %s (mirror=%s)...",
-            repo_id, cache_dir, hf_endpoint or "default",
-        )
-        snapshot_download(**kwargs)
-        logger.info("Embedding model %s downloaded successfully", repo_id)
+        model_source.download_sync(repo_id)
 
     try:
         await asyncio.to_thread(_download)

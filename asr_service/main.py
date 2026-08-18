@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 import logging
+import warnings
 
 # Configure logging to show INFO level messages
 logging.basicConfig(
@@ -7,6 +8,14 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[logging.StreamHandler()]
 )
+
+# 音频统一以内存 waveform 传入 pyannote，不需要 torchcodec 解码，
+# 压掉它 import 时的整页告警
+warnings.filterwarnings("ignore", message="(?s).*torchcodec.*")
+
+# faster-whisper 在探测未下载的模型时会刷 WARNING（离线模式下必然触发），
+# 只保留 ERROR 级别
+logging.getLogger("faster_whisper").setLevel(logging.ERROR)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

@@ -96,7 +96,7 @@
     "noProjects": "No meetings yet",
     "deleteConfirm": "Are you sure? Subfolders and meetings will also be deleted.",
     "deleteConfirmMeeting": "Are you sure you want to delete this meeting?",
-    "searchPlaceholder": "Search transcripts...",
+    "searchPlaceholder": "Search all meeting transcripts...",
     "noResults": "No results",
     "rootLevel": "Root",
     "maxDepthReached": "Maximum folder depth reached",

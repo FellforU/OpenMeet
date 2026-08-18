@@ -1,5 +1,21 @@
 """Tests for the engines listing endpoint."""
 
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from asr_service.engines.whisper_engine import WhisperEngine
+
+
+@pytest.fixture(autouse=True)
+def _mock_whisper_download():
+    """下载端点会派生后台任务，必须在整个测试期间保持 mock，
+    否则任务在 with patch 退出后执行会触发真实网络下载。"""
+    with patch.object(
+        WhisperEngine, "download_model", new=AsyncMock(return_value="/fake")
+    ):
+        yield
+
 
 async def test_list_engines(client):
     """GET /engines returns all available engines."""

@@ -21,7 +21,8 @@ logger = logging.getLogger(__name__)
 # Smaller chunks generate faster per request and run concurrently
 # (see _MAX_CONCURRENT_CHUNKS), so a long meeting is corrected in
 # parallel instead of one multi-minute serial generation.
-_CHUNK_SIZE = 8000
+# 30 分钟中文会议约 4-5k 字 → 2 个并发 chunk
+_CHUNK_SIZE = 3000
 
 # Concurrent LLM requests for correction chunks
 _MAX_CONCURRENT_CHUNKS = 4
@@ -123,8 +124,9 @@ class LLMCorrector:
                     ci + 1, len(chunks), len(chunk_map),
                 )
             except Exception as e:
+                # %r so timeout-type exceptions with empty str() stay readable
                 logger.warning(
-                    "LLM correction chunk %d/%d failed: %s",
+                    "LLM correction chunk %d/%d failed: %r",
                     ci + 1, len(chunks), e,
                 )
                 # Skip failed chunk, keep original text

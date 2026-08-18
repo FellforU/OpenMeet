@@ -42,6 +42,7 @@ class JobResponse(BaseModel):
     model_size: str
     language: Optional[str]
     progress: float
+    pipeline_step: Optional[str] = None
     segment_count: int
     error: Optional[str]
 
@@ -71,6 +72,7 @@ def _job_to_response(job: TranscriptionJob) -> JobResponse:
         model_size=job.model_size,
         language=job.language,
         progress=job.progress,
+        pipeline_step=job.pipeline_step,
         segment_count=len(job.segments),
         error=job.error,
     )
@@ -213,20 +215,25 @@ class ReprocessRequest(BaseModel):
     num_speakers: Optional[int] = None
 
 
-class ReprocessResponse(BaseModel):
-    segments: list[SegmentResponse]
-    embeddings: Optional[list[Optional[list[float]]]] = None
+class ReprocessStartResponse(BaseModel):
+    job_id: str
 
 
-@router.post("/reprocess", response_model=ReprocessResponse)
+@router.post("/reprocess", response_model=ReprocessStartResponse)
 async def reprocess_segments(req: ReprocessRequest):
     """Run post-processing pipeline on existing segments.
 
-    Creates a temporary job, runs the full pipeline, and returns
-    processed segments. Does not persist the job.
+    注册一个临时 job 并在后台执行流水线，立即返回 job_id。
+    前端轮询 GET /jobs/{id} 获取 pipeline_step 进度，
+    完成（status=ready）后经 GET /jobs/{id}/result 取回结果。
     """
+    import asyncio
+    import logging
     import os
     from asr_service.models.job import Segment
+
+    logger = logging.getLogger(__name__)
+    manager = get_manager()
 
     # Validate audio path if provided
     audio_path = None
@@ -237,8 +244,8 @@ async def reprocess_segments(req: ReprocessRequest):
             if ext in ALLOWED_AUDIO_EXTENSIONS:
                 audio_path = resolved
 
-    # Build temporary job
-    job = TranscriptionJob(engine=req.engine, language=req.language or "zh")
+    # Register job with manager so status/result endpoints can find it
+    job = manager.create_job(engine=req.engine, language=req.language or "zh")
     job.status = JobStatus.COMPLETED
     job.audio_path = audio_path
     job.segments = [
@@ -256,29 +263,21 @@ async def reprocess_segments(req: ReprocessRequest):
     if req.num_speakers is not None:
         config.num_speakers = req.num_speakers
     pipeline = PostProcessingPipeline(config=config)
-    try:
-        await pipeline.run(job)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Post-processing failed: {str(e)}",
-        )
-    finally:
-        await pipeline.close()
 
-    return ReprocessResponse(
-        segments=[
-            SegmentResponse(
-                start=s.start,
-                end=s.end,
-                text=s.text,
-                speaker=s.speaker,
-                confidence=s.confidence,
-            )
-            for s in job.segments
-        ],
-        embeddings=getattr(job, "embeddings", None),
-    )
+    async def _run():
+        try:
+            await pipeline.run(job)
+        except Exception as e:
+            logger.warning("Reprocess pipeline failed: %s", e)
+            # 保留已处理到的 segments，标记 READY 让前端取回并提示错误
+            job.error = f"Post-processing failed: {e}"
+            job.pipeline_step = None
+            job.status = JobStatus.READY
+        finally:
+            await pipeline.close()
+
+    asyncio.create_task(_run())
+    return ReprocessStartResponse(job_id=job.id)
 
 
 @router.put("/{job_id}/pause", response_model=JobResponse)

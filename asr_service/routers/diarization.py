@@ -1,22 +1,16 @@
 """Diarization model download and management endpoints.
 
-Handles pyannote speaker-diarization-3.1 model download, status checking,
-and cache management. The model includes sub-models:
-- pyannote/segmentation-3.0 (~17MB)
-- pyannote/wespeaker-voxceleb-resnet34-LM (~65MB)
+下载统一走 ModelScope（魔搭）国内源的 community-1 仓库——自包含、免 Token、
+免网页协议。
 """
 
 import asyncio
 import logging
-import os
 import time
 from enum import Enum
-from pathlib import Path
 
 from fastapi import APIRouter
 from pydantic import BaseModel
-
-from asr_service import config
 
 logger = logging.getLogger(__name__)
 
@@ -26,15 +20,11 @@ router = APIRouter(prefix="/diarization", tags=["diarization"])
 _download_status: dict = {}
 _download_task: asyncio.Task | None = None
 
-# HuggingFace repo IDs that make up the pyannote pipeline
-PYANNOTE_REPOS = [
-    "pyannote/speaker-diarization-3.1",
-    "pyannote/segmentation-3.0",
-    "hbredin/wespeaker-voxceleb-resnet34-LM",
-]
+# Primary pipeline (self-contained repo, 魔搭上无 gate)
+PYANNOTE_PIPELINE = "pyannote/speaker-diarization-community-1"
 
-# Approximate total size in bytes (segmentation ~17MB + wespeaker ~65MB + config)
-PYANNOTE_ESTIMATED_SIZE = 85 * 1024 * 1024
+# Approximate total size in bytes (community-1 实测约 32MB)
+PYANNOTE_ESTIMATED_SIZE = 35 * 1024 * 1024
 
 
 class DownloadPhase(str, Enum):
@@ -54,56 +44,21 @@ class PyannoteStatus(BaseModel):
     path: str | None = None
 
 
-def _get_pyannote_cache_dir() -> Path | None:
-    """Get the HuggingFace cache directory where pyannote models are stored."""
-    cache_dir = config.get_model_cache_dir()
-    if cache_dir:
-        return Path(cache_dir)
-    # Fallback to default HF cache
-    return Path.home() / ".cache" / "huggingface" / "hub"
-
-
 def _is_pyannote_downloaded() -> bool:
-    """Check if pyannote speaker-diarization-3.1 is cached locally."""
-    cache_dir = _get_pyannote_cache_dir()
-    if not cache_dir or not cache_dir.exists():
-        return False
+    """Check if the pyannote pipeline is fully downloaded (ModelScope dir)."""
+    from asr_service.services import model_source
 
-    # Check for the main pipeline config and sub-models
-    required_dirs = [
-        "models--pyannote--speaker-diarization-3.1",
-        "models--pyannote--segmentation-3.0",
-    ]
-    for dir_name in required_dirs:
-        model_dir = cache_dir / dir_name
-        if not model_dir.exists():
-            return False
-        # Check that snapshots exist (model was actually downloaded)
-        snapshots_dir = model_dir / "snapshots"
-        if not snapshots_dir.exists() or not any(snapshots_dir.iterdir()):
-            return False
-
-    return True
+    return model_source.is_downloaded(PYANNOTE_PIPELINE)
 
 
 def _get_downloaded_bytes() -> int:
     """Calculate total bytes of downloaded pyannote model files."""
-    cache_dir = _get_pyannote_cache_dir()
-    if not cache_dir:
-        return 0
+    from asr_service.services import model_source
 
-    total = 0
-    for dir_name in [
-        "models--pyannote--speaker-diarization-3.1",
-        "models--pyannote--segmentation-3.0",
-        "models--hbredin--wespeaker-voxceleb-resnet34-LM",
-    ]:
-        model_dir = cache_dir / dir_name
-        if model_dir.exists():
-            for f in model_dir.rglob("*"):
-                if f.is_file():
-                    total += f.stat().st_size
-    return total
+    ms_dir = model_source.ms_model_dir(PYANNOTE_PIPELINE)
+    if not ms_dir.exists():
+        return 0
+    return sum(f.stat().st_size for f in ms_dir.rglob("*") if f.is_file())
 
 
 async def _do_download():
@@ -117,38 +72,20 @@ async def _do_download():
     }
 
     def _download():
-        hf_token = os.environ.get("HF_TOKEN") or os.environ.get(
-            "HUGGING_FACE_HUB_TOKEN"
-        )
+        # 统一走 ModelScope 国内源：自包含仓库，免 Token 免网页协议
+        from asr_service.services import model_source
 
-        try:
-            from pyannote.audio import Pipeline
-
-            # This downloads all sub-models automatically
-            pipeline = Pipeline.from_pretrained(
-                "pyannote/speaker-diarization-3.1",
-                token=hf_token,
-            )
-            logger.info("pyannote speaker-diarization-3.1 downloaded successfully")
-            return True
-        except ImportError:
-            # pyannote not installed — try direct huggingface_hub download
-            try:
-                from huggingface_hub import snapshot_download
-
-                for repo_id in PYANNOTE_REPOS:
-                    logger.info("Downloading %s...", repo_id)
-                    snapshot_download(
-                        repo_id,
-                        token=hf_token,
-                    )
-                logger.info("All pyannote models downloaded")
-                return True
-            except Exception as e:
-                raise RuntimeError(f"Download failed: {e}") from e
+        model_source.download_sync(PYANNOTE_PIPELINE)
+        return True
 
     try:
         await asyncio.to_thread(_download)
+        # 下载函数正常返回不代表文件齐全（网络中断可能只留下碎片），
+        # 必须验证完整性后才能报告完成
+        if not _is_pyannote_downloaded():
+            raise RuntimeError(
+                "Download incomplete: model files missing after download"
+            )
         _download_status["phase"] = DownloadPhase.COMPLETED
     except Exception as e:
         _download_status["phase"] = DownloadPhase.ERROR
@@ -160,8 +97,11 @@ async def _do_download():
 async def get_pyannote_status():
     """Check if pyannote models are downloaded and get download progress."""
     downloaded = _is_pyannote_downloaded()
-    cache_dir = _get_pyannote_cache_dir()
-    model_path = str(cache_dir / "models--pyannote--speaker-diarization-3.1") if cache_dir and downloaded else None
+    model_path = None
+    if downloaded:
+        from asr_service.services import model_source
+
+        model_path = str(model_source.ms_model_dir(PYANNOTE_PIPELINE))
 
     if _download_status and _download_status.get("phase") == DownloadPhase.DOWNLOADING:
         started_at = _download_status.get("started_at", 0)

@@ -17,9 +17,14 @@
     "step": {
       "loading_model": "正在加载模型",
       "transcribing": "正在转录",
-      "itn": "逆文本正则化",
+      "hallucination": "清理识别幻觉",
+      "itn": "数字格式规范化",
+      "filler": "过滤语气词",
+      "llm_correction": "AI 纠错",
+      "segmentation": "段落划分",
       "punctuation": "添加标点符号",
       "diarizing": "说话人分离",
+      "embedding": "提取声纹",
       "summarizing": "生成摘要"
     }
   },

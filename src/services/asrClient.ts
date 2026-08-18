@@ -15,10 +15,9 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return JSON.parse(resp.body);
 }
 
-export async function startAsrService(cacheDir?: string, hfMirror?: string): Promise<string> {
+export async function startAsrService(cacheDir?: string): Promise<string> {
   return invoke<string>("start_asr_service", {
     cacheDir: cacheDir || null,
-    hfMirror: hfMirror || null,
   });
 }
 
@@ -26,19 +25,11 @@ export async function stopAsrService(): Promise<string> {
   return invoke<string>("stop_asr_service");
 }
 
-export async function restartAsrService(cacheDir?: string, hfMirror?: string): Promise<string> {
+export async function restartAsrService(cacheDir?: string): Promise<string> {
   await stopAsrService();
   // Small delay to allow process to fully terminate
   await new Promise((resolve) => setTimeout(resolve, 500));
-  return startAsrService(cacheDir, hfMirror);
-}
-
-export async function setHfMirror(url: string): Promise<{ status: string }> {
-  return fetchJson(`${ASR_BASE_URL}/config/hf-mirror`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url }),
-  });
+  return startAsrService(cacheDir);
 }
 
 export async function checkAsrHealth(): Promise<{
@@ -63,6 +54,7 @@ export interface JobResponse {
   model_size: string;
   language: string | null;
   progress: number;
+  pipeline_step: string | null;
   segment_count: number;
   error: string | null;
 }
@@ -127,7 +119,13 @@ export interface ReprocessRequest {
   num_speakers?: number;
 }
 
-export interface ReprocessResponse {
+export interface ReprocessStartResponse {
+  job_id: string;
+}
+
+export interface JobResultResponse {
+  id: string;
+  status: string;
   segments: Array<{
     start: number;
     end: number;
@@ -135,17 +133,23 @@ export interface ReprocessResponse {
     speaker: string | null;
     confidence: number | null;
   }>;
-  embeddings?: Array<number[] | null>;
+  summary?: Record<string, unknown> | null;
+  embeddings?: Array<number[] | null> | null;
 }
 
+/** 启动后台重新后处理，返回 job_id；进度经 getJob 轮询，结果经 getJobResult 获取 */
 export async function reprocessSegments(
   req: ReprocessRequest
-): Promise<ReprocessResponse> {
+): Promise<ReprocessStartResponse> {
   return fetchJson(`${ASR_BASE_URL}/jobs/reprocess`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
   });
+}
+
+export async function getJobResult(jobId: string): Promise<JobResultResponse> {
+  return fetchJson(`${ASR_BASE_URL}/jobs/${jobId}/result`);
 }
 
 export interface EngineInfo {

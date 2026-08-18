@@ -3,7 +3,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from ..config import set_app_data_dir, set_cache_dir, set_hf_mirror, get_lance_path, get_sqlite_path
+from ..config import set_app_data_dir, set_cache_dir, get_lance_path, get_sqlite_path
 
 router = APIRouter(tags=["config"])
 
@@ -40,10 +40,6 @@ class EmbeddingConfig(BaseModel):
     api_url: str | None = None
 
 
-class HfMirrorRequest(BaseModel):
-    url: str = ""
-
-
 class LLMConfig(BaseModel):
     provider: str = ""
     model: str = ""
@@ -71,8 +67,6 @@ class ConfigRequest(BaseModel):
     llm_config: LLMConfig | None = None
     pipeline_config: PipelineToggle | None = None
     cache_dir: str | None = None
-    hf_mirror: str | None = None
-    hf_token: str | None = None
 
 
 class ConfigResponse(BaseModel):
@@ -87,15 +81,6 @@ async def set_config(req: ConfigRequest):
 
     # Apply cache directory (empty string resets to default)
     set_cache_dir(req.cache_dir or None)
-
-    # Apply HuggingFace mirror
-    if req.hf_mirror is not None:
-        set_hf_mirror(req.hf_mirror or None)
-
-    # Apply HuggingFace token (for pyannote model download)
-    if req.hf_token:
-        import os
-        os.environ["HF_TOKEN"] = req.hf_token
 
     # Apply embedding configuration if provided
     if req.embedding_config and _embedder_ref:
@@ -142,10 +127,3 @@ async def set_config(req: ConfigRequest):
         sqlite_path=get_sqlite_path(),
         lance_path=get_lance_path(),
     )
-
-
-@router.post("/config/hf-mirror")
-async def set_hf_mirror_endpoint(req: HfMirrorRequest):
-    """Set HuggingFace mirror URL at runtime."""
-    set_hf_mirror(req.url or None)
-    return {"status": "ok", "hf_mirror": req.url or None}

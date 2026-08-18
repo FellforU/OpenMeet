@@ -1,14 +1,13 @@
-"""ASR engine for user-provided HuggingFace / ModelScope models.
+"""ASR engine for user-provided models (ModelScope repos).
 
 Uses ``transformers.pipeline("automatic-speech-recognition")`` to load and
 run any compatible model the user registers via the frontend.
+下载统一走 ModelScope（魔搭）国内源，model_id 填魔搭仓库 ID。
 """
 
 import asyncio
 import logging
-import os
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass
 from typing import Optional, Callable
 
 from asr_service.engines.base import AudioInput, EngineCapabilities
@@ -21,37 +20,10 @@ logger = logging.getLogger(__name__)
 class CustomModelConfig:
     id: str                        # unique key (used as model_size)
     name: str                      # display name
-    platform: str                  # "huggingface" | "modelscope"
-    model_id: str                  # repo ID (e.g. "openai/whisper-large-v3-turbo")
-    mirror_url: str | None = None  # per-model mirror (overrides global)
+    platform: str = "modelscope"   # 保留字段（历史配置兼容），一律按魔搭处理
+    model_id: str = ""             # ModelScope repo ID (e.g. "Qwen/Qwen3-ASR-0.6B")
+    mirror_url: str | None = None  # 保留字段（不再使用）
     vram_gb: float = 2.0           # estimated VRAM in GB
-
-
-def _get_hf_cache() -> Path:
-    """Return the HuggingFace cache directory, respecting runtime config."""
-    from asr_service.config import get_model_cache_dir
-    runtime_dir = get_model_cache_dir()
-    if runtime_dir:
-        return Path(runtime_dir).resolve()
-    env_cache = os.environ.get("HF_HUB_CACHE")
-    if env_cache:
-        return Path(env_cache).resolve()
-    env_home = os.environ.get("HF_HOME")
-    if env_home:
-        return Path(env_home).resolve() / "hub"
-    return Path.home() / ".cache" / "huggingface" / "hub"
-
-
-def _get_ms_cache() -> Path:
-    """Return the ModelScope cache directory."""
-    from asr_service.config import get_model_cache_dir
-    runtime_dir = get_model_cache_dir()
-    if runtime_dir:
-        return Path(runtime_dir).resolve()
-    env_cache = os.environ.get("MODELSCOPE_CACHE")
-    if env_cache:
-        return Path(env_cache).resolve()
-    return Path.home() / ".cache" / "modelscope"
 
 
 class CustomEngine:
@@ -184,108 +156,30 @@ class CustomEngine:
     # Download / path helpers
     # ------------------------------------------------------------------
 
-    def _get_hf_cache_dir(self, model_size: str) -> Path | None:
-        """Return the HF cache directory for a given model config."""
-        cfg = self._configs.get(model_size)
-        if not cfg or cfg.platform != "huggingface":
-            return None
-        return _get_hf_cache() / f"models--{cfg.model_id.replace('/', '--')}"
-
-    def _get_ms_cache_dir(self, model_size: str) -> Path | None:
-        """Return the ModelScope cache directory for a given model config."""
-        cfg = self._configs.get(model_size)
-        if not cfg or cfg.platform != "modelscope":
-            return None
-        return _get_ms_cache() / cfg.model_id.replace("/", os.sep)
-
     def is_model_downloaded(self, model_size: str) -> bool:
-        """Check if model files exist in the cache."""
         cfg = self._configs.get(model_size)
         if not cfg:
             return False
+        from asr_service.services import model_source
 
-        if cfg.platform == "huggingface":
-            cache_dir = self._get_hf_cache_dir(model_size)
-            if not cache_dir:
-                return False
-            snapshots_dir = cache_dir / "snapshots"
-            if not snapshots_dir.exists():
-                return False
-            try:
-                for snapshot in snapshots_dir.iterdir():
-                    if not snapshot.is_dir():
-                        continue
-                    has_config = (snapshot / "config.json").exists()
-                    has_weights = (
-                        any(snapshot.glob("*.safetensors"))
-                        or any(snapshot.glob("*.bin"))
-                    )
-                    if has_config or has_weights:
-                        return True
-            except OSError:
-                pass
-            return False
-
-        if cfg.platform == "modelscope":
-            cache_dir = self._get_ms_cache_dir(model_size)
-            if not cache_dir or not cache_dir.exists():
-                return False
-            has_config = (cache_dir / "config.json").exists() or (cache_dir / "configuration.json").exists()
-            has_weights = (
-                any(cache_dir.glob("*.safetensors"))
-                or any(cache_dir.glob("*.bin"))
-            )
-            return has_config or has_weights
-
-        return False
+        return model_source.is_downloaded(cfg.model_id)
 
     def get_model_path(self, model_size: str) -> str | None:
-        """Return the local path for a downloaded model."""
         cfg = self._configs.get(model_size)
         if not cfg:
             return None
+        from asr_service.services import model_source
 
-        if cfg.platform == "huggingface":
-            cache_dir = self._get_hf_cache_dir(model_size)
-            if not cache_dir:
-                return None
-            snapshots_dir = cache_dir / "snapshots"
-            if snapshots_dir.exists():
-                try:
-                    subdirs = sorted(
-                        snapshots_dir.iterdir(),
-                        key=lambda p: p.stat().st_mtime,
-                        reverse=True,
-                    )
-                    if subdirs:
-                        return str(subdirs[0])
-                except OSError:
-                    pass
-            return None
-
-        if cfg.platform == "modelscope":
-            cache_dir = self._get_ms_cache_dir(model_size)
-            if cache_dir and cache_dir.exists():
-                return str(cache_dir)
-            return None
-
-        return None
+        return model_source.local_path(cfg.model_id)
 
     def get_download_dir(self, model_size: str) -> str | None:
         """Return the expected download directory (even while downloading)."""
         cfg = self._configs.get(model_size)
         if not cfg:
             return None
+        from asr_service.services import model_source
 
-        if cfg.platform == "huggingface":
-            d = self._get_hf_cache_dir(model_size)
-            return str(d) if d else None
-
-        if cfg.platform == "modelscope":
-            d = self._get_ms_cache_dir(model_size)
-            return str(d) if d else None
-
-        return None
+        return str(model_source.ms_model_dir(cfg.model_id))
 
     def estimated_size_bytes(self, model_size: str) -> int:
         """Rough estimate: vram_gb * 2 * 1 GB."""
@@ -295,36 +189,10 @@ class CustomEngine:
         return int(cfg.vram_gb * 2 * 1_073_741_824)
 
     async def download_model(self, model_size: str) -> str:
-        """Download model files without loading into memory."""
+        """Download model files without loading into memory (via ModelScope)."""
         cfg = self._configs.get(model_size)
         if not cfg:
             raise ValueError(f"Unknown custom model: {model_size}")
+        from asr_service.services import model_source
 
-        if cfg.platform == "huggingface":
-            cache_dir = str(_get_hf_cache())
-            mirror_url = cfg.mirror_url or None
-
-            def _download_hf():
-                from huggingface_hub import snapshot_download
-                kwargs: dict = {
-                    "repo_id": cfg.model_id,
-                    "cache_dir": cache_dir,
-                }
-                if mirror_url:
-                    kwargs["endpoint"] = mirror_url
-                return snapshot_download(**kwargs)
-
-            path = await asyncio.to_thread(_download_hf)
-            return str(path)
-
-        if cfg.platform == "modelscope":
-            cache_dir = str(_get_ms_cache())
-
-            def _download_ms():
-                from modelscope.hub.snapshot_download import snapshot_download
-                return snapshot_download(cfg.model_id, cache_dir=cache_dir)
-
-            path = await asyncio.to_thread(_download_ms)
-            return str(path)
-
-        raise ValueError(f"Unsupported platform: {cfg.platform}")
+        return await model_source.download(cfg.model_id)

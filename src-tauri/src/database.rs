@@ -900,6 +900,65 @@ pub fn get_app_data_dir(app: AppHandle) -> Result<String, String> {
 }
 
 // ---------------------------------------------------------------------------
+// Full-text search across all persisted meeting transcripts
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SegmentSearchResult {
+    pub project_id: String,
+    pub project_title: String,
+    pub start_time: f64,
+    pub text: String,
+    pub speaker: Option<String>,
+}
+
+#[tauri::command]
+pub fn db_search_segments(
+    state: State<DatabaseState>,
+    query: String,
+    limit: Option<i64>,
+) -> Result<Vec<SegmentSearchResult>, String> {
+    let q = query.trim();
+    if q.is_empty() {
+        return Ok(Vec::new());
+    }
+    let pattern = format!(
+        "%{}%",
+        q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+    );
+    let limit = limit.unwrap_or(50).clamp(1, 200);
+
+    let conn = state.conn.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT s.project_id, p.title, s.start_time, s.text, s.speaker
+             FROM segments s
+             JOIN projects p ON p.id = s.project_id
+             WHERE s.text LIKE ?1 ESCAPE '\\'
+             ORDER BY p.updated_at DESC, s.idx ASC
+             LIMIT ?2",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let results = stmt
+        .query_map(params![pattern, limit], |row| {
+            Ok(SegmentSearchResult {
+                project_id: row.get(0)?,
+                project_title: row.get(1)?,
+                start_time: row.get(2)?,
+                text: row.get(3)?,
+                speaker: row.get(4)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(results)
+}
+
+// ---------------------------------------------------------------------------
 // Voiceprint data structures
 // ---------------------------------------------------------------------------
 
@@ -1342,12 +1401,11 @@ pub fn voiceprint_match(
             let updated_blob = if old_blob.is_empty() || old_blob.len() / 4 != new_avg.len() {
                 // Empty or dimension mismatch: replace entirely with new embedding
                 f32_vec_to_blob(&new_avg)
-            } else if count >= max_count {
-                blend_embeddings(&old_blob, &new_avg, 0.95, 0.05)
             } else {
-                let w_old = count as f32 / (count as f32 + 1.0);
-                let w_new = 1.0 / (count as f32 + 1.0);
-                blend_embeddings(&old_blob, &new_avg, w_old, w_new)
+                // 惯性上限：历史样本再多，新样本权重也不低于 ~5%，
+                // 让早期低质量向量能被后续正确样本逐渐修正
+                let n = count.min(20) as f32;
+                blend_embeddings(&old_blob, &new_avg, n / (n + 1.0), 1.0 / (n + 1.0))
             };
             let new_count = (count + 1).min(max_count);
             tx.execute(
@@ -1390,12 +1448,10 @@ pub fn voiceprint_passive_learn(
 
     let max_count = 100;
 
-    let updated_blob = if count >= max_count {
-        blend_embeddings(&old_blob, &new_embedding, 0.95, 0.05)
-    } else {
-        let w_old = count as f32 / (count as f32 + 1.0);
-        let w_new = 1.0 / (count as f32 + 1.0);
-        blend_embeddings(&old_blob, &new_embedding, w_old, w_new)
+    // 惯性上限：与 voiceprint_match 内的被动学习保持一致
+    let updated_blob = {
+        let n = count.min(20) as f32;
+        blend_embeddings(&old_blob, &new_embedding, n / (n + 1.0), 1.0 / (n + 1.0))
     };
 
     let new_count = (count + 1).min(max_count);

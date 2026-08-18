@@ -22,13 +22,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../ui/select";
 import { useSettingsStore, type CustomASRModel } from "../../stores/settingsStore";
 import { useEngineStore } from "../../stores/engineStore";
 import * as api from "../../services/asrClient";
@@ -47,7 +40,7 @@ function formatBytes(bytes: number): string {
 }
 
 interface AddFormState {
-  platform: "huggingface" | "modelscope";
+  platform: "modelscope";
   modelId: string;
   mirrorUrl: string;
   vramGb: number;
@@ -57,8 +50,9 @@ interface AddFormState {
   error: string;
 }
 
+// 自定义模型统一走魔搭（ModelScope）仓库
 const initialAddForm: AddFormState = {
-  platform: "huggingface",
+  platform: "modelscope",
   modelId: "",
   mirrorUrl: "",
   vramGb: 2,
@@ -90,16 +84,7 @@ export function CustomModelDialog({
   const [showAddForm, setShowAddForm] = useState(false);
   const [unloadingKey, setUnloadingKey] = useState<string | null>(null);
 
-  // Compute default HF mirror URL from system settings
-  const defaultHfMirror =
-    general.enableHfMirror && general.hfMirror
-      ? general.hfMirror
-      : "https://huggingface.co";
-
-  const [form, setForm] = useState<AddFormState>({
-    ...initialAddForm,
-    mirrorUrl: defaultHfMirror,
-  });
+  const [form, setForm] = useState<AddFormState>({ ...initialAddForm });
 
   const customModels = general.customASRModels ?? [];
 
@@ -163,7 +148,7 @@ export function CustomModelDialog({
     const updated = [...customModels, newModel];
     await setGeneral({ customASRModels: updated });
     await pushModelsToBackend(updated);
-    setForm({ ...initialAddForm, mirrorUrl: defaultHfMirror });
+    setForm({ ...initialAddForm });
     setShowAddForm(false);
     toast.success(t("asr.custom.addSuccess"));
   };
@@ -246,7 +231,7 @@ export function CustomModelDialog({
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{model.name}</span>
                       <Badge variant="outline" className="text-[10px]">
-                        {model.platform === "huggingface" ? "HF" : "MS"}
+                        MS
                       </Badge>
                       {isLoaded && (
                         <Badge variant="outline" className="border-green-300 text-green-600">
@@ -416,38 +401,11 @@ export function CustomModelDialog({
           <div className="mt-3 space-y-3 rounded-lg border border-dashed border-border p-3">
             <div className="flex items-center gap-2">
               <label className="w-20 shrink-0 text-sm font-medium">
-                {t("asr.custom.platform")}
-              </label>
-              <Select
-                value={form.platform}
-                onValueChange={(v) => {
-                  const platform = v as "huggingface" | "modelscope";
-                  setForm((f) => ({
-                    ...f,
-                    platform,
-                    mirrorUrl: platform === "huggingface" ? defaultHfMirror : "",
-                    validated: false,
-                    error: "",
-                  }));
-                }}
-              >
-                <SelectTrigger className="flex-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="huggingface">HuggingFace</SelectItem>
-                  <SelectItem value="modelscope">ModelScope</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <label className="w-20 shrink-0 text-sm font-medium">
                 {t("asr.custom.modelId")}
               </label>
               <Input
                 className="flex-1"
-                placeholder="openai/whisper-large-v3-turbo"
+                placeholder="Qwen/Qwen3-ASR-0.6B"
                 value={form.modelId}
                 onChange={(e) =>
                   setForm((f) => ({
@@ -459,22 +417,6 @@ export function CustomModelDialog({
                 }
               />
             </div>
-
-            {form.platform === "huggingface" && (
-              <div className="flex items-center gap-2">
-                <label className="w-20 shrink-0 text-sm font-medium">
-                  {t("asr.custom.mirror")}
-                </label>
-                <Input
-                  className="flex-1"
-                  placeholder="https://huggingface.co"
-                  value={form.mirrorUrl}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, mirrorUrl: e.target.value }))
-                  }
-                />
-              </div>
-            )}
 
             <div className="flex items-center gap-2">
               <label className="w-20 shrink-0 text-sm font-medium">
@@ -511,7 +453,7 @@ export function CustomModelDialog({
                 size="sm"
                 onClick={() => {
                   setShowAddForm(false);
-                  setForm({ ...initialAddForm, mirrorUrl: defaultHfMirror });
+                  setForm({ ...initialAddForm });
                 }}
               >
                 {t("common:action.cancel")}

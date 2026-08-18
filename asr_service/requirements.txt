@@ -15,8 +15,11 @@ opencc==1.2.0
 # FunASR engines (Paraformer, FSMN-VAD, CT-Transformer, CAMPPlus)
 funasr>=1.2,<2.0
 
-# Qwen3-ASR engine
-qwen-asr>=0.3,<1.0
+# Qwen3-ASR engine (0.0.6 起含 Qwen3ForcedAligner)
+qwen-asr>=0.0.6,<1.0
+
+# OpenAI Whisper API engine (cloud, optional)
+openai>=1.0,<3.0
 
 # VAD / Diarization / ITN (optional, lazy-loaded with try-except)
 torch>=2.0,<3.0

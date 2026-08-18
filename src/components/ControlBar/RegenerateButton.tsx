@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Loader2, Sparkles, FileText, RefreshCw, Wand2, Users } from "lucide-react";
+import { Loader2, Sparkles, FileText, RefreshCw, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
 import {
@@ -8,9 +8,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  DropdownMenuSeparator,
-  DropdownMenuLabel,
 } from "../ui/dropdown-menu";
+import { SpeakerCountPrompt } from "./SpeakerCountDialog";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranscriptionStore } from "../../stores/transcriptionStore";
 import { useProjectStore } from "../../stores/projectStore";
@@ -18,8 +17,8 @@ import { useEngineStore } from "../../stores/engineStore";
 import { useRecordingStore } from "../../stores/recordingStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { generateMeetingSummary } from "../../services/llmClient";
-import { reprocessSegments } from "../../services/asrClient";
-import type { Segment, VoiceprintMatchResult } from "../../types";
+import { reprocessSegments, getJob, getJobResult } from "../../services/asrClient";
+import type { JobStatus, PipelineStep, Segment, VoiceprintMatchResult } from "../../types";
 
 export function RegenerateButton() {
   const { t } = useTranslation("workspace");
@@ -37,7 +36,7 @@ export function RegenerateButton() {
   const { selectedEngine, selectedModelSize, selectedLanguage } = useEngineStore();
 
   const [generating, setGenerating] = useState<"summary" | "transcript" | "postprocess" | null>(null);
-  const [numSpeakersInput, setNumSpeakersInput] = useState<string>("");
+  const [speakerPromptOpen, setSpeakerPromptOpen] = useState(false);
 
   const isJobBusy = jobStatus === "running" || jobStatus === "post_processing";
   const isRecording = recordingStatus !== "idle";
@@ -85,23 +84,17 @@ export function RegenerateButton() {
     }
   };
 
-  const handleReprocess = async () => {
+  const handleReprocess = async (numSpeakers?: number) => {
     if (segments.length === 0) return;
     setGenerating("postprocess");
-    try {
-      // Use user-specified speaker count, or auto-detect from unique speakers
-      const userNumSpeakers = numSpeakersInput ? parseInt(numSpeakersInput, 10) : NaN;
-      let numSpeakers: number | undefined;
-      if (!isNaN(userNumSpeakers) && userNumSpeakers >= 1) {
-        numSpeakers = userNumSpeakers;
-      } else {
-        const uniqueSpeakers = new Set(
-          segments.map((s) => s.speaker).filter(Boolean)
-        );
-        numSpeakers = uniqueSpeakers.size >= 2 ? uniqueSpeakers.size : undefined;
-      }
 
-      const result = await reprocessSegments({
+    // 把后处理进度同步到 store，转录页的进度框会显示当前步骤
+    const setJobState = (patch: { status?: JobStatus; pipelineStep?: PipelineStep }) =>
+      useTranscriptionStore.setState((s) => ({ job: { ...s.job, ...patch } }));
+
+    try {
+      // numSpeakers 来自弹窗输入；跳过时为 undefined，由模型自动识别
+      const { job_id: reprocessJobId } = await reprocessSegments({
         segments: segments.map((s) => ({
           start: s.start,
           end: s.end,
@@ -115,6 +108,29 @@ export function RegenerateButton() {
         num_speakers: numSpeakers,
       });
 
+      // 轮询进度直到完成（上限 30 分钟）
+      setJobState({ status: "post_processing", pipelineStep: null });
+      let jobError: string | null = null;
+      for (let i = 0; i < 1800; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const jobResp = await getJob(reprocessJobId);
+        setJobState({
+          pipelineStep: (jobResp.pipeline_step as PipelineStep) ?? null,
+        });
+        if (jobResp.status === "ready" || jobResp.status === "completed") {
+          jobError = jobResp.error;
+          break;
+        }
+        if (jobResp.status === "cancelled") {
+          throw new Error(jobResp.error || "post-processing cancelled");
+        }
+      }
+      if (jobError) {
+        throw new Error(jobError);
+      }
+
+      const result = await getJobResult(reprocessJobId);
+
       const newSegments: Segment[] = result.segments.map((s) => ({
         id: crypto.randomUUID(),
         start: s.start,
@@ -124,8 +140,11 @@ export function RegenerateButton() {
         confidence: s.confidence ?? null,
       }));
 
-      // Voiceprint matching with returned embeddings
-      const embeddings: (number[] | null)[] = result.embeddings || [];
+      // Voiceprint matching with returned embeddings.
+      // 先按说话人聚合，避免逐段 embedding 波动导致聚出大量"未知说话人"
+      const { aggregateEmbeddingsBySpeaker } = await import("../../services/embeddingUtils");
+      const rawEmbeddings: (number[] | null)[] = result.embeddings || [];
+      const embeddings = aggregateEmbeddingsBySpeaker(newSegments, rawEmbeddings);
       const hasRealEmbeddings = embeddings.some((e) => e !== null);
       if (hasRealEmbeddings) {
         try {
@@ -193,10 +212,27 @@ export function RegenerateButton() {
       }
 
       toast.success(t("regenerate.postProcessSuccess"));
+
+      // 摘要为空且开启了自动摘要时，重处理后顺带补生成一次
+      const hasSummary = Boolean(useTranscriptionStore.getState().summary);
+      const autoSummary = useSettingsStore.getState().general.autoSummary;
+      if (!hasSummary && autoSummary && activeProjectId && newSegments.length > 0) {
+        try {
+          const transcriptText = newSegments
+            .map((s) => (s.speaker ? `[${s.speaker}] ${s.text}` : s.text))
+            .join("\n");
+          const summaryResult = await generateMeetingSummary(transcriptText);
+          setSummary(summaryResult);
+          await persistSummary(activeProjectId);
+        } catch {
+          toast.warning(t("common:error.summaryFailed", { message: "" }));
+        }
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       toast.error(t("regenerate.postProcessFailed", { message: msg }));
     } finally {
+      setJobState({ status: "idle", pipelineStep: null });
       setGenerating(null);
     }
   };
@@ -218,7 +254,16 @@ export function RegenerateButton() {
   }
 
   return (
-    <DropdownMenu>
+    <>
+      {/* 点击"重新后处理"先弹发言人数量确认，跳过则自动识别 */}
+      <SpeakerCountPrompt
+        open={speakerPromptOpen}
+        onSubmit={(count) => {
+          setSpeakerPromptOpen(false);
+          void handleReprocess(count);
+        }}
+      />
+      <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm" disabled={isBusy}>
           <RefreshCw className="mr-1.5 h-4 w-4" />
@@ -233,7 +278,7 @@ export function RegenerateButton() {
           </DropdownMenuItem>
         )}
         {hasSegments && (
-          <DropdownMenuItem onClick={handleReprocess}>
+          <DropdownMenuItem onClick={() => setSpeakerPromptOpen(true)}>
             <Wand2 className="mr-2 h-4 w-4" />
             {t("regenerate.postProcess")}
           </DropdownMenuItem>
@@ -244,27 +289,8 @@ export function RegenerateButton() {
             {t("regenerate.summary")}
           </DropdownMenuItem>
         )}
-        {hasSegments && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel className="flex items-center gap-2 text-xs font-normal text-muted-foreground">
-              <Users className="h-3.5 w-3.5" />
-              {t("regenerate.numSpeakers")}
-            </DropdownMenuLabel>
-            <div className="px-2 pb-1.5" onPointerDown={(e) => e.stopPropagation()}>
-              <input
-                type="number"
-                min="1"
-                max="20"
-                placeholder={t("regenerate.numSpeakersPlaceholder")}
-                value={numSpeakersInput}
-                onChange={(e) => setNumSpeakersInput(e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
-              />
-            </div>
-          </>
-        )}
       </DropdownMenuContent>
-    </DropdownMenu>
+      </DropdownMenu>
+    </>
   );
 }

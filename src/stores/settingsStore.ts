@@ -35,9 +35,6 @@ interface GeneralConfig {
   asrEngine: string;
   asrModelSize: string;
   cacheDir: string;                 // Root cache directory for models, audio, attachments, etc.
-  enableHfMirror: boolean;         // Whether to use HuggingFace mirror for model downloads
-  hfMirror: string;                // HuggingFace mirror URL (e.g. "https://hf-mirror.com")
-  hfToken: string;                 // HuggingFace token for pyannote model download
   customASRModels: CustomASRModel[]; // User-added custom ASR models
   diarizationThreshold: number;      // Voiceprint matching threshold (0.0-1.0)
   enableSpeechCleaning: boolean;     // Enable filler word cleaning
@@ -106,11 +103,10 @@ const defaultState = {
     asrEngine: "whisper",
     asrModelSize: "base",
     cacheDir: "",
-    enableHfMirror: false,
-    hfMirror: "",
-    hfToken: "",
     customASRModels: [],
-    diarizationThreshold: 0.65,
+    // wespeaker 声纹跨会议同人相似度通常只有 0.4-0.6，0.65 会导致
+    // 已建档的人反复匹配失败、不停新建"未知说话人"
+    diarizationThreshold: 0.5,
     enableSpeechCleaning: true,
     cleaningIntensity: "medium" as const,
     enableSegmentation: true,
@@ -202,13 +198,8 @@ async function persistSettings(state: {
   autoDegradation: boolean;
 }) {
   const encryptedProviders = await encryptProviders(state.llmProviders);
-  // Encrypt sensitive fields in general config
-  const encryptedGeneral = { ...state.general };
-  if (encryptedGeneral.hfToken) {
-    encryptedGeneral.hfToken = await encryptSecret(encryptedGeneral.hfToken);
-  }
   const data = {
-    general: encryptedGeneral,
+    general: { ...state.general },
     llmProviders: encryptedProviders,
     cloudAsr: state.cloudAsr,
     autoDegradation: state.autoDegradation,
@@ -245,11 +236,6 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
           mergedGeneral.cacheDir = data.general.modelCacheDir;
         }
 
-        // Migrate: if hfMirror was set but enableHfMirror doesn't exist, auto-enable
-        if (mergedGeneral.hfMirror && data.general?.enableHfMirror === undefined) {
-          mergedGeneral.enableHfMirror = true;
-        }
-
         // Migrate: old provider-level defaults → new compound key defaults
         if (!mergedGeneral.defaultLLMModel && mergedGeneral.defaultLLMProvider) {
           const provider = mergedGeneral.defaultLLMProvider;
@@ -277,10 +263,6 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         }
 
         const decrypted = await decryptProviders(mergedProviders);
-        // Decrypt sensitive fields in general config
-        if (mergedGeneral.hfToken) {
-          mergedGeneral.hfToken = await decryptSecret(mergedGeneral.hfToken);
-        }
         set({
           general: mergedGeneral,
           llmProviders: decrypted,

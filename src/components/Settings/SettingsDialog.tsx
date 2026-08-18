@@ -81,8 +81,7 @@ function GeneralSettings() {
     toast.success(t("general.cacheDir"));
     // Restart ASR service with new cache directory
     try {
-      const g = useSettingsStore.getState().general;
-      await restartAsrService(pendingNewDir, (g.enableHfMirror && g.hfMirror) || undefined);
+      await restartAsrService(pendingNewDir);
     } catch {
       toast.warning(t("general.restartAsrFailed"));
     }
@@ -100,8 +99,7 @@ function GeneralSettings() {
       toast.success(t("general.migrateSuccess") + ` (${result})`);
       // Restart ASR service with new cache directory
       try {
-        const { hfMirror } = useSettingsStore.getState().general;
-        await restartAsrService(pendingNewDir, hfMirror || undefined);
+        await restartAsrService(pendingNewDir);
       } catch {
         toast.warning(t("general.restartAsrFailed"));
       }
@@ -204,72 +202,6 @@ function GeneralSettings() {
             {t("general.defaultCachePath", { path: defaultCachePath })}
           </button>
         )}
-      </div>
-
-      {/* HuggingFace Mirror */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <div>
-            <label className="text-sm font-medium">
-              {t("general.hfMirror")}
-            </label>
-            <p className="text-xs text-muted-foreground">
-              {t("general.hfMirrorDesc")}
-            </p>
-          </div>
-          <Switch
-            checked={general.enableHfMirror}
-            onCheckedChange={async (v) => {
-              await setGeneral({ enableHfMirror: v });
-              // Restart ASR service so HF_ENDPOINT env var takes effect for downloads
-              try {
-                const g = useSettingsStore.getState().general;
-                await restartAsrService(
-                  g.cacheDir || undefined,
-                  (v && g.hfMirror) || undefined,
-                );
-              } catch {
-                // ASR service may not be running yet
-              }
-            }}
-          />
-        </div>
-        {general.enableHfMirror && (
-          <Input
-            value={general.hfMirror}
-            placeholder="https://hf-mirror.com"
-            className="text-xs"
-            onChange={(e) => setGeneral({ hfMirror: e.target.value })}
-            onBlur={async () => {
-              try {
-                const g = useSettingsStore.getState().general;
-                await restartAsrService(
-                  g.cacheDir || undefined,
-                  g.hfMirror || undefined,
-                );
-              } catch {
-                // ASR service may not be running yet
-              }
-            }}
-          />
-        )}
-      </div>
-
-      {/* HuggingFace Token */}
-      <div className="space-y-2">
-        <label className="text-sm font-medium">
-          {t("general.hfToken")}
-        </label>
-        <p className="text-xs text-muted-foreground">
-          {t("general.hfTokenDesc")}
-        </p>
-        <Input
-          type="password"
-          value={general.hfToken}
-          placeholder={t("general.hfTokenPlaceholder")}
-          className="text-xs font-mono"
-          onChange={(e) => setGeneral({ hfToken: e.target.value })}
-        />
       </div>
 
       {/* Post-processing Settings */}

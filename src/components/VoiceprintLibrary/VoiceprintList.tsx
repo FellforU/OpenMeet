@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { Pencil, Trash2, Merge, User } from "lucide-react";
+import { Pencil, Trash2, Merge, AudioLines } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
 import { cn } from "@/lib/utils";
@@ -16,6 +16,7 @@ import {
 } from "../ui/alert-dialog";
 import { VoiceprintEditDialog } from "./VoiceprintEditDialog";
 import { useVoiceprintStore } from "../../stores/voiceprintStore";
+import { SPEAKER_DOT_COLORS, speakerColorIndex } from "@/lib/speakerColors";
 import type { VoiceprintInfo, VoiceprintMetadata } from "../../types";
 
 function formatDate(dateStr: string | null): string {
@@ -124,7 +125,7 @@ export function VoiceprintList() {
 
       {voiceprints.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
-          <User className="h-10 w-10" />
+          <AudioLines className="h-10 w-10" />
           <p className="text-sm">{t("voiceprint.empty")}</p>
         </div>
       ) : (
@@ -149,11 +150,18 @@ export function VoiceprintList() {
                   </svg>
                 )}
               </button>
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <User className="h-4 w-4" />
+              {/* 灰色声纹标识（非可编辑头像），颜色身份用名字旁的圆点表示 */}
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                <AudioLines className="h-4 w-4" />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
+                  <span
+                    className={cn(
+                      "h-2.5 w-2.5 shrink-0 rounded-full",
+                      SPEAKER_DOT_COLORS[speakerColorIndex(vp.name || "")]
+                    )}
+                  />
                   <span className="truncate text-sm font-medium">
                     {vp.name || t("voiceprint.unnamed")}
                   </span>

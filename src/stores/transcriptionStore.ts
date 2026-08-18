@@ -291,6 +291,11 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
             ...get().job,
             status: jobResp.status as JobStatus,
             progress: jobResp.progress,
+            // 后处理阶段显示后端上报的具体步骤
+            pipelineStep:
+              jobResp.status === "post_processing"
+                ? ((jobResp.pipeline_step as PipelineStep) ?? get().job.pipelineStep)
+                : get().job.pipelineStep,
           },
         });
 
@@ -344,8 +349,11 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
             ...s,
           }));
 
-          // Voiceprint matching: pass embeddings to Rust for library comparison
-          const embeddings: (number[] | null)[] = (data as { embeddings?: (number[] | null)[] }).embeddings || [];
+          // Voiceprint matching: pass embeddings to Rust for library comparison.
+          // 先按说话人聚合，避免逐段 embedding 波动导致聚出大量"未知说话人"
+          const { aggregateEmbeddingsBySpeaker } = await import("../services/embeddingUtils");
+          const rawEmbeddings: (number[] | null)[] = (data as { embeddings?: (number[] | null)[] }).embeddings || [];
+          const embeddings = aggregateEmbeddingsBySpeaker(segments, rawEmbeddings);
           const hasRealEmbeddings = embeddings.some((e) => e !== null);
           if (hasRealEmbeddings) {
             try {

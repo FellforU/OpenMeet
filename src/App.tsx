@@ -50,8 +50,7 @@ function App() {
       try {
         const { general } = useSettingsStore.getState();
         const cacheDir = general.cacheDir || undefined;
-        const hfMirror = (general.enableHfMirror && general.hfMirror) || undefined;
-        await startAsrService(cacheDir, hfMirror);
+        await startAsrService(cacheDir);
       } catch {
         // May already be running or in browser dev mode
       }

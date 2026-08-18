@@ -34,7 +34,8 @@ async def test_qwen3_engine_load_model():
     engine = Qwen3Engine()
     mock_model = MagicMock()
 
-    with patch("asr_service.engines.qwen3_engine.Qwen3ASRModel") as MockQwenASR:
+    with patch("asr_service.engines.qwen3_engine.Qwen3ASRModel") as MockQwenASR, \
+         patch.object(engine, "get_model_path", return_value="/fake/model/path"):
         MockQwenASR.from_pretrained.return_value = mock_model
         await engine.load_model("qwen3-asr-0.6B")
 
@@ -53,7 +54,8 @@ async def test_qwen3_engine_transcribe_with_mock():
     mock_model = MagicMock()
     mock_model.transcribe = MagicMock(return_value=mock_result)
 
-    with patch("asr_service.engines.qwen3_engine.Qwen3ASRModel") as MockQwenASR:
+    with patch("asr_service.engines.qwen3_engine.Qwen3ASRModel") as MockQwenASR, \
+         patch.object(engine, "get_model_path", return_value="/fake/model/path"):
         MockQwenASR.from_pretrained.return_value = mock_model
         await engine.load_model("qwen3-asr-0.6B")
 
@@ -70,7 +72,8 @@ async def test_qwen3_engine_unload():
     engine = Qwen3Engine()
     mock_model = MagicMock()
 
-    with patch("asr_service.engines.qwen3_engine.Qwen3ASRModel") as MockQwenASR:
+    with patch("asr_service.engines.qwen3_engine.Qwen3ASRModel") as MockQwenASR, \
+         patch.object(engine, "get_model_path", return_value="/fake/model/path"):
         MockQwenASR.from_pretrained.return_value = mock_model
         await engine.load_model("qwen3-asr-0.6B")
 

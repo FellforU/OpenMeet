@@ -38,7 +38,7 @@ OpenMeet 选择另一条路：
 
 ## 🧩 功能一览
 
-- **多引擎语音识别** — faster-whisper（多语言）、Qwen3-ASR（方言与噪声鲁棒）、Paraformer（中文快且准），另支持 OpenAI / 阿里云 API 和自定义 HuggingFace 模型
+- **多引擎语音识别** — faster-whisper（多语言）、Qwen3-ASR（方言与噪声鲁棒）、Paraformer（中文快且准），另支持 OpenAI / 阿里云 API 和自定义魔搭模型
 - **实时流式转写** — 边录边出字，麦克风与系统声音均可采集
 - **八道后处理工序** — 幻觉清理 → 数字规范化 → 语气词过滤 → LLM 智能纠错 → 段落划分 → 标点恢复 → 说话人分离 → 声纹提取，每一步进度实时可见
 - **说话人分离 + 声纹库** — pyannote 精确切分发言边界；声纹跨会议持久化，越用越准（被动学习）
@@ -99,7 +99,7 @@ python -m asr_service.main         # 终端 1：ASR 服务 (:18090)
 npm run tauri dev                  # 终端 2：桌面应用
 ```
 
-首次使用：在应用设置里一键下载所需模型（faster-whisper base 约 290MB 起步；说话人分离需 HuggingFace Token，模型仅约 85MB）。国内网络可在设置中开启 HF 镜像。
+首次使用：在应用设置里一键下载所需模型（faster-whisper base 约 140MB 起步；说话人分离模型仅约 32MB）。**全部模型走魔搭（ModelScope）国内源直连下载，无需任何账号、Token 或镜像配置。**
 
 <details>
 <summary>各平台系统依赖</summary>
@@ -281,7 +281,7 @@ Multi-engine ASR (faster-whisper / Qwen3-ASR / Paraformer / OpenAI / Alibaba / c
 
 ## Quick Start
 
-See [快速开始](#-快速开始) above — the commands are identical. In short: set up a Python venv with `asr_service/requirements.txt`, `npm install`, then run `python -m asr_service.main` and `npm run tauri dev`. Download models in-app on first use (HF mirror supported).
+See [快速开始](#-快速开始) above — the commands are identical. In short: set up a Python venv with `asr_service/requirements.txt`, `npm install`, then run `python -m asr_service.main` and `npm run tauri dev`. Download models in-app on first use — all models are served from ModelScope (no account or token required).
 
 ## License
 

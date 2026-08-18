@@ -1,25 +1,49 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FileText, Lightbulb, NotebookPen, Paperclip, GitBranch } from "lucide-react";
+import { FileText, Lightbulb, NotebookPen, Paperclip, GitBranch, Pencil, Download } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "../ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { TranscriptPanel } from "./TranscriptPanel";
 import { SummaryPanel } from "./SummaryPanel";
 import { NotesPanel } from "./NotesPanel";
 import { MindMapPanel } from "./MindMapPanel";
 import { AttachmentsPanel } from "./AttachmentsPanel";
-import { ExportButton } from "./ExportButton";
+import { ExportButton, saveXMindViaDialog } from "./ExportButton";
+import { summaryToXMind } from "./mindmapUtils";
 import { useTranscriptionStore } from "../../stores/transcriptionStore";
 import { useProjectStore } from "../../stores/projectStore";
+import { useRecordingStore } from "../../stores/recordingStore";
 
 export function Workspace() {
   const { t } = useTranslation("workspace");
   const seekTo = useTranscriptionStore((s) => s.seekTo);
+  const summary = useTranscriptionStore((s) => s.summary);
+  const hasSegments = useTranscriptionStore((s) => s.segments.length > 0);
+  const isRecording = useRecordingStore((s) => s.status === "recording");
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const [activeTab, setActiveTab] = useState("transcript");
+  const [transcriptEditing, setTranscriptEditing] = useState(false);
+  const [summaryEditing, setSummaryEditing] = useState(false);
 
   const handleJumpToTranscript = (time: number) => {
     seekTo(time);
     setActiveTab("transcript");
+  };
+
+  const handleExportXMind = async () => {
+    if (!summary) return;
+    try {
+      const data = await summaryToXMind(summary);
+      const timestamp = new Date().toISOString().slice(0, 10);
+      const path = await saveXMindViaDialog(data, `mindmap-${timestamp}.xmind`);
+      if (path) {
+        toast.success(t("export.successPath", { path }));
+      }
+    } catch (error) {
+      console.error("XMind export failed:", error);
+      toast.error(t("export.failed"));
+    }
   };
 
   return (
@@ -47,13 +71,42 @@ export function Workspace() {
             {t("tabs.attachments")}
           </TabsTrigger>
         </TabsList>
-        <ExportButton />
+        <div className="flex items-center gap-2">
+          {activeTab === "transcript" && hasSegments && !isRecording && !transcriptEditing && (
+            <Button variant="outline" size="sm" onClick={() => setTranscriptEditing(true)}>
+              <Pencil className="mr-1.5 h-4 w-4" />
+              {t("common:action.edit")}
+            </Button>
+          )}
+          {activeTab === "summary" && summary && !summaryEditing && (
+            <Button variant="outline" size="sm" onClick={() => setSummaryEditing(true)}>
+              <Pencil className="mr-1.5 h-4 w-4" />
+              {t("summary.editSummary")}
+            </Button>
+          )}
+          {activeTab === "mindmap" && summary && (
+            <Button variant="outline" size="sm" onClick={handleExportXMind}>
+              <Download className="mr-1.5 h-4 w-4" />
+              {t("mindmap.exportXmind")}
+            </Button>
+          )}
+          <ExportButton />
+        </div>
       </div>
       <TabsContent value="transcript" className="flex-1 overflow-hidden">
-        <TranscriptPanel key={activeProjectId} />
+        <TranscriptPanel
+          key={activeProjectId}
+          editing={transcriptEditing}
+          onEditingChange={setTranscriptEditing}
+        />
       </TabsContent>
       <TabsContent value="summary" className="flex-1 overflow-hidden">
-        <SummaryPanel key={activeProjectId} onJumpToTranscript={handleJumpToTranscript} />
+        <SummaryPanel
+          key={activeProjectId}
+          onJumpToTranscript={handleJumpToTranscript}
+          editing={summaryEditing}
+          onEditingChange={setSummaryEditing}
+        />
       </TabsContent>
       <TabsContent value="notes" className="flex-1 overflow-hidden">
         {activeProjectId ? (

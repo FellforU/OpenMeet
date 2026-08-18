@@ -17,9 +17,14 @@
     "step": {
       "loading_model": "Loading Model",
       "transcribing": "Transcribing",
-      "itn": "Inverse Text Normalization",
+      "hallucination": "Removing Hallucinations",
+      "itn": "Normalizing Numbers",
+      "filler": "Filtering Filler Words",
+      "llm_correction": "AI Correction",
+      "segmentation": "Paragraph Segmentation",
       "punctuation": "Adding Punctuation",
       "diarizing": "Speaker Diarization",
+      "embedding": "Extracting Voiceprints",
       "summarizing": "Generating Summary"
     }
   },

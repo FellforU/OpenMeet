@@ -1,11 +1,11 @@
-"""Forced alignment using torchaudio MMS_FA (wav2vec2) for sentence-level timestamps.
+"""Forced alignment for sentence-level timestamps.
 
-Aligns transcribed text to audio to get precise time ranges for each sentence.
-Used by diarization to accurately map speaker timeline to text positions,
-replacing the imprecise character-position interpolation.
+Primary: Qwen3-ForcedAligner-0.6B (qwen-asr) — char/word level, 11 languages,
+far better Chinese accuracy than wav2vec2 romanization.
+Fallback: torchaudio MMS_FA (wav2vec2 CTC + pinyin romanization).
+Both fall back gracefully; caller uses interpolation when unavailable.
 
-Requires: torchaudio>=2.1 (for MMS_FA pipeline), pypinyin (for Chinese romanization).
-Falls back gracefully if dependencies are unavailable.
+Used by diarization to accurately map speaker timeline to text positions.
 """
 
 import asyncio
@@ -22,21 +22,234 @@ except ImportError:
     _pinyin = None
     _PinyinStyle = None
 
-# Emission is computed in chunks: transformer attention is O(T²) in audio
-# length, so a single forward over a full meeting is unusably slow
+# MMS_FA emission is computed in chunks: transformer attention is O(T²) in
+# audio length, so a single forward over a full meeting is unusably slow
 _EMISSION_CHUNK_SECONDS = 30.0
+
+# Qwen3-ForcedAligner supports at most ~5 min of audio per call;
+# longer meetings are windowed using rough sentence-time estimates
+_QWEN_WINDOW_SECONDS = 240.0
+_QWEN_SINGLE_PASS_MAX = 280.0
+_QWEN_WINDOW_MARGIN = 5.0
+
+_QWEN_MODEL_ID = "Qwen/Qwen3-ForcedAligner-0.6B"
+
+# job.language → Qwen aligner language name
+_QWEN_LANGUAGES = {
+    "zh": "Chinese",
+    "yue": "Cantonese",
+    "en": "English",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "fr": "French",
+    "de": "German",
+    "it": "Italian",
+    "pt": "Portuguese",
+    "ru": "Russian",
+    "es": "Spanish",
+}
+
+
+def _key_len(text: str) -> int:
+    """Count alignable units (CJK chars + ASCII alnum chars).
+
+    Punctuation and whitespace are excluded on both the sentence side and
+    the aligner-output side, so the greedy matcher stays in sync even when
+    the aligner drops punctuation.
+    """
+    return sum(1 for c in text if c.isalnum() or _is_cjk(c))
 
 
 class ForcedAligner:
-    """Align text sentences to audio using MMS_FA wav2vec2 CTC forced alignment."""
+    """Align text sentences to audio for precise timestamps."""
 
     def __init__(self):
+        # Qwen3-ForcedAligner (primary)
+        self._qwen = None
+        self._qwen_available: Optional[bool] = None
+        # MMS_FA (fallback)
         self._model = None
         self._tokenizer = None
         self._aligner = None
         self._sample_rate = 16000
         self._device = "cpu"
         self._available: Optional[bool] = None
+
+    # ------------------------------------------------------------------
+    # Qwen3-ForcedAligner (primary)
+    # ------------------------------------------------------------------
+
+    def _ensure_qwen_loaded(self) -> bool:
+        if self._qwen_available is not None:
+            return self._qwen_available
+        try:
+            import torch
+            from qwen_asr import Qwen3ForcedAligner
+            from asr_service.services import model_source
+
+            # 本地已有直接离线加载；否则经 ModelScope 国内源下载
+            local = model_source.local_path(_QWEN_MODEL_ID)
+            if not local:
+                local = model_source.download_sync(_QWEN_MODEL_ID)
+
+            if torch.cuda.is_available():
+                dtype, device_map = torch.bfloat16, "cuda:0"
+            else:
+                dtype, device_map = torch.float32, "cpu"
+            self._qwen = Qwen3ForcedAligner.from_pretrained(
+                local, dtype=dtype, device_map=device_map,
+            )
+            self._qwen_available = True
+            logger.info(
+                "Qwen3-ForcedAligner-0.6B loaded (device=%s, path=%s)",
+                device_map, local,
+            )
+        except Exception as e:
+            logger.warning(
+                "Qwen3-ForcedAligner unavailable, falling back to MMS_FA: %s", e,
+            )
+            self._qwen_available = False
+        return self._qwen_available
+
+    def _align_qwen(
+        self,
+        audio_np: np.ndarray,
+        sr: int,
+        sentences: list[str],
+        rough_times: Optional[list[tuple[float, float]]],
+        language: str,
+    ) -> Optional[list[Optional[tuple[float, float]]]]:
+        """Align via Qwen3-ForcedAligner. Returns None to request fallback."""
+        if not self._ensure_qwen_loaded():
+            return None
+
+        audio_dur = len(audio_np) / sr
+
+        # Build windows of (sentence indices, t0, t1) each ≤ ~5 min
+        if audio_dur <= _QWEN_SINGLE_PASS_MAX:
+            windows = [(list(range(len(sentences))), 0.0, audio_dur)]
+        else:
+            # Long audio needs rough per-sentence times for windowing
+            if not rough_times or len(rough_times) != len(sentences):
+                return None
+            span = max(e for _, e in rough_times) - min(s for s, _ in rough_times)
+            if span < audio_dur * 0.5:
+                # Estimates are degenerate (e.g. zero-duration ASR output)
+                return None
+
+            windows = []
+            cur_idx: list[int] = []
+            cur_start = 0.0
+            for i in range(len(sentences)):
+                s_start, s_end = rough_times[i]
+                if not cur_idx:
+                    cur_idx = [i]
+                    cur_start = s_start
+                elif s_end - cur_start > _QWEN_WINDOW_SECONDS:
+                    windows.append((cur_idx, cur_start, rough_times[cur_idx[-1]][1]))
+                    cur_idx = [i]
+                    cur_start = s_start
+                else:
+                    cur_idx.append(i)
+            if cur_idx:
+                windows.append((cur_idx, cur_start, rough_times[cur_idx[-1]][1]))
+
+        results: list[Optional[tuple[float, float]]] = [None] * len(sentences)
+
+        for idxs, w_start, w_end in windows:
+            t0 = max(0.0, w_start - _QWEN_WINDOW_MARGIN)
+            t1 = min(audio_dur, w_end + _QWEN_WINDOW_MARGIN)
+            chunk = audio_np[int(t0 * sr):int(t1 * sr)]
+            if len(chunk) < sr:
+                continue
+            text = "".join(sentences[i] for i in idxs)
+            if not _key_len(text):
+                continue
+            try:
+                aligned = self._qwen.align(
+                    audio=(chunk, sr), text=text, language=language,
+                )
+                items = list(aligned[0])
+            except Exception as e:
+                logger.warning(
+                    "Qwen aligner window %.0f-%.0fs failed: %r", t0, t1, e,
+                )
+                continue
+
+            # Greedy matching: consume aligned items until each sentence's
+            # alignable-unit count is satisfied
+            item_pos = 0
+            for i in idxs:
+                target = _key_len(sentences[i])
+                if target == 0 or item_pos >= len(items):
+                    continue
+                consumed = 0
+                first_item = None
+                last_item = None
+                while item_pos < len(items) and consumed < target:
+                    item = items[item_pos]
+                    if first_item is None:
+                        first_item = item
+                    last_item = item
+                    consumed += max(1, _key_len(item.text))
+                    item_pos += 1
+                if first_item is not None and last_item is not None:
+                    results[i] = (
+                        t0 + float(first_item.start_time),
+                        t0 + float(last_item.end_time),
+                    )
+
+        aligned_count = sum(1 for r in results if r is not None)
+        logger.info(
+            "Qwen3-ForcedAligner: aligned %d/%d sentences (%d windows)",
+            aligned_count, len(sentences), len(windows),
+        )
+        return results if aligned_count > 0 else None
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    async def align_sentences(
+        self,
+        audio_np: np.ndarray,
+        sr: int,
+        sentences: list[str],
+        rough_times: Optional[list[tuple[float, float]]] = None,
+        language: Optional[str] = None,
+    ) -> list[Optional[tuple[float, float]]]:
+        """Align sentences to audio, returning time ranges.
+
+        Args:
+            audio_np: Mono audio as 1D float32 numpy array.
+            sr: Audio sample rate.
+            sentences: List of text sentences to align (in order).
+            rough_times: Optional per-sentence rough (start, end) estimates,
+                used to window long audio for the Qwen aligner.
+            language: job language code (zh/en/...), defaults to Chinese.
+
+        Returns:
+            List of (start_sec, end_sec) for each sentence.
+            None for sentences that failed to align.
+        """
+        if not sentences:
+            return []
+
+        qwen_language = _QWEN_LANGUAGES.get(language or "zh", "Chinese")
+
+        def _run():
+            qwen_result = self._align_qwen(
+                audio_np, sr, sentences, rough_times, qwen_language,
+            )
+            if qwen_result is not None:
+                return qwen_result
+            return self._align_mms(audio_np, sr, sentences)
+
+        return await asyncio.to_thread(_run)
+
+    # ------------------------------------------------------------------
+    # MMS_FA (fallback)
+    # ------------------------------------------------------------------
 
     def _ensure_loaded(self) -> bool:
         """Lazy-load MMS_FA model. Returns True if available."""
@@ -75,38 +288,13 @@ class ForcedAligner:
 
         return self._available
 
-    async def align_sentences(
+    def _align_mms(
         self,
         audio_np: np.ndarray,
         sr: int,
         sentences: list[str],
     ) -> list[Optional[tuple[float, float]]]:
-        """Align sentences to audio, returning time ranges.
-
-        Args:
-            audio_np: Mono audio as 1D float32 numpy array.
-            sr: Audio sample rate.
-            sentences: List of text sentences to align (in order).
-
-        Returns:
-            List of (start_sec, end_sec) for each sentence.
-            None for sentences that failed to align.
-        """
-        if not sentences:
-            return []
-
-        def _run():
-            return self._align_impl(audio_np, sr, sentences)
-
-        return await asyncio.to_thread(_run)
-
-    def _align_impl(
-        self,
-        audio_np: np.ndarray,
-        sr: int,
-        sentences: list[str],
-    ) -> list[Optional[tuple[float, float]]]:
-        """Core alignment implementation (runs in thread)."""
+        """MMS_FA wav2vec2 CTC alignment (runs in thread)."""
         if not self._ensure_loaded():
             return [None] * len(sentences)
 
@@ -121,19 +309,25 @@ class ForcedAligner:
             )
         audio_dur = waveform.shape[1] / self._sample_rate
 
-        # Romanize each sentence and tokenize individually
-        sentence_tokens: list[list[int]] = []
+        # Romanize each sentence into words; the MMS_FA tokenizer takes a
+        # LIST OF WORDS (a raw string would be iterated char-by-char and
+        # blow up on spaces with KeyError)
+        all_tokens: list[list[int]] = []  # one token list per word
+        sentence_ranges: list[tuple[int, int]] = []  # word-index ranges
         for sent in sentences:
-            roman = _romanize(sent)
-            tokens = self._tokenizer(roman) if roman.strip() else []
-            sentence_tokens.append(tokens)
-
-        # Build concatenated token sequence + per-sentence ranges
-        all_tokens: list[int] = []
-        sentence_ranges: list[tuple[int, int]] = []
-        for tokens in sentence_tokens:
+            words = _romanize(sent).split()
             start = len(all_tokens)
-            all_tokens.extend(tokens)
+            if words:
+                try:
+                    all_tokens.extend(self._tokenizer(words))
+                except Exception:
+                    # Some word has chars outside the model vocab —
+                    # tokenize word-by-word and drop the offenders
+                    for word in words:
+                        try:
+                            all_tokens.extend(self._tokenizer([word]))
+                        except Exception:
+                            pass
             sentence_ranges.append((start, len(all_tokens)))
 
         if not all_tokens:
@@ -153,27 +347,32 @@ class ForcedAligner:
         n_frames = emission.shape[1]
         fps = n_frames / audio_dur  # frames per second
 
-        # Run CTC forced alignment
+        # Run CTC forced alignment — returns one TokenSpan list per word
         try:
-            token_spans = self._aligner(emission[0], all_tokens)
+            word_spans = self._aligner(emission[0], all_tokens)
         except Exception as e:
-            logger.warning("MMS_FA forced alignment failed: %s", e)
+            logger.warning("MMS_FA forced alignment failed: %r", e)
             return [None] * len(sentences)
 
-        n_spans = len(token_spans)
+        n_spans = len(word_spans)
         logger.info(
-            "MMS_FA alignment: %d tokens → %d spans, audio=%.1fs, fps=%.1f",
+            "MMS_FA alignment: %d words → %d spans, audio=%.1fs, fps=%.1f",
             len(all_tokens), n_spans, audio_dur, fps,
         )
 
-        # Extract time range for each sentence
+        # Extract time range for each sentence from its word spans
         results: list[Optional[tuple[float, float]]] = []
         for start_idx, end_idx in sentence_ranges:
             if start_idx >= n_spans or end_idx > n_spans or start_idx == end_idx:
                 results.append(None)
                 continue
-            start_sec = token_spans[start_idx].start / fps
-            end_sec = token_spans[end_idx - 1].end / fps
+            first = word_spans[start_idx]
+            last = word_spans[end_idx - 1]
+            if not first or not last:
+                results.append(None)
+                continue
+            start_sec = first[0].start / fps
+            end_sec = last[-1].end / fps
             results.append((start_sec, end_sec))
 
         aligned_count = sum(1 for r in results if r is not None)
@@ -226,14 +425,30 @@ def _romanize(text: str) -> str:
     Punctuation/digits/other → removed.
     """
     parts: list[str] = []
+    ascii_buf: list[str] = []
+
+    def _flush_ascii():
+        # Consecutive ASCII letters form ONE word (e.g. "hello"), not
+        # one word per letter
+        if ascii_buf:
+            parts.append("".join(ascii_buf))
+            ascii_buf.clear()
+
     for char in text:
         if _is_cjk(char):
+            _flush_ascii()
             if _pinyin is not None:
                 py = _pinyin(char, style=_PinyinStyle.NORMAL)[0][0]
-                parts.append(py)
+                # Keep only a-z — the MMS_FA vocab has no accented chars
+                py = "".join(c for c in py.lower() if "a" <= c <= "z")
+                if py:
+                    parts.append(py)
             # Without pypinyin, CJK chars are skipped (partial alignment)
         elif char.isascii() and char.isalpha():
-            parts.append(char.lower())
+            ascii_buf.append(char.lower())
+        else:
+            _flush_ascii()
+    _flush_ascii()
 
     return " ".join(parts)
 

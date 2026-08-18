@@ -40,6 +40,8 @@ class TranscriptionJob:
     audio_path: Optional[str] = None
     segments: list[Segment] = field(default_factory=list)
     progress: float = 0.0
+    # 后处理当前进行到的步骤（供前端展示），如 "diarizing"/"punctuation"
+    pipeline_step: Optional[str] = None
     created_at: float = field(default_factory=time.time)
     error: Optional[str] = None
     summary: Optional[dict] = None

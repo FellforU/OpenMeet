@@ -103,46 +103,11 @@ async def list_models():
 
 @router.post("/validate", response_model=ValidateResponse)
 async def validate_model(body: ValidateRequest):
-    """Validate whether a model ID is an ASR model on the given platform."""
-    if body.platform == "huggingface":
-        return await _validate_huggingface(body.model_id, body.mirror_url)
-    if body.platform == "modelscope":
-        return await _validate_modelscope(body.model_id)
-    raise HTTPException(400, f"Unsupported platform: {body.platform}")
+    """Validate whether a model ID is an ASR model on ModelScope.
 
-
-async def _validate_huggingface(model_id: str, mirror_url: str | None) -> ValidateResponse:
-    """Check HuggingFace API for model existence and pipeline_tag."""
-    from asr_service.config import get_hf_mirror
-
-    endpoint = mirror_url or get_hf_mirror() or "https://huggingface.co"
-    url = f"{endpoint}/api/models/{model_id}"
-
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(url)
-    except httpx.RequestError as e:
-        return ValidateResponse(valid=False, error=f"Network error: {e}")
-
-    if resp.status_code == 404:
-        return ValidateResponse(valid=False, error="Model not found on HuggingFace")
-    if resp.status_code != 200:
-        return ValidateResponse(valid=False, error=f"HuggingFace API error: HTTP {resp.status_code}")
-
-    data = resp.json()
-    pipeline_tag = data.get("pipeline_tag", "")
-    model_name = data.get("modelId", model_id)
-    tags = data.get("tags", [])
-
-    if pipeline_tag != "automatic-speech-recognition":
-        return ValidateResponse(
-            valid=False,
-            error=f"Not an ASR model (pipeline_tag: {pipeline_tag or 'unknown'})",
-            model_name=model_name,
-            tags=tags,
-        )
-
-    return ValidateResponse(valid=True, model_name=model_name, tags=tags)
+    自定义模型统一走魔搭仓库 ID（platform 字段保留但不再区分）。
+    """
+    return await _validate_modelscope(body.model_id)
 
 
 async def _validate_modelscope(model_id: str) -> ValidateResponse:

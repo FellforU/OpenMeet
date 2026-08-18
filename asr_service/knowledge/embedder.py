@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class Embedder:
     """Wrapper for text embedding with local and remote API support."""
 
-    DEFAULT_MODEL = "BAAI/bge-small-zh-v1.5"
+    DEFAULT_MODEL = "Qwen/Qwen3-Embedding-0.6B"
     DIMENSION = 512
 
     def __init__(self):
@@ -67,8 +67,18 @@ class Embedder:
 
         def _load():
             from sentence_transformers import SentenceTransformer
+            from asr_service.services import model_source
 
-            return SentenceTransformer(model_name)
+            # 已下载则直接离线加载；没有本地副本时经 ModelScope 下载
+            local = model_source.local_path(model_name)
+            if not local:
+                try:
+                    local = model_source.download_sync(model_name)
+                except Exception as e:
+                    logger.warning(
+                        "ModelScope download failed for %s: %s", model_name, e,
+                    )
+            return SentenceTransformer(local or model_name)
 
         self._model = await asyncio.to_thread(_load)
 

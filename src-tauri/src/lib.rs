@@ -249,6 +249,7 @@ pub fn run() {
             database::db_save_note,
             database::db_get_setting,
             database::db_set_setting,
+            database::db_search_segments,
             database::get_app_data_dir,
             // Voiceprint commands
             database::voiceprint_list,

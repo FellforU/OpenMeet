@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Mic, Loader2, Pencil, Save, X, Radio } from "lucide-react";
+import { Mic, Loader2, Save, X, Radio } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
@@ -25,7 +25,16 @@ function segmentsToMarkdown(segments: Segment[]): string {
   return lines.join("\n");
 }
 
-export function TranscriptPanel() {
+interface TranscriptPanelProps {
+  /** 编辑状态由 Workspace 托管，编辑按钮显示在标签页行的导出按钮旁 */
+  editing?: boolean;
+  onEditingChange?: (editing: boolean) => void;
+}
+
+export function TranscriptPanel({
+  editing = false,
+  onEditingChange,
+}: TranscriptPanelProps) {
   const { t } = useTranslation("workspace");
   const segments = useTranscriptionStore((s) => s.segments);
   const status = useTranscriptionStore((s) => s.job.status);
@@ -38,7 +47,6 @@ export function TranscriptPanel() {
 
   const isRecording = useRecordingStore((s) => s.status === "recording");
 
-  const [editing, setEditing] = useState(false);
   const [editInitialText, setEditInitialText] = useState("");
   const editTextRef = useRef("");
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
@@ -116,12 +124,15 @@ export function TranscriptPanel() {
     return ranges;
   }, [segments]);
 
-  const handleStartEdit = () => {
-    const md = segmentsToMarkdown(segments);
-    editTextRef.current = md;
-    setEditInitialText(md);
-    setEditing(true);
-  };
+  // 进入编辑模式时初始化编辑内容
+  useEffect(() => {
+    if (editing) {
+      const md = segmentsToMarkdown(segments);
+      editTextRef.current = md;
+      setEditInitialText(md);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing]);
 
   const setSegments = useTranscriptionStore((s) => s.setSegments);
 
@@ -166,7 +177,7 @@ export function TranscriptPanel() {
     }
 
     setSegments(newSegments);
-    setEditing(false);
+    onEditingChange?.(false);
     toast.success(t("common:toast.transcriptSaved"));
 
     // Persist to SQLite
@@ -183,7 +194,7 @@ export function TranscriptPanel() {
   };
 
   const handleCancel = () => {
-    setEditing(false);
+    onEditingChange?.(false);
     editTextRef.current = "";
   };
 
@@ -243,23 +254,19 @@ export function TranscriptPanel() {
   const stepLabels: Record<string, string> = {
     loading_model: t("transcript.step.loading_model"),
     transcribing: t("transcript.step.transcribing"),
+    hallucination: t("transcript.step.hallucination"),
     itn: t("transcript.step.itn"),
+    filler: t("transcript.step.filler"),
+    llm_correction: t("transcript.step.llm_correction"),
+    segmentation: t("transcript.step.segmentation"),
     punctuation: t("transcript.step.punctuation"),
     diarizing: t("transcript.step.diarizing"),
+    embedding: t("transcript.step.embedding"),
     summarizing: t("transcript.step.summarizing"),
   };
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center justify-end px-4 py-2">
-        {segments.length > 0 && !isRecording && (
-          <Button variant="outline" size="sm" onClick={handleStartEdit}>
-            <Pencil className="mr-1.5 h-4 w-4" />
-            {t("common:action.edit")}
-          </Button>
-        )}
-      </div>
-
+    <div className="flex h-full flex-col pt-2">
       {/* Prominent progress display when transcription is running */}
       {isProcessing && (
         <div className="mx-4 mb-3 flex flex-col items-center gap-3 rounded-lg border border-blue-200 bg-blue-50/50 p-6 dark:border-blue-900 dark:bg-blue-950/30">

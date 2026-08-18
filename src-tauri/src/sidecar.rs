@@ -103,7 +103,6 @@ fn run_gpu_setup(python: &str, project_root: &Path) {
 pub async fn start_asr_service(
     state: State<'_, SidecarState>,
     cache_dir: Option<String>,
-    hf_mirror: Option<String>,
 ) -> Result<String, String> {
     let mut proc_guard = state.process.lock().map_err(|e| e.to_string())?;
 
@@ -122,19 +121,12 @@ pub async fn start_asr_service(
         .current_dir(&project_root);
 
     // Inject cache env vars — models go into {cache_dir}/models subdirectory
+    // （模型下载统一走 ModelScope 国内源）
     if let Some(ref dir) = cache_dir {
         let models_dir = Path::new(dir).join("models");
         let models_str = models_dir.to_string_lossy().to_string();
-        cmd.env("HF_HUB_CACHE", &models_str);
         cmd.env("MODELSCOPE_CACHE", &models_str);
         cmd.env("OPENMEET_CACHE_DIR", dir);
-    }
-
-    // Inject HuggingFace mirror endpoint if set
-    if let Some(ref mirror) = hf_mirror {
-        if !mirror.is_empty() {
-            cmd.env("HF_ENDPOINT", mirror);
-        }
     }
 
     let child = cmd

@@ -96,6 +96,7 @@ class PostProcessingPipeline:
 
         # Step 1: Hallucination detection (remove ASR artifacts)
         if self._config.enable_hallucination_detection:
+            job.pipeline_step = "hallucination"
             try:
                 segments = pipeline.hallucination_detector.detect(segments, language)
             except Exception as e:
@@ -103,6 +104,7 @@ class PostProcessingPipeline:
 
         # Step 2: ITN (Inverse Text Normalization)
         if self._config.enable_itn and pipeline.itn is not None:
+            job.pipeline_step = "itn"
             try:
                 segments = await pipeline.itn.normalize(segments, language)
             except Exception as e:
@@ -110,6 +112,7 @@ class PostProcessingPipeline:
 
         # Step 3: Filler word filtering
         if self._config.enable_filler_filter:
+            job.pipeline_step = "filler"
             try:
                 segments = await pipeline.filler_filter.filter(segments, language)
             except Exception as e:
@@ -137,6 +140,7 @@ class PostProcessingPipeline:
 
         # Step 4: LLM-based ASR error correction
         if self._config.enable_llm_correction and _llm_client is not None:
+            job.pipeline_step = "llm_correction"
             try:
                 from asr_service.processors.llm_correction import LLMCorrector
                 corrector = LLMCorrector(_llm_client)
@@ -146,6 +150,7 @@ class PostProcessingPipeline:
 
         # Step 5: Semantic segmentation (paragraph boundaries)
         if self._config.enable_segmentation:
+            job.pipeline_step = "segmentation"
             try:
                 segments = pipeline.segmenter.process(segments)
             except Exception as e:
@@ -153,6 +158,7 @@ class PostProcessingPipeline:
 
         # Step 6: Punctuation restoration (skip for engines that already produce punctuation)
         if self._config.enable_punctuation and job.engine not in self.PUNCTUATED_ENGINES:
+            job.pipeline_step = "punctuation"
             try:
                 if pipeline.punctuator is not None:
                     segments = await pipeline.punctuator.restore(segments)
@@ -164,6 +170,7 @@ class PostProcessingPipeline:
         # Step 7: Speaker diarization (inference may already be running
         # in the background — wait for it, then assign speakers)
         if self._config.enable_diarization and job.audio_path:
+            job.pipeline_step = "diarizing"
             try:
                 if diarization_task is not None:
                     await diarization_task
@@ -188,6 +195,7 @@ class PostProcessingPipeline:
         # Prefer pyannote: reuses per-speaker centroids computed during
         # diarization (free), else its built-in wespeaker embedding model
         if self._config.enable_embedding and job.audio_path:
+            job.pipeline_step = "embedding"
             job.embeddings = []
             try:
                 if hasattr(pipeline.diarizer, 'extract_embeddings'):
@@ -214,6 +222,7 @@ class PostProcessingPipeline:
             job.embeddings = []
 
         job.segments = segments
+        job.pipeline_step = None
         job.status = JobStatus.READY
 
     @staticmethod
