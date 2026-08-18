@@ -25,11 +25,13 @@ CHUNK_SIZE = 500
 CHUNK_OVERLAP = 50
 
 # Runtime config (set by frontend on startup)
+# cache_dir 优先取 sidecar 注入的环境变量，避免前端 /config 到达前
+# 的模型探测落到默认目录而误报"未下载"
 _runtime_config = {
     "app_data_dir": None,
     "sqlite_db_path": None,
     "lance_db_path": None,
-    "cache_dir": None,           # Root cache directory for all types
+    "cache_dir": os.environ.get("OPENMEET_CACHE_DIR") or None,
 }
 
 # Subdirectory names under the root cache directory
