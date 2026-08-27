@@ -12,10 +12,13 @@
 [![Tauri](https://img.shields.io/badge/Tauri-2.x-24C8DB?logo=tauri&logoColor=white)]()
 [![Python](https://img.shields.io/badge/Python-3.10--3.12-3776AB?logo=python&logoColor=white)]()
 
-[中文](#-为什么是-openmeet) · [English](#english) · [下载安装](#-快速开始) · [联系作者](#-联系作者)
+[中文](#-为什么是-openmeet) · [English](#english) · [下载安装](#-快速开始) · [配置指南](docs/configuration-guide.md) · [联系作者](#-联系作者)
 
-<!-- 📸 主界面截图：把工作区全景图放到 docs/assets/screenshot-hero.png -->
-<!-- <img src="docs/assets/screenshot-hero.png" alt="OpenMeet 主界面" width="820" /> -->
+<br/>
+
+<img src="docs/assets/screenshot-transcript.png" alt="OpenMeet 转录工作区：按说话人着色的会议转录稿" width="860" />
+
+<sub>转录工作区 —— 每句话都标好了「谁、什么时候、说了什么」，点击即可跳转到对应音频位置</sub>
 
 </div>
 
@@ -51,18 +54,57 @@ OpenMeet 选择另一条路：
 
 ## 📸 界面预览
 
-<!-- 截图放到 docs/assets/ 目录后取消下方注释即可 -->
-<!--
-| 转录工作区 | 智能纪要 |
-|---|---|
-| ![转录](docs/assets/screenshot-transcript.png) | ![纪要](docs/assets/screenshot-summary.png) |
+<table>
+  <tr>
+    <td width="50%" align="center"><b>结构化纪要</b><br/><sub>主题 · 结论 · 决策 · 待办（负责人 / 优先级）</sub></td>
+    <td width="50%" align="center"><b>思维导图</b><br/><sub>一键从纪要生成，可导出 XMind</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/assets/screenshot-summary.png" alt="结构化会议纪要" /></td>
+    <td><img src="docs/assets/screenshot-mindmap.png" alt="思维导图" /></td>
+  </tr>
+  <tr>
+    <td align="center"><b>知识库 AI 对话</b><br/><sub>跨所有历史会议用自然语言提问</sub></td>
+    <td align="center"><b>声纹库</b><br/><sub>标注一次，以后每场会议自动认人</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/assets/screenshot-chat.png" alt="知识库 AI 对话" /></td>
+    <td><img src="docs/assets/screenshot-voiceprint.png" alt="声纹库" /></td>
+  </tr>
+  <tr>
+    <td align="center"><b>会议笔记</b><br/><sub>Markdown 所见即所得，随转录一起入知识库</sub></td>
+    <td align="center"><b>ASR 模型管理</b><br/><sub>应用内一键下载，魔搭国内源直连</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/assets/screenshot-notes.png" alt="会议笔记" /></td>
+    <td><img src="docs/assets/screenshot-models.png" alt="ASR 模型管理" /></td>
+  </tr>
+  <tr>
+    <td align="center"><b>LLM 提供商</b><br/><sub>Ollama 本地或 11 家云厂商，密钥本地 RSA 加密</sub></td>
+    <td align="center"><b>知识库 Embedding</b><br/><sub>BGE / Qwen3-Embedding 多档可选</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/assets/screenshot-settings-llm.png" alt="LLM 提供商配置" /></td>
+    <td><img src="docs/assets/screenshot-settings-knowledge.png" alt="知识库 Embedding 模型" /></td>
+  </tr>
+</table>
 
-| 思维导图 | 知识库对话 |
-|---|---|
-| ![思维导图](docs/assets/screenshot-mindmap.png) | ![知识库](docs/assets/screenshot-chat.png) |
--->
+## 🎬 一场会议在 OpenMeet 里是这样流转的
 
-> 截图整理中，敬请期待。
+```
+ 录音 / 导入音频 ──► 语音识别 ──► 八道后处理 ──► 转录稿（谁·何时·说了什么）
+                                                       │
+                       ┌───────────────────────────────┼───────────────────┐
+                       ▼                               ▼                   ▼
+                  结构化纪要                        思维导图            知识库向量化
+              （议题/结论/决策/待办）              （XMind 导出）      （跨会议 AI 问答）
+```
+
+1. **录** — 点「录制」采集麦克风 / 系统声音，或直接「上传」已有录音
+2. **转** — 本地 ASR 引擎转写，后处理流水线逐步清理幻觉、纠错、加标点、切分说话人
+3. **认** — 声纹库自动匹配出「这是张三」；没见过的人标注一次，下次自动认出
+4. **读** — 一键生成纪要与思维导图，Markdown 随手改，导出即可发群
+5. **问** — 「上次讨论定价的结论是什么？」——知识库跨所有会议检索并作答
 
 ## 🚀 快速开始
 
@@ -100,6 +142,12 @@ npm run tauri dev                  # 终端 2：桌面应用
 ```
 
 首次使用：在应用设置里一键下载所需模型（faster-whisper base 约 140MB 起步；说话人分离模型仅约 32MB）。**全部模型走魔搭（ModelScope）国内源直连下载，无需任何账号、Token 或镜像配置。**
+
+📖 **不知道该选哪个模型？** 看 [配置指南](docs/configuration-guide.md)——按硬件档位和使用场景给出可直接照抄的推荐配置。
+
+> 网络实在受限的环境，可使用离线整合包（含全部模型 + Python 运行环境 + 依赖 wheel）：
+> <!-- TODO: 百度网盘链接上传后填到这里 -->
+> 百度网盘链接整理中，解压后按包内《离线安装说明.txt》操作即可。
 
 <details>
 <summary>各平台系统依赖</summary>
@@ -212,6 +260,8 @@ OpenMeet/
 
 </details>
 
+README 截图由 `tools/screenshot.ps1 <name>` 直接抓取运行中的应用窗口生成（Windows），输出到 `docs/assets/`。
+
 提交规范遵循 [Conventional Commits](https://www.conventionalcommits.org/)：`feat` / `fix` / `perf` / `refactor` / `docs` / `test` / `chore`，正文使用中文描述。
 
 ## 🗺️ 路线图
@@ -253,8 +303,7 @@ OpenMeet/
 - **Issues**：[提交问题或建议](../../issues)
 - **公众号**：宇晨说AI（写 AI 工程落地、Claude Code 工作流、vibe coding 实操）
 
-<!-- 把微信二维码图片放到 docs/assets/wechat-qr.png 后取消下方注释 -->
-<!-- <img src="docs/assets/wechat-qr.png" alt="作者微信" width="200" /> -->
+<img src="docs/assets/wechat-qr.png" alt="作者微信" width="200" />
 
 ## 📄 许可证
 
@@ -277,7 +326,7 @@ OpenMeet/
 
 ## Key Features
 
-Multi-engine ASR (faster-whisper / Qwen3-ASR / Paraformer / OpenAI / Alibaba / custom HF models) · real-time streaming transcription · 8-stage post-processing pipeline with live progress (hallucination cleanup, ITN, filler filtering, LLM correction, segmentation, punctuation, diarization, voiceprint extraction) · cross-meeting speaker identification with passive learning · structured minutes + mind map · RAG knowledge base (LanceDB) · 11 LLM providers or local Ollama · click-to-seek audio playback · folder-based project management · bilingual UI (zh/en).
+Multi-engine ASR (faster-whisper / Qwen3-ASR / Paraformer / OpenAI / Alibaba / custom ModelScope models) · real-time streaming transcription · 8-stage post-processing pipeline with live progress (hallucination cleanup, ITN, filler filtering, LLM correction, segmentation, punctuation, diarization, voiceprint extraction) · cross-meeting speaker identification with passive learning · structured minutes + mind map · RAG knowledge base (LanceDB) · 11 LLM providers or local Ollama · click-to-seek audio playback · folder-based project management · bilingual UI (zh/en).
 
 ## Quick Start
 
