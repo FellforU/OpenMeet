@@ -102,8 +102,9 @@ export interface VoiceprintMetadata {
   avatarPath?: string;
 }
 
+// 与 Rust VoiceprintMatchResult 对应（serde rename_all = "camelCase"）
 export interface VoiceprintMatchResult {
   assignments: (string | null)[];
-  speaker_names: (string | null)[];
-  new_voiceprint_ids: string[];
+  speakerNames: (string | null)[];
+  newVoiceprintIds: string[];
 }

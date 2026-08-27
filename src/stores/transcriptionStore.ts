@@ -355,6 +355,8 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
           const rawEmbeddings: (number[] | null)[] = (data as { embeddings?: (number[] | null)[] }).embeddings || [];
           const embeddings = aggregateEmbeddingsBySpeaker(segments, rawEmbeddings);
           const hasRealEmbeddings = embeddings.some((e) => e !== null);
+          // 匹配后段落会被改名为音色库名称，传播 voiceprintId 需按原始标签归组
+          const originalSpeakers = segments.map((s) => s.speaker);
           if (hasRealEmbeddings) {
             try {
               const { useSettingsStore } = await import("./settingsStore");
@@ -367,28 +369,31 @@ export const useTranscriptionStore = create<TranscriptionStore>((set, get) => ({
                 if (matchResult.assignments[i]) {
                   segments[i] = { ...segments[i], voiceprintId: matchResult.assignments[i]! };
                 }
-                if (matchResult.speaker_names[i]) {
-                  segments[i] = { ...segments[i], speaker: matchResult.speaker_names[i]! };
+                if (matchResult.speakerNames[i]) {
+                  segments[i] = { ...segments[i], speaker: matchResult.speakerNames[i]! };
                 }
               }
-            } catch {
+            } catch (err) {
               // Voiceprint matching failure is non-fatal
+              console.warn("[voiceprint] match failed:", err);
             }
           }
 
-          // Propagate voiceprintId from matched segments to unmatched segments
-          // with the same speaker label (e.g. short segments without embeddings)
-          const speakerToVoiceprint = new Map<string, string>();
-          for (const seg of segments) {
-            if (seg.speaker && seg.voiceprintId) {
-              speakerToVoiceprint.set(seg.speaker, seg.voiceprintId);
+          // Propagate voiceprintId (and matched name) from matched segments to
+          // unmatched segments sharing the same ORIGINAL speaker label
+          const speakerToVoiceprint = new Map<string, { id: string; name: string | null }>();
+          for (let i = 0; i < segments.length; i++) {
+            const orig = originalSpeakers[i];
+            if (orig && segments[i].voiceprintId && !speakerToVoiceprint.has(orig)) {
+              speakerToVoiceprint.set(orig, { id: segments[i].voiceprintId!, name: segments[i].speaker });
             }
           }
           for (let i = 0; i < segments.length; i++) {
-            if (segments[i].speaker && !segments[i].voiceprintId) {
-              const vpId = speakerToVoiceprint.get(segments[i].speaker!);
-              if (vpId) {
-                segments[i] = { ...segments[i], voiceprintId: vpId };
+            const orig = originalSpeakers[i];
+            if (orig && !segments[i].voiceprintId) {
+              const vp = speakerToVoiceprint.get(orig);
+              if (vp) {
+                segments[i] = { ...segments[i], voiceprintId: vp.id, speaker: vp.name ?? orig };
               }
             }
           }
