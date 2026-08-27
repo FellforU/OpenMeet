@@ -1,9 +1,11 @@
-name: Release
+name: Release (CI matrix build, manual only)
 
+# 注意：此工作流产出的安装包**不包含 Python 运行时**，装上无法启动 ASR 服务。
+# 正式 Windows 安装包由本地 scripts/build_release.ps1 生成并手动上传到 Release，
+# 见 docs/release-guide.md。此工作流仅保留为手动触发，用于验证各平台能否编译。
+# 推 tag 不再自动建 Release / 上传产物。
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
 
 jobs:
   create-release:
@@ -102,19 +104,4 @@ jobs:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           args: ${{ matrix.args }}
 
-  publish-release:
-    runs-on: ubuntu-latest
-    needs: [create-release, build-tauri]
-    permissions:
-      contents: write
-    steps:
-      - name: Publish release
-        uses: actions/github-script@v7
-        with:
-          script: |
-            await github.rest.repos.updateRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              release_id: ${{ needs.create-release.outputs.release_id }},
-              draft: false,
-            });
+  # 不自动发布：CI 产物只作为草稿附件供检查，正式发布由维护者手动完成
