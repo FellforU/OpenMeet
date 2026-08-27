@@ -1,0 +1,22 @@
+; NSIS hooks template. scripts/build_release.ps1 replaces @RUNTIME_DIR@ with the
+; absolute path of the assembled runtime/ directory and writes hooks.nsh next to
+; this file (hooks.nsh is gitignored).
+;
+; Layout copied into $INSTDIR:
+;   python/       embedded Python + site-packages (CPU torch)
+;   asr_service/  FastAPI service sources
+;   ffmpeg/       ffmpeg.exe
+
+!macro NSIS_HOOK_POSTINSTALL
+  SetOutPath "$INSTDIR"
+  File /r "@RUNTIME_DIR@\python"
+  File /r "@RUNTIME_DIR@\asr_service"
+  File /r "@RUNTIME_DIR@\ffmpeg"
+!macroend
+
+!macro NSIS_HOOK_PREUNINSTALL
+  ; Runtime may have grown (CUDA torch installed on first run) - remove whole trees
+  RMDir /r "$INSTDIR\python"
+  RMDir /r "$INSTDIR\asr_service"
+  RMDir /r "$INSTDIR\ffmpeg"
+!macroend

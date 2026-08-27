@@ -27,7 +27,8 @@ torchaudio>=2.0,<3.0
 pypinyin>=0.50,<1.0
 # 4.x 的 DiarizeOutput.speaker_embeddings 被声纹步骤直接复用
 pyannote-audio>=3.1,<5.0
-WeTextProcessing>=1.0,<2.0
+# Windows 无 pynini wheel，装不上；itn.py 会自动回退到内置规则
+WeTextProcessing>=1.0,<2.0; sys_platform != "win32"
 
 # Knowledge platform (Phase 2)
 sentence-transformers>=3.0,<4.0

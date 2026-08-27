@@ -25,6 +25,8 @@ _CUDA_BUILDS = [
 ]
 
 _INDEX_BASE = "https://download.pytorch.org/whl"
+# 国内镜像优先（阿里云同步了 PyTorch 官方 wheel 目录），失败再回官方源
+_MIRROR_FIND_LINKS = "https://mirrors.aliyun.com/pytorch-wheels/{suffix}/"
 
 
 def _get_nvidia_cuda_version() -> tuple[int, int] | None:
@@ -52,15 +54,15 @@ def _get_nvidia_cuda_version() -> tuple[int, int] | None:
         return None
 
 
-def _get_best_index_url(cuda_version: tuple[int, int]) -> str | None:
-    """Find the best PyTorch CUDA index URL for the given driver version.
+def _get_best_cuda_suffix(cuda_version: tuple[int, int]) -> str | None:
+    """Pick the newest PyTorch CUDA build the driver can run.
 
     NVIDIA drivers are backward compatible, so CUDA 13.0 driver can run
     cu128 (CUDA 12.8) PyTorch runtime.
     """
     for required, suffix in _CUDA_BUILDS:
         if cuda_version >= required:
-            return f"{_INDEX_BASE}/{suffix}"
+            return suffix
     return None
 
 
@@ -82,13 +84,8 @@ def _torch_is_cuda_build() -> bool:
         return False
 
 
-def _install_cuda_torch(index_url: str) -> bool:
-    """Install CUDA-enabled PyTorch via pip."""
-    cmd = [
-        sys.executable, "-m", "pip", "install",
-        "torch", "torchaudio",
-        "--index-url", index_url,
-    ]
+def _pip_install(args: list[str]) -> bool:
+    cmd = [sys.executable, "-m", "pip", "install", "--no-warn-script-location", *args]
     logger.info("Running: %s", " ".join(cmd))
     try:
         subprocess.check_call(cmd)
@@ -98,13 +95,29 @@ def _install_cuda_torch(index_url: str) -> bool:
         return False
 
 
-def main() -> int:
+def _install_cuda_torch(suffix: str) -> bool:
+    """Install CUDA-enabled PyTorch via pip: domestic mirror first, official fallback."""
+    mirror = _MIRROR_FIND_LINKS.format(suffix=suffix)
+    logger.info("Trying domestic mirror %s ...", mirror)
+    # --no-index 避免 pip 从 PyPI 选到版本号更高的 CPU 版 torch
+    if _pip_install(["--no-index", "--find-links", mirror, "torch", "torchaudio"]):
+        return True
+    logger.info("Mirror failed, falling back to %s/%s ...", _INDEX_BASE, suffix)
+    return _pip_install(["torch", "torchaudio", "--index-url", f"{_INDEX_BASE}/{suffix}"])
+
+
+def main(check_only: bool = False) -> int:
     """Auto-detect GPU and install CUDA PyTorch if needed.
+
+    Args:
+        check_only: only report whether an install would happen (used by the
+            desktop app to decide whether to show an "installing" notice).
 
     Returns:
         0: No action needed (already CUDA or no GPU)
         1: CUDA torch installed successfully (restart needed)
         2: Installation failed
+        3: (check_only) GPU present and CUDA torch missing — install needed
     """
     # Step 1: Check for NVIDIA GPU
     cuda_version = _get_nvidia_cuda_version()
@@ -135,18 +148,22 @@ def main() -> int:
         )
         return 0
 
-    # Step 4: Find the best CUDA index URL
-    index_url = _get_best_index_url(cuda_version)
-    if not index_url:
+    # Step 4: Pick the CUDA build
+    suffix = _get_best_cuda_suffix(cuda_version)
+    if not suffix:
         logger.warning(
             "No compatible PyTorch CUDA build for CUDA %d.%d",
             *cuda_version,
         )
         return 0
 
+    if check_only:
+        logger.info("CUDA torch (%s) install needed", suffix)
+        return 3
+
     # Step 5: Install CUDA torch
-    logger.info("Installing CUDA PyTorch from %s ...", index_url)
-    if _install_cuda_torch(index_url):
+    logger.info("Installing CUDA PyTorch (%s) ...", suffix)
+    if _install_cuda_torch(suffix):
         logger.info("CUDA PyTorch installed successfully")
         return 1
     else:
@@ -155,4 +172,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(check_only="--check" in sys.argv[1:]))

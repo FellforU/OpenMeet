@@ -1,9 +1,13 @@
+use std::fs::File;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{AppHandle, Emitter, Manager, State};
 
 const ASR_SERVICE_URL: &str = "http://127.0.0.1:18090";
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 pub struct SidecarState {
     pub process: Mutex<Option<Child>>,
@@ -28,28 +32,65 @@ impl Drop for SidecarState {
     }
 }
 
+/// Where the Python service and interpreter live.
+///
+/// 打包版布局（安装目录）：
+///   OpenMeet.exe
+///   python/python.exe        嵌入式 Python + site-packages
+///   asr_service/             服务源码
+///   ffmpeg/ffmpeg.exe
+/// 开发版布局：仓库根目录 + .venv
+struct RuntimeLayout {
+    /// Working directory for `python -m asr_service.main`
+    root: PathBuf,
+    python: String,
+    packaged: bool,
+}
+
+fn resolve_layout() -> Result<RuntimeLayout, String> {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let py = if cfg!(target_os = "windows") {
+                dir.join("python").join("python.exe")
+            } else {
+                dir.join("python").join("bin").join("python3")
+            };
+            if py.is_file() && dir.join("asr_service").is_dir() {
+                return Ok(RuntimeLayout {
+                    root: dir.to_path_buf(),
+                    python: py.to_string_lossy().to_string(),
+                    packaged: true,
+                });
+            }
+        }
+    }
+    let root = find_project_root()?;
+    let python = find_python(&root);
+    Ok(RuntimeLayout {
+        root,
+        python,
+        packaged: false,
+    })
+}
+
 /// Find the project root directory (where asr_service/ lives).
 /// In dev mode, current_dir is src-tauri/, so we check the parent.
 fn find_project_root() -> Result<PathBuf, String> {
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
 
-    // Check if asr_service/ exists in current dir
     if cwd.join("asr_service").is_dir() {
         return Ok(cwd);
     }
-    // Check parent (when running from src-tauri/)
     if let Some(parent) = cwd.parent() {
         if parent.join("asr_service").is_dir() {
             return Ok(parent.to_path_buf());
         }
     }
-    // Fallback to current dir
     Ok(cwd)
 }
 
 /// Find the best Python executable: prefer venv Python, fall back to system Python.
-fn find_python(project_root: &PathBuf) -> String {
-    // Try virtualenv Python first
+fn find_python(project_root: &Path) -> String {
     let venv_candidates = if cfg!(target_os = "windows") {
         vec![
             project_root.join(".venv/Scripts/python.exe"),
@@ -63,12 +104,11 @@ fn find_python(project_root: &PathBuf) -> String {
     };
 
     for candidate in venv_candidates {
-        if candidate.exists() {
+        if candidate.is_file() {
             return candidate.to_string_lossy().to_string();
         }
     }
 
-    // Fallback to system Python
     if cfg!(target_os = "windows") {
         "python".to_string()
     } else {
@@ -76,31 +116,108 @@ fn find_python(project_root: &PathBuf) -> String {
     }
 }
 
-/// Run GPU auto-detection and install CUDA PyTorch if needed.
-/// This runs before the ASR service starts so torch imports get the CUDA version.
-fn run_gpu_setup(python: &str, project_root: &Path) {
+/// Build a python command with the runtime's environment applied.
+fn python_cmd(layout: &RuntimeLayout, cache_dir: Option<&str>) -> Command {
+    let mut cmd = Command::new(&layout.python);
+    cmd.current_dir(&layout.root);
+
+    // 自带 ffmpeg 优先于系统 PATH
+    let ffmpeg_dir = layout.root.join("ffmpeg");
+    if ffmpeg_dir.is_dir() {
+        let sep = if cfg!(target_os = "windows") { ";" } else { ":" };
+        let old = std::env::var("PATH").unwrap_or_default();
+        cmd.env("PATH", format!("{}{}{}", ffmpeg_dir.display(), sep, old));
+    }
+    // 打包版不应读到用户机器上其他 Python 的 site-packages
+    if layout.packaged {
+        cmd.env_remove("PYTHONPATH");
+        cmd.env_remove("PYTHONHOME");
+        cmd.env("PYTHONIOENCODING", "utf-8");
+    }
+
+    // Inject cache env vars — models go into {cache_dir}/models subdirectory
+    // （模型下载统一走 ModelScope 国内源）
+    if let Some(dir) = cache_dir {
+        let models_dir = Path::new(dir).join("models");
+        cmd.env("MODELSCOPE_CACHE", models_dir.to_string_lossy().to_string());
+        cmd.env("OPENMEET_CACHE_DIR", dir);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
+/// Open (truncating) a log file under the app log dir; None in dev mode.
+fn open_log(app: &AppHandle, name: &str) -> Option<File> {
+    let dir = app.path().app_log_dir().ok()?;
+    std::fs::create_dir_all(&dir).ok()?;
+    File::create(dir.join(name)).ok()
+}
+
+/// Dev mode: run GPU setup synchronously before the service (legacy behaviour,
+/// the developer's venv may need CUDA torch installed).
+fn run_gpu_setup_blocking(layout: &RuntimeLayout) {
     eprintln!("[sidecar] Running GPU setup...");
-    match Command::new(python)
+    match python_cmd(layout, None)
         .args(["-m", "asr_service.gpu_setup"])
-        .current_dir(project_root)
-        .stdout(std::process::Stdio::inherit())
-        .stderr(std::process::Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
         .status()
     {
-        Ok(status) => {
-            let code = status.code().unwrap_or(-1);
-            match code {
-                0 => eprintln!("[sidecar] GPU setup: no changes needed"),
-                1 => eprintln!("[sidecar] GPU setup: CUDA PyTorch installed"),
-                _ => eprintln!("[sidecar] GPU setup: completed with code {}", code),
-            }
-        }
+        Ok(status) => eprintln!("[sidecar] GPU setup exit code {}", status.code().unwrap_or(-1)),
         Err(e) => eprintln!("[sidecar] GPU setup failed (non-fatal): {}", e),
     }
 }
 
+/// Packaged mode: the installer ships CPU torch. If an NVIDIA GPU is present,
+/// install CUDA torch in the background and tell the UI to prompt a restart.
+///
+/// 事件 `gpu-setup` payload: "installing" | "installed" | "failed"
+fn spawn_gpu_setup_background(app: AppHandle, layout: RuntimeLayout) {
+    std::thread::spawn(move || {
+        let log = open_log(&app, "gpu_setup.log");
+        let (out, err) = match log {
+            Some(f) => (
+                Stdio::from(f.try_clone().unwrap_or(f)),
+                Stdio::null(),
+            ),
+            None => (Stdio::null(), Stdio::null()),
+        };
+
+        // --check: exit 3 means "GPU present, CUDA torch missing, would install"
+        let check = python_cmd(&layout, None)
+            .args(["-m", "asr_service.gpu_setup", "--check"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .ok()
+            .and_then(|s| s.code());
+        if check != Some(3) {
+            return;
+        }
+
+        let _ = app.emit("gpu-setup", "installing");
+        let status = python_cmd(&layout, None)
+            .args(["-m", "asr_service.gpu_setup"])
+            .stdout(out)
+            .stderr(err)
+            .status()
+            .ok()
+            .and_then(|s| s.code());
+        let _ = app.emit(
+            "gpu-setup",
+            if status == Some(1) { "installed" } else { "failed" },
+        );
+    });
+}
+
 #[tauri::command]
 pub async fn start_asr_service(
+    app: AppHandle,
     state: State<'_, SidecarState>,
     cache_dir: Option<String>,
 ) -> Result<String, String> {
@@ -110,31 +227,41 @@ pub async fn start_asr_service(
         return Ok("ASR service already running".to_string());
     }
 
-    let project_root = find_project_root()?;
-    let python = find_python(&project_root);
+    let layout = resolve_layout()?;
 
-    // Auto-detect GPU and install CUDA PyTorch before starting the service
-    run_gpu_setup(&python, &project_root);
+    if !layout.packaged {
+        run_gpu_setup_blocking(&layout);
+    }
 
-    let mut cmd = Command::new(&python);
-    cmd.args(["-m", "asr_service.main"])
-        .current_dir(&project_root);
+    let mut cmd = python_cmd(&layout, cache_dir.as_deref());
+    cmd.args(["-m", "asr_service.main"]);
 
-    // Inject cache env vars — models go into {cache_dir}/models subdirectory
-    // （模型下载统一走 ModelScope 国内源）
-    if let Some(ref dir) = cache_dir {
-        let models_dir = Path::new(dir).join("models");
-        let models_str = models_dir.to_string_lossy().to_string();
-        cmd.env("MODELSCOPE_CACHE", &models_str);
-        cmd.env("OPENMEET_CACHE_DIR", dir);
+    if layout.packaged {
+        // 无控制台：日志落到 app log 目录，便于用户反馈问题
+        if let Some(f) = open_log(&app, "asr_service.log") {
+            let f2 = f.try_clone().map_err(|e| e.to_string())?;
+            cmd.stdout(Stdio::from(f)).stderr(Stdio::from(f2));
+        }
     }
 
     let child = cmd
         .spawn()
-        .map_err(|e| format!("Failed to start ASR service (python={}): {}", python, e))?;
+        .map_err(|e| format!("Failed to start ASR service (python={}): {}", layout.python, e))?;
 
     *proc_guard = Some(child);
-    Ok(format!("ASR service started (python={}, root={})", python, project_root.display()))
+
+    let msg = format!(
+        "ASR service started (python={}, root={}, packaged={})",
+        layout.python,
+        layout.root.display(),
+        layout.packaged
+    );
+
+    if layout.packaged {
+        spawn_gpu_setup_background(app, layout);
+    }
+
+    Ok(msg)
 }
 
 #[tauri::command]

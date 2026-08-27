@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Toaster } from "sonner";
+import { Toaster, toast } from "sonner";
+import { listen } from "@tauri-apps/api/event";
 import { Sidebar } from "./components/Sidebar";
 import { HeaderBar } from "./components/HeaderBar";
 import { Workspace } from "./components/Workspace";
@@ -46,7 +47,18 @@ function App() {
         }
       }
 
-      // 2. Start ASR with correct cache dir and HF mirror (settings are now loaded)
+      // 打包版：安装包自带 CPU torch，检测到 NVIDIA 显卡后后台安装 CUDA 版
+      listen<string>("gpu-setup", (e) => {
+        if (e.payload === "installing") {
+          toast.info("检测到 NVIDIA 显卡，正在后台安装 GPU 加速组件（约 2.5GB），期间转录以 CPU 模式运行", { duration: 15000 });
+        } else if (e.payload === "installed") {
+          toast.success("GPU 加速组件安装完成，重启 OpenMeet 后生效", { duration: Infinity, closeButton: true });
+        } else if (e.payload === "failed") {
+          toast.error("GPU 加速组件安装失败，已回退 CPU 模式（日志见 gpu_setup.log）", { duration: 15000 });
+        }
+      }).then((un) => { if (cancelled) un(); });
+
+      // 2. Start ASR with correct cache dir (settings are now loaded)
       try {
         const { general } = useSettingsStore.getState();
         const cacheDir = general.cacheDir || undefined;

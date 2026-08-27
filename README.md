@@ -108,17 +108,16 @@ OpenMeet 选择另一条路：
 
 ## 🚀 快速开始
 
-### 方式一：下载安装包
+### 方式一：下载安装包（Windows）
 
-前往 [Releases](https://github.com/FellforU/OpenMeet/releases) 下载对应平台安装包：
+前往 [Releases](https://github.com/FellforU/OpenMeet/releases) 下载 `OpenMeet_x.x.x_x64-setup.exe`，双击安装即可。安装包**自带 Python 运行时和全部依赖**，不需要预装 Python、CUDA 或 ffmpeg。
 
-| 平台 | 文件 |
-|------|------|
-| Windows | `OpenMeet_x.x.x_x64-setup.exe` |
-| macOS | `OpenMeet_x.x.x_aarch64.dmg` |
-| Linux | `OpenMeet_x.x.x_amd64.AppImage` |
+- 安装到当前用户目录，不需要管理员权限
+- 首次启动检测到 NVIDIA 显卡时，会在后台自动安装 GPU 加速组件（约 2.5GB，国内镜像），装完提示重启生效；期间以 CPU 模式照常使用
+- 显卡驱动需 ≥ 570（2025 年之后的驱动均满足），**不需要**安装 CUDA Toolkit
+- 未签名的安装包首次运行会弹 SmartScreen 提示，点「更多信息 → 仍要运行」即可
 
-> 当前版本仍需本地 Python 环境运行 ASR 服务，见下方从源码运行；独立打包在路线图中。
+> macOS / Linux 安装包在路线图中，目前请从源码运行。
 
 ### 方式二：从源码运行
 
@@ -262,6 +261,8 @@ OpenMeet/
 
 README 截图由 `tools/screenshot.ps1 <name>` 直接抓取运行中的应用窗口生成（Windows），输出到 `docs/assets/`。
 
+Windows 安装包由 `scripts/build_release.ps1` 生成：组装嵌入式 Python 运行时到 `runtime/`（gitignored）→ 通过 NSIS 钩子（`src-tauri/nsis/hooks.nsh.in`）打入安装器 → `npm run tauri build --config src-tauri/tauri.release.conf.json`。
+
 提交规范遵循 [Conventional Commits](https://www.conventionalcommits.org/)：`feat` / `fix` / `perf` / `refactor` / `docs` / `test` / `chore`，正文使用中文描述。
 
 ## 🗺️ 路线图
@@ -273,7 +274,7 @@ README 截图由 `tools/screenshot.ps1 <name>` 直接抓取运行中的应用窗
 - [x] 知识库 RAG 与 AI 对话
 - [x] 后处理流水线并发优化与进度可视化
 - [x] 全局转录搜索
-- [ ] 安装包内置 Python 运行时（免环境配置）
+- [x] Windows 安装包内置 Python 运行时（免环境配置，GPU 组件按需自动安装）
 - [ ] faster-whisper 增加 large-v3-turbo 档
 - [ ] 中文 ASR 引擎评估 FireRedASR2（公开中文 SOTA）
 - [ ] sherpa-onnx Rust 轻量模式（免 Python 依赖的即装即用）
