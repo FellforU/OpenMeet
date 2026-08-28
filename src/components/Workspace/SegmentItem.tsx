@@ -26,6 +26,7 @@ interface SegmentItemProps {
   showSpeakerHeader?: boolean;
   speakerTimeRange?: { start: number; end: number };
   onRenameSpeaker?: (oldName: string, newName: string) => void;
+  onAssignVoiceprint?: (segmentId: string, voiceprintId: string, name: string) => void;
 }
 
 function formatTime(seconds: number): string {
@@ -39,6 +40,7 @@ export const SegmentItem = memo(function SegmentItem({
   showSpeakerHeader,
   speakerTimeRange,
   onRenameSpeaker,
+  onAssignVoiceprint,
 }: SegmentItemProps) {
   const seekTo = useTranscriptionStore((s) => s.seekTo);
 
@@ -49,7 +51,16 @@ export const SegmentItem = memo(function SegmentItem({
           <span
             className={`inline-block h-2.5 w-2.5 rounded-full ${SPEAKER_DOT_COLORS[getSpeakerColorIndex(segment.speaker)]}`}
           />
-          <span className="text-sm font-semibold">{segment.speaker}</span>
+          <SpeakerBadge
+            speaker={segment.speaker}
+            voiceprintId={segment.voiceprintId}
+            onRename={onRenameSpeaker}
+            onAssignVoiceprint={
+              onAssignVoiceprint
+                ? (vpId, name) => onAssignVoiceprint(segment.id, vpId, name)
+                : undefined
+            }
+          />
           <span className="ml-auto text-xs text-muted-foreground">
             {formatTime(speakerTimeRange.start)} - {formatTime(speakerTimeRange.end)}
           </span>
@@ -63,7 +74,16 @@ export const SegmentItem = memo(function SegmentItem({
           {formatTime(segment.start)}
         </button>
         {segment.speaker && !showSpeakerHeader && (
-          <SpeakerBadge speaker={segment.speaker} onRename={onRenameSpeaker} />
+          <SpeakerBadge
+            speaker={segment.speaker}
+            voiceprintId={segment.voiceprintId}
+            onRename={onRenameSpeaker}
+            onAssignVoiceprint={
+              onAssignVoiceprint
+                ? (vpId, name) => onAssignVoiceprint(segment.id, vpId, name)
+                : undefined
+            }
+          />
         )}
         <span className="flex-1 leading-relaxed">{segment.text}</span>
       </div>

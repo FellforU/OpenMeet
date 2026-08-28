@@ -36,3 +36,10 @@ htmlcov/
 # Environment
 .env
 .env.local
+
+.omc/
+
+# release runtime assembled by scripts/build_release.ps1
+runtime/
+src-tauri/nsis/hooks.nsh
+runtime_build.log

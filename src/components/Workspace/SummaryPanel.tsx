@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Lightbulb,
@@ -7,17 +7,22 @@ import {
   Calendar,
   Loader2,
   MessageSquare,
-  Pencil,
   Save,
   X,
   Link2,
+  Gavel,
+  Cpu,
+  ArrowRight,
+  Database,
+  Users,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
-import { Textarea } from "../ui/textarea";
+import { MilkdownEditor } from "../Editor";
 import { useTranscriptionStore } from "../../stores/transcriptionStore";
+import { useProjectStore } from "../../stores/projectStore";
 import type { Segment } from "../../types";
 
 interface ActionItem {
@@ -26,40 +31,93 @@ interface ActionItem {
   assignee?: string;
   owner?: string;
   deadline?: string | null;
+  priority?: string;
+  status?: string;
   done?: boolean;
 }
 
 interface SummaryPanelProps {
   onJumpToTranscript?: (time: number) => void;
+  /** 编辑状态由 Workspace 托管，编辑按钮显示在标签页行的导出按钮旁 */
+  editing?: boolean;
+  onEditingChange?: (editing: boolean) => void;
+}
+
+/** Find the longest common substring length between two strings. */
+function longestCommonSubstr(a: string, b: string): number {
+  if (!a || !b) return 0;
+  // Sliding window approach — avoid O(n*m) DP for potentially long texts
+  const short = a.length <= b.length ? a : b;
+  const long = a.length <= b.length ? b : a;
+  let best = 0;
+  for (let len = Math.min(short.length, 20); len > best; len--) {
+    for (let i = 0; i <= short.length - len; i++) {
+      if (long.includes(short.slice(i, i + len))) {
+        best = len;
+        break;
+      }
+    }
+  }
+  return best;
 }
 
 function findSegmentTime(
   summaryText: string,
   segments: Segment[]
 ): number | null {
-  const keywords = summaryText
-    .replace(/[^\u4e00-\u9fa5a-zA-Z0-9\s]/g, "")
-    .slice(0, 20);
-  if (!keywords) return null;
-  const searchStr = keywords.slice(0, 8);
+  if (!segments.length) return null;
+
+  const summaryLower = summaryText.toLowerCase();
+
+  // Extract longer phrases (4+ Chinese chars) and English words (4+ chars) for better specificity
+  const chinesePhrases = summaryLower.match(/[\u4e00-\u9fa5]{4,}/g) || [];
+  const englishWords =
+    summaryLower.match(/[a-zA-Z]{4,}/g) || [];
+  const keywords = [...new Set([...chinesePhrases, ...englishWords])];
+
+  let bestScore = 0;
+  let bestTime: number | null = null;
+
   for (const seg of segments) {
-    if (seg.text.includes(searchStr)) return seg.start;
+    const segLower = seg.text.toLowerCase();
+
+    // Score 1: keyword match count (weighted by keyword length)
+    let kwScore = 0;
+    for (const kw of keywords) {
+      if (segLower.includes(kw)) kwScore += kw.length;
+    }
+
+    // Score 2: longest common substring for direct text similarity
+    const lcs = longestCommonSubstr(summaryLower, segLower);
+
+    const score = kwScore + lcs * 2;
+    if (score > bestScore) {
+      bestScore = score;
+      bestTime = seg.start;
+    }
   }
-  return null;
+
+  return bestScore > 0 ? bestTime : null;
 }
 
 function formatSummaryToMarkdown(summary: {
   topic?: string;
   conclusions?: string[];
+  decisions?: Array<{ decision: string; madeBy: string; reasoning: string }>;
   actionItems?: Array<{
     action?: string;
     task?: string;
     assignee?: string;
     owner?: string;
     deadline?: string | null;
+    priority?: string;
     done?: boolean;
   }>;
-  discussion?: string | Array<{ topic: string; summary: string }>;
+  discussion?: Array<{ topic: string; summary: string; participants?: string[]; keyPoints?: string[] }>;
+  technicalDetails?: Array<{ category: string; details: string }>;
+  nextSteps?: string[];
+  keyData?: string[];
+  participants?: string[];
 }): string {
   const lines: string[] = [];
 
@@ -68,55 +126,106 @@ function formatSummaryToMarkdown(summary: {
   }
 
   if (summary.conclusions && summary.conclusions.length > 0) {
-    lines.push("## Conclusions", "");
-    for (const c of summary.conclusions) {
-      lines.push(`- ${c}`);
-    }
+    lines.push("## 结论", "");
+    for (const c of summary.conclusions) lines.push(`- ${c}`);
     lines.push("");
   }
 
-  if (summary.actionItems && summary.actionItems.length > 0) {
-    lines.push("## Action Items", "");
-    for (const item of summary.actionItems) {
-      const action = item.action || item.task || "";
-      const owner = item.owner || item.assignee || "";
-      const deadline = item.deadline || "";
-      const check = item.done ? "x" : " ";
-      let line = `- [${check}] ${action}`;
-      if (owner) line += ` (@${owner})`;
-      if (deadline) line += ` [Due: ${deadline}]`;
+  if (summary.decisions && summary.decisions.length > 0) {
+    lines.push("## 决策", "");
+    for (const d of summary.decisions) {
+      let line = `- **${d.decision}**`;
+      if (d.madeBy) line += ` (${d.madeBy})`;
+      if (d.reasoning) line += ` — ${d.reasoning}`;
       lines.push(line);
     }
     lines.push("");
   }
 
-  if (summary.discussion) {
-    lines.push("## Discussion", "");
-    if (typeof summary.discussion === "string") {
-      lines.push(summary.discussion);
-    } else if (Array.isArray(summary.discussion)) {
-      for (const d of summary.discussion) {
-        lines.push(`### ${d.topic}`, "", d.summary, "");
+  if (summary.actionItems && summary.actionItems.length > 0) {
+    lines.push("## 待办事项", "");
+    for (const item of summary.actionItems) {
+      const action = item.action || item.task || "";
+      const owner = item.owner || item.assignee || "";
+      const check = item.done ? "x" : " ";
+      const priorityTag = item.priority === "high" ? " 🔴" : item.priority === "low" ? " 🟢" : "";
+      let line = `- [${check}] ${action}${priorityTag}`;
+      if (owner) line += ` (@${owner})`;
+      if (item.deadline) line += ` [截止: ${item.deadline}]`;
+      lines.push(line);
+    }
+    lines.push("");
+  }
+
+  if (summary.discussion && summary.discussion.length > 0) {
+    lines.push("## 讨论要点", "");
+    for (const d of summary.discussion) {
+      lines.push(`### ${d.topic}`, "");
+      if (d.participants && d.participants.length > 0) {
+        lines.push(`**参与者:** ${d.participants.join("、")}`, "");
+      }
+      lines.push(d.summary, "");
+      if (d.keyPoints && d.keyPoints.length > 0) {
+        lines.push("**关键要点:**", "");
+        for (const kp of d.keyPoints) lines.push(`- ${kp}`);
+        lines.push("");
       }
     }
+  }
+
+  if (summary.technicalDetails && summary.technicalDetails.length > 0) {
+    lines.push("## 技术细节", "");
+    for (const td of summary.technicalDetails) lines.push(`- **${td.category}**: ${td.details}`);
+    lines.push("");
+  }
+
+  if (summary.nextSteps && summary.nextSteps.length > 0) {
+    lines.push("## 下一步", "");
+    for (const step of summary.nextSteps) lines.push(`- ${step}`);
+    lines.push("");
+  }
+
+  if (summary.keyData && summary.keyData.length > 0) {
+    lines.push("## 关键数据", "");
+    for (const data of summary.keyData) lines.push(`- ${data}`);
+    lines.push("");
+  }
+
+  if (summary.participants && summary.participants.length > 0) {
+    lines.push("## 参与者", "");
+    lines.push(summary.participants.map((p) => `@${p}`).join("、"), "");
   }
 
   return lines.join("\n");
 }
 
-export function SummaryPanel({ onJumpToTranscript }: SummaryPanelProps) {
+export function SummaryPanel({
+  onJumpToTranscript,
+  editing = false,
+  onEditingChange,
+}: SummaryPanelProps) {
   const { t } = useTranslation("workspace");
   const summary = useTranscriptionStore((s) => s.summary);
   const setSummary = useTranscriptionStore((s) => s.setSummary);
   const toggleActionItem = useTranscriptionStore((s) => s.toggleActionItem);
   const segments = useTranscriptionStore((s) => s.segments);
-  const status = useTranscriptionStore((s) => s.job.status);
   const pipelineStep = useTranscriptionStore((s) => s.job.pipelineStep);
 
-  const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState("");
 
-  if (status === "post_processing" && pipelineStep === "summarizing") {
+  // 进入编辑模式时初始化编辑内容
+  useEffect(() => {
+    if (editing && summary) {
+      setEditText(
+        summary.editedMarkdown ??
+          summary.rawMarkdown ??
+          formatSummaryToMarkdown(summary)
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing]);
+
+  if (pipelineStep === "summarizing") {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
         <Loader2 className="h-8 w-8 animate-spin" />
@@ -152,31 +261,34 @@ export function SummaryPanel({ onJumpToTranscript }: SummaryPanelProps) {
     );
   }
 
-  const handleStartEdit = () => {
-    const displayText =
-      summary.editedMarkdown ??
-      summary.rawMarkdown ??
-      formatSummaryToMarkdown(summary);
-    setEditText(displayText);
-    setEditing(true);
-  };
-
   const handleSave = () => {
     setSummary({ ...summary, editedMarkdown: editText });
-    setEditing(false);
+    onEditingChange?.(false);
     toast.success(t("common:toast.summarySaved"));
+
+    // Persist to SQLite
+    const activeProjectId = useProjectStore.getState().activeProjectId;
+    if (activeProjectId) {
+      useTranscriptionStore
+        .getState()
+        .persistSummary(activeProjectId)
+        .catch((err) => {
+          console.error("Failed to persist summary:", err);
+          toast.error(t("common:toast.persistFailed"));
+        });
+    }
   };
 
   const handleCancel = () => {
-    setEditing(false);
+    onEditingChange?.(false);
     setEditText("");
   };
 
   // Edit mode
   if (editing) {
     return (
-      <div className="h-full overflow-y-auto p-4">
-        <div className="mb-3 flex items-center gap-2">
+      <div className="flex h-full flex-col">
+        <div className="flex items-center gap-2 px-4 py-2">
           <Badge variant="secondary">{t("summary.editMode")}</Badge>
           <div className="ml-auto flex gap-2">
             <Button size="sm" onClick={handleSave}>
@@ -189,10 +301,9 @@ export function SummaryPanel({ onJumpToTranscript }: SummaryPanelProps) {
             </Button>
           </div>
         </div>
-        <Textarea
-          value={editText}
-          onChange={(e) => setEditText(e.target.value)}
-          className="min-h-[400px] font-mono text-[13px]"
+        <MilkdownEditor
+          defaultValue={editText}
+          onChange={(md) => setEditText(md)}
         />
       </div>
     );
@@ -201,8 +312,13 @@ export function SummaryPanel({ onJumpToTranscript }: SummaryPanelProps) {
   // View mode
   const topic = summary.topic || "";
   const conclusions = summary.conclusions || [];
+  const decisions = summary.decisions || [];
   const actionItems: ActionItem[] = summary.actionItems || [];
-  const discussion = summary.discussion;
+  const discussion = summary.discussion || [];
+  const technicalDetails = summary.technicalDetails || [];
+  const nextSteps = summary.nextSteps || [];
+  const keyData = summary.keyData || [];
+  const summaryParticipants = summary.participants || [];
 
   const handleJumpToTranscript = (text: string) => {
     if (!onJumpToTranscript) return;
@@ -212,15 +328,20 @@ export function SummaryPanel({ onJumpToTranscript }: SummaryPanelProps) {
     }
   };
 
+  const priorityColor = (p: string) => {
+    if (p === "high") return "bg-red-100 text-red-700 border-red-200";
+    if (p === "low") return "bg-green-100 text-green-700 border-green-200";
+    return "bg-yellow-100 text-yellow-700 border-yellow-200";
+  };
+
+  const priorityLabel = (p: string) => {
+    if (p === "high") return t("summary.priorityHigh");
+    if (p === "low") return t("summary.priorityLow");
+    return t("summary.priorityMedium");
+  };
+
   return (
     <div className="h-full overflow-y-auto p-4">
-      <div className="mb-3 flex items-center justify-end">
-        <Button variant="outline" size="sm" onClick={handleStartEdit}>
-          <Pencil className="mr-1.5 h-4 w-4" />
-          {t("summary.editSummary")}
-        </Button>
-      </div>
-
       <div className="space-y-3">
         {topic && (
           <Card>
@@ -256,6 +377,39 @@ export function SummaryPanel({ onJumpToTranscript }: SummaryPanelProps) {
           </Card>
         )}
 
+        {decisions.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <Gavel className="h-4 w-4" />
+                {t("summary.decisions")}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-3">
+                {decisions.map((d, i) => (
+                  <li key={i}>
+                    <p className="text-sm font-medium">{d.decision}</p>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {d.madeBy && (
+                        <Badge variant="outline" className="gap-1 text-[10px]">
+                          <User className="h-2.5 w-2.5" />
+                          {d.madeBy}
+                        </Badge>
+                      )}
+                      {d.reasoning && (
+                        <span className="text-xs text-muted-foreground">
+                          {d.reasoning}
+                        </span>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
+
         {actionItems.length > 0 && (
           <Card>
             <CardHeader className="pb-2">
@@ -278,7 +432,7 @@ export function SummaryPanel({ onJumpToTranscript }: SummaryPanelProps) {
                       />
                       <div className={isDone ? "line-through opacity-60" : ""}>
                         <p>{item.action || item.task}</p>
-                        <div className="mt-1 flex gap-1.5">
+                        <div className="mt-1 flex flex-wrap gap-1.5">
                           {(item.owner || item.assignee) && (
                             <Badge
                               variant="outline"
@@ -297,6 +451,14 @@ export function SummaryPanel({ onJumpToTranscript }: SummaryPanelProps) {
                               {item.deadline}
                             </Badge>
                           )}
+                          {item.priority && item.priority !== "medium" && (
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] ${priorityColor(item.priority)}`}
+                            >
+                              {priorityLabel(item.priority)}
+                            </Badge>
+                          )}
                         </div>
                       </div>
                     </li>
@@ -307,7 +469,7 @@ export function SummaryPanel({ onJumpToTranscript }: SummaryPanelProps) {
           </Card>
         )}
 
-        {discussion && (
+        {discussion.length > 0 && (
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-sm">
@@ -316,44 +478,128 @@ export function SummaryPanel({ onJumpToTranscript }: SummaryPanelProps) {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {typeof discussion === "string" ? (
-                <p className="whitespace-pre-wrap">{discussion}</p>
-              ) : (
-                Array.isArray(discussion) && (
-                  <ul className="space-y-3">
-                    {discussion.map(
-                      (
-                        d: { topic: string; summary: string },
-                        i: number
-                      ) => (
-                        <li key={i}>
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm font-medium">{d.topic}</p>
-                              <p className="mt-0.5 text-sm text-muted-foreground">
-                                {d.summary}
-                              </p>
-                            </div>
-                            {onJumpToTranscript && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 w-7 shrink-0 p-0"
-                                title={t("summary.jumpToTranscript")}
-                                onClick={() =>
-                                  handleJumpToTranscript(d.summary)
-                                }
-                              >
-                                <Link2 className="h-3.5 w-3.5" />
-                              </Button>
-                            )}
+              <ul className="space-y-3">
+                {discussion.map((d, i: number) => (
+                  <li key={i}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium">{d.topic}</p>
+                        {d.participants && d.participants.length > 0 && (
+                          <div className="mt-0.5 flex flex-wrap gap-1">
+                            {d.participants.map((p, pi) => (
+                              <Badge key={pi} variant="outline" className="text-[10px]">
+                                {p}
+                              </Badge>
+                            ))}
                           </div>
-                        </li>
-                      )
-                    )}
-                  </ul>
-                )
-              )}
+                        )}
+                        <p className="mt-0.5 text-sm text-muted-foreground">
+                          {d.summary}
+                        </p>
+                        {d.keyPoints && d.keyPoints.length > 0 && (
+                          <ul className="mt-1 space-y-0.5">
+                            {d.keyPoints.map((kp, ki) => (
+                              <li key={ki} className="text-xs text-muted-foreground">
+                                • {kp}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                      {onJumpToTranscript && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 shrink-0 p-0"
+                          title={t("summary.jumpToTranscript")}
+                          onClick={() =>
+                            handleJumpToTranscript(d.summary)
+                          }
+                        >
+                          <Link2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
+
+        {technicalDetails.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <Cpu className="h-4 w-4" />
+                {t("summary.technicalDetails")}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-2">
+                {technicalDetails.map((td, i) => (
+                  <li key={i}>
+                    <p className="text-sm">
+                      <span className="font-medium">{td.category}:</span>{" "}
+                      <span className="text-muted-foreground">{td.details}</span>
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
+
+        {nextSteps.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <ArrowRight className="h-4 w-4" />
+                {t("summary.nextSteps")}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-1">
+                {nextSteps.map((step, i) => (
+                  <li key={i} className="text-sm">• {step}</li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
+
+        {keyData.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <Database className="h-4 w-4" />
+                {t("summary.keyData")}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-1.5">
+                {keyData.map((data, i) => (
+                  <Badge key={i} variant="secondary">{data}</Badge>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {summaryParticipants.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <Users className="h-4 w-4" />
+                {t("summary.participants")}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-1.5">
+                {summaryParticipants.map((p, i) => (
+                  <Badge key={i} variant="outline">@{p}</Badge>
+                ))}
+              </div>
             </CardContent>
           </Card>
         )}

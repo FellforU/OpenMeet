@@ -13,12 +13,34 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["image-png", "protocol-asset"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", features = ["json"] }
 tokio = { version = "1", features = ["full"] }
-cpal = "0.15"
+cpal = "0.17"
 tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
 futures-util = "0.3"
 base64 = "0.22"
+chrono = "0.4"
+rusqlite = { version = "0.32", features = ["bundled"] }
+open = "5"
+uuid = { version = "1", features = ["v4"] }
+rsa = "0.9"
+rand = "0.8"
+sha2 = "0.10"
+rfd = "0.15"
+dirs = "6"
+tauri-plugin-updater = "2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+screencapturekit = "1.5"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+pipewire = { version = "0.8", optional = true }
+libpulse-binding = { version = "2.28", optional = true }
+
+[features]
+default = []
+pipewire-capture = ["pipewire"]
+pulse-capture = ["libpulse-binding"]

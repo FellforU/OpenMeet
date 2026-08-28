@@ -1,22 +1,77 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { invoke } from "@tauri-apps/api/core";
+
+export type ModelType = "LLM" | "EMBEDDING" | "RERANK";
+
+export interface ProviderModelEntry {
+  id: string;
+  type: ModelType;
+  enabled: boolean;
+}
 
 interface LLMProviderConfig {
   enabled: boolean;
   apiKey?: string;
   host?: string;
-  model?: string;
+  model?: string;               // Keep for backward compatibility
+  modelByType?: {               // Per-type model selection
+    LLM?: string;
+    EMBEDDING?: string;
+    RERANK?: string;
+  };
+  models?: ProviderModelEntry[];  // Fetched + user-toggled model list
 }
 
 interface GeneralConfig {
-  defaultLLMProvider: string;
+  defaultLLMProvider: string;       // DEPRECATED: kept for migration
+  defaultEmbeddingProvider: string; // DEPRECATED: kept for migration
+  defaultRerankProvider: string;    // DEPRECATED: kept for migration
+  defaultLLMModel: string;         // compound key "provider/model"
+  defaultEmbeddingModel: string;   // compound key "provider/model"
+  defaultRerankModel: string;      // compound key "provider/model"
+  enableRerank: boolean;           // Enable rerank reordering before LLM
   autoSummary: boolean;
   exportFormat: "markdown" | "txt" | "json";
+  asrEngine: string;
+  asrModelSize: string;
+  cacheDir: string;                 // Root cache directory for models, audio, attachments, etc.
+  customASRModels: CustomASRModel[]; // User-added custom ASR models
+  diarizationThreshold: number;      // Voiceprint matching threshold (0.0-1.0)
+  enableSpeechCleaning: boolean;     // Enable filler word cleaning
+  cleaningIntensity: "light" | "medium" | "heavy"; // Cleaning intensity
+  enableSegmentation: boolean;       // Enable semantic segmentation
+  enableHallucinationDetection: boolean; // Enable hallucination detection
+  enableItn: boolean;                // Enable inverse text normalization
+  enablePunctuation: boolean;        // Enable punctuation restoration
+  enableDiarization: boolean;        // Enable speaker diarization
+  enableLlmCorrection: boolean;     // Enable LLM-based ASR error correction
+  audioSource: "microphone" | "system" | "mixed"; // Recording audio source
+}
+
+// Parse a compound model reference like "openai/gpt-4o"
+export function parseModelRef(ref: string): { provider: string; model: string } {
+  const idx = ref.indexOf("/");
+  if (idx === -1) return { provider: ref, model: "" };
+  return { provider: ref.slice(0, idx), model: ref.slice(idx + 1) };
+}
+
+// Build a compound model reference
+export function makeModelRef(provider: string, model: string): string {
+  return `${provider}/${model}`;
+}
+
+export interface CustomASRModel {
+  id: string;
+  name: string;
+  platform: "huggingface" | "modelscope";
+  modelId: string;
+  mirrorUrl: string;
+  vramGb: number;
 }
 
 interface CloudAsrConfig {
-  openaiWhisper: { apiKey: string };
-  alibabaAsr: { keyId: string; secret: string };
+  openaiWhisper: { apiKey: string; model?: string };
+  alibabaAsr: { keyId: string; secret: string; model?: string };
 }
 
 interface SettingsStore {
@@ -25,55 +80,262 @@ interface SettingsStore {
   cloudAsr: CloudAsrConfig;
   autoDegradation: boolean;
 
-  setGeneral: (updates: Partial<GeneralConfig>) => void;
-  setLLMProvider: (key: string, updates: Partial<LLMProviderConfig>) => void;
-  setCloudAsr: (provider: "openaiWhisper" | "alibabaAsr", updates: Record<string, string>) => void;
-  setAutoDegradation: (enabled: boolean) => void;
+  loadSettings: () => Promise<void>;
+  setGeneral: (updates: Partial<GeneralConfig>) => Promise<void>;
+  setLLMProvider: (key: string, updates: Partial<LLMProviderConfig>) => Promise<void>;
+  setProviderModels: (providerKey: string, models: ProviderModelEntry[]) => Promise<void>;
+  toggleModelEnabled: (providerKey: string, modelId: string, enabled: boolean) => Promise<void>;
+  setCloudAsr: (provider: "openaiWhisper" | "alibabaAsr", updates: Record<string, string>) => Promise<void>;
+  setAutoDegradation: (enabled: boolean) => Promise<void>;
 }
 
-export const useSettingsStore = create<SettingsStore>()(
-  persist(
-    (set, get) => ({
-      general: {
-        defaultLLMProvider: "ollama",
-        autoSummary: true,
-        exportFormat: "markdown",
-      },
-      llmProviders: {
-        ollama: { enabled: true, host: "http://localhost:11434", model: "qwen2.5:7b" },
-        deepseek: { enabled: false },
-        qwen: { enabled: false },
-        zhipu: { enabled: false },
-        openai: { enabled: false },
-        gemini: { enabled: false },
-      },
-      cloudAsr: {
-        openaiWhisper: { apiKey: "" },
-        alibabaAsr: { keyId: "", secret: "" },
-      },
-      autoDegradation: true,
+const defaultState = {
+  general: {
+    defaultLLMProvider: "ollama",
+    defaultEmbeddingProvider: "ollama",
+    defaultRerankProvider: "qwen",
+    defaultLLMModel: "",
+    defaultEmbeddingModel: "",
+    defaultRerankModel: "",
+    enableRerank: false,
+    autoSummary: true,
+    exportFormat: "markdown" as const,
+    asrEngine: "whisper",
+    asrModelSize: "base",
+    cacheDir: "",
+    customASRModels: [],
+    // wespeaker 声纹跨会议同人相似度通常只有 0.4-0.6，0.65 会导致
+    // 已建档的人反复匹配失败、不停新建"未知说话人"
+    diarizationThreshold: 0.5,
+    enableSpeechCleaning: true,
+    cleaningIntensity: "medium" as const,
+    enableSegmentation: true,
+    enableHallucinationDetection: true,
+    enableItn: true,
+    enablePunctuation: true,
+    enableDiarization: true,
+    enableLlmCorrection: true,
+    audioSource: "microphone" as const,
+  },
+  llmProviders: {
+    ollama: { enabled: true, host: "http://localhost:11434", model: "qwen2.5:7b", modelByType: { LLM: "qwen2.5:7b" } },
+    deepseek: { enabled: false, model: "deepseek-chat", modelByType: { LLM: "deepseek-chat" } },
+    qwen: { enabled: false, model: "qwen-plus", modelByType: { LLM: "qwen-plus" } },
+    zhipu: { enabled: false, model: "glm-4-flash", modelByType: { LLM: "glm-4-flash" } },
+    openai: { enabled: false, model: "gpt-4o-mini", modelByType: { LLM: "gpt-4o-mini" } },
+    gemini: { enabled: false, model: "gemini-2.0-flash", modelByType: { LLM: "gemini-2.0-flash" } },
+    moonshot: { enabled: false, model: "kimi-latest", modelByType: { LLM: "kimi-latest" } },
+    wenxin: { enabled: false, model: "ernie-4.5-8k", modelByType: { LLM: "ernie-4.5-8k" } },
+    hunyuan: { enabled: false, model: "hunyuan-turbos-latest", modelByType: { LLM: "hunyuan-turbos-latest" } },
+    minimax: { enabled: false, model: "MiniMax-M1", modelByType: { LLM: "MiniMax-M1" } },
+    siliconflow: { enabled: false, model: "Qwen/Qwen3-8B", modelByType: { LLM: "Qwen/Qwen3-8B" } },
+    volcengine: { enabled: false, model: "doubao-1.5-pro-32k", modelByType: { LLM: "doubao-1.5-pro-32k" } },
+  },
+  cloudAsr: {
+    openaiWhisper: { apiKey: "" },
+    alibabaAsr: { keyId: "", secret: "" },
+  },
+  autoDegradation: true,
+};
 
-      setGeneral: (updates) =>
-        set({ general: { ...get().general, ...updates } }),
+// Encrypt a secret string via Rust RSA-OAEP
+async function encryptSecret(plaintext: string): Promise<string> {
+  if (!plaintext) return "";
+  try {
+    return await invoke<string>("encrypt_secret", { plaintext });
+  } catch {
+    return plaintext; // Fallback to plaintext if encryption unavailable
+  }
+}
 
-      setLLMProvider: (key, updates) =>
+// Decrypt a secret string via Rust RSA-OAEP
+async function decryptSecret(ciphertext: string): Promise<string> {
+  if (!ciphertext) return "";
+  try {
+    return await invoke<string>("decrypt_secret", { ciphertext });
+  } catch {
+    // Decryption failed — if it looks like a valid API key (short, printable ASCII), return as-is
+    if (ciphertext.length < 200 && /^[\x20-\x7E]+$/.test(ciphertext)) {
+      return ciphertext;
+    }
+    // Looks like corrupted ciphertext — return empty to force re-entry
+    return "";
+  }
+}
+
+// Encrypt sensitive fields before persisting
+async function encryptProviders(
+  providers: Record<string, LLMProviderConfig>
+): Promise<Record<string, LLMProviderConfig>> {
+  const result: Record<string, LLMProviderConfig> = {};
+  for (const [key, config] of Object.entries(providers)) {
+    result[key] = { ...config };
+    if (config.apiKey) {
+      result[key].apiKey = await encryptSecret(config.apiKey);
+    }
+  }
+  return result;
+}
+
+// Decrypt sensitive fields after loading
+async function decryptProviders(
+  providers: Record<string, LLMProviderConfig>
+): Promise<Record<string, LLMProviderConfig>> {
+  const result: Record<string, LLMProviderConfig> = {};
+  for (const [key, config] of Object.entries(providers)) {
+    result[key] = { ...config };
+    if (config.apiKey) {
+      result[key].apiKey = await decryptSecret(config.apiKey);
+    }
+  }
+  return result;
+}
+
+async function persistSettings(state: {
+  general: GeneralConfig;
+  llmProviders: Record<string, LLMProviderConfig>;
+  cloudAsr: CloudAsrConfig;
+  autoDegradation: boolean;
+}) {
+  const encryptedProviders = await encryptProviders(state.llmProviders);
+  const data = {
+    general: { ...state.general },
+    llmProviders: encryptedProviders,
+    cloudAsr: state.cloudAsr,
+    autoDegradation: state.autoDegradation,
+  };
+  await invoke("db_set_setting", {
+    key: "settings",
+    value: JSON.stringify(data),
+  });
+}
+
+export const useSettingsStore = create<SettingsStore>((set, get) => ({
+  ...defaultState,
+
+  loadSettings: async () => {
+    const raw = await invoke<string | null>("db_get_setting", {
+      key: "settings",
+    });
+    if (raw) {
+      try {
+        const data = JSON.parse(raw);
+        const mergedProviders = { ...defaultState.llmProviders, ...data.llmProviders };
+        // Migrate: if modelByType is missing but model exists, generate modelByType
+        for (const key of Object.keys(mergedProviders)) {
+          const cfg = mergedProviders[key];
+          if ((!cfg.modelByType || Object.keys(cfg.modelByType).length === 0) && cfg.model) {
+            mergedProviders[key] = { ...cfg, modelByType: { LLM: cfg.model } };
+          }
+        }
+
+        const mergedGeneral = { ...defaultState.general, ...data.general };
+
+        // Migrate: old modelCacheDir → new cacheDir
+        if (!mergedGeneral.cacheDir && data.general?.modelCacheDir) {
+          mergedGeneral.cacheDir = data.general.modelCacheDir;
+        }
+
+        // Migrate: old provider-level defaults → new compound key defaults
+        if (!mergedGeneral.defaultLLMModel && mergedGeneral.defaultLLMProvider) {
+          const provider = mergedGeneral.defaultLLMProvider;
+          const cfg = mergedProviders[provider];
+          const model = cfg?.modelByType?.LLM || cfg?.model || "";
+          if (model) {
+            mergedGeneral.defaultLLMModel = `${provider}/${model}`;
+          }
+        }
+        if (!mergedGeneral.defaultEmbeddingModel && mergedGeneral.defaultEmbeddingProvider) {
+          const provider = mergedGeneral.defaultEmbeddingProvider;
+          const cfg = mergedProviders[provider];
+          const model = cfg?.modelByType?.EMBEDDING || "";
+          if (model) {
+            mergedGeneral.defaultEmbeddingModel = `${provider}/${model}`;
+          }
+        }
+        if (!mergedGeneral.defaultRerankModel && mergedGeneral.defaultRerankProvider) {
+          const provider = mergedGeneral.defaultRerankProvider;
+          const cfg = mergedProviders[provider];
+          const model = cfg?.modelByType?.RERANK || "";
+          if (model) {
+            mergedGeneral.defaultRerankModel = `${provider}/${model}`;
+          }
+        }
+
+        const decrypted = await decryptProviders(mergedProviders);
         set({
-          llmProviders: {
-            ...get().llmProviders,
-            [key]: { ...get().llmProviders[key], ...updates },
-          },
-        }),
+          general: mergedGeneral,
+          llmProviders: decrypted,
+          cloudAsr: { ...defaultState.cloudAsr, ...data.cloudAsr },
+          autoDegradation: data.autoDegradation ?? defaultState.autoDegradation,
+        });
+      } catch {
+        // Use defaults on parse failure
+      }
+    }
+  },
 
-      setCloudAsr: (provider, updates) =>
-        set({
-          cloudAsr: {
-            ...get().cloudAsr,
-            [provider]: { ...get().cloudAsr[provider], ...updates },
-          },
-        }),
+  setGeneral: async (updates) => {
+    const newGeneral = { ...get().general, ...updates };
+    // Keep deprecated provider fields in sync when compound key changes
+    if (updates.defaultLLMModel) {
+      newGeneral.defaultLLMProvider = parseModelRef(updates.defaultLLMModel).provider;
+    }
+    if (updates.defaultEmbeddingModel) {
+      newGeneral.defaultEmbeddingProvider = parseModelRef(updates.defaultEmbeddingModel).provider;
+    }
+    if (updates.defaultRerankModel) {
+      newGeneral.defaultRerankProvider = parseModelRef(updates.defaultRerankModel).provider;
+    }
+    set({ general: newGeneral });
+    await persistSettings(get());
+  },
 
-      setAutoDegradation: (enabled) => set({ autoDegradation: enabled }),
-    }),
-    { name: "openmeet-settings" }
-  )
-);
+  setLLMProvider: async (key, updates) => {
+    const newProviders = {
+      ...get().llmProviders,
+      [key]: { ...get().llmProviders[key], ...updates },
+    };
+    set({ llmProviders: newProviders });
+    await persistSettings({ ...get(), llmProviders: newProviders });
+  },
+
+  setProviderModels: async (providerKey, models) => {
+    const current = get().llmProviders[providerKey];
+    if (!current) return;
+    const newProviders = {
+      ...get().llmProviders,
+      [providerKey]: { ...current, models },
+    };
+    set({ llmProviders: newProviders });
+    await persistSettings({ ...get(), llmProviders: newProviders });
+  },
+
+  toggleModelEnabled: async (providerKey, modelId, enabled) => {
+    const current = get().llmProviders[providerKey];
+    if (!current?.models) return;
+    const newModels = current.models.map((m) =>
+      m.id === modelId ? { ...m, enabled } : m
+    );
+    const newProviders = {
+      ...get().llmProviders,
+      [providerKey]: { ...current, models: newModels },
+    };
+    set({ llmProviders: newProviders });
+    await persistSettings({ ...get(), llmProviders: newProviders });
+  },
+
+  setCloudAsr: async (provider, updates) => {
+    const newCloudAsr = {
+      ...get().cloudAsr,
+      [provider]: { ...get().cloudAsr[provider], ...updates },
+    };
+    set({ cloudAsr: newCloudAsr });
+    await persistSettings({ ...get(), cloudAsr: newCloudAsr });
+  },
+
+  setAutoDegradation: async (enabled) => {
+    set({ autoDegradation: enabled });
+    await persistSettings({ ...get(), autoDegradation: enabled });
+  },
+}));

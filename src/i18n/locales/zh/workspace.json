@@ -2,17 +2,53 @@
   "tabs": {
     "transcript": "转录",
     "summary": "摘要",
-    "edit": "编辑"
+    "edit": "编辑",
+    "notes": "笔记",
+    "attachments": "附件",
+    "mindmap": "思维导图"
   },
   "transcript": {
     "empty": "上传音频或开始录音以进行转录",
-    "transcribing": "转录中..."
+    "transcribing": "转录中...",
+    "editMode": "编辑模式",
+    "processing": "处理中...",
+    "waitingForSegments": "正在录制，等待转录文本...",
+    "liveRecording": "实时转录中",
+    "step": {
+      "loading_model": "正在加载模型",
+      "transcribing": "正在转录",
+      "hallucination": "清理识别幻觉",
+      "itn": "数字格式规范化",
+      "filler": "过滤语气词",
+      "llm_correction": "AI 纠错",
+      "segmentation": "段落划分",
+      "punctuation": "添加标点符号",
+      "diarizing": "说话人分离",
+      "embedding": "提取声纹",
+      "summarizing": "生成摘要"
+    }
   },
   "summary": {
     "topic": "主题",
     "conclusions": "结论",
     "actionItems": "待办事项",
     "discussion": "讨论要点",
+    "decisions": "决策",
+    "technicalDetails": "技术细节",
+    "nextSteps": "下一步",
+    "keyData": "关键数据",
+    "participants": "参与者",
+    "priority": "优先级",
+    "priorityHigh": "高",
+    "priorityMedium": "中",
+    "priorityLow": "低",
+    "status": "状态",
+    "statusNotStarted": "未开始",
+    "statusInProgress": "进行中",
+    "statusCompleted": "已完成",
+    "madeBy": "决策人",
+    "reasoning": "理由",
+    "keyPoints": "关键要点",
     "empty": "转录完成后将显示摘要",
     "generating": "正在生成摘要...",
     "editSummary": "编辑摘要",
@@ -23,10 +59,37 @@
     "deadline": "截止日期"
   },
   "export": {
-    "title": "导出",
+    "title": "导出会议纪要",
     "markdown": "Markdown (.md)",
     "plainText": "纯文本 (.txt)",
-    "json": "JSON (.json)"
+    "json": "JSON (.json)",
+    "success": "已导出为 {{format}}",
+    "successPath": "已保存至 {{path}}",
+    "failed": "导出失败"
+  },
+  "regenerate": {
+    "title": "重新生成",
+    "summary": "重新生成摘要",
+    "transcript": "重新生成转录",
+    "summaryGenerating": "正在生成摘要...",
+    "transcriptGenerating": "正在转录...",
+    "postProcess": "重新后处理",
+    "postProcessing": "正在后处理...",
+    "postProcessSuccess": "后处理完成",
+    "postProcessFailed": "后处理失败: {{message}}",
+    "correction": "AI 纠错",
+    "correctionRunning": "AI 纠错中...",
+    "correctionSuccess": "AI 纠错完成",
+    "correctionFailed": "AI 纠错失败: {{message}}",
+    "numSpeakers": "发言人数量",
+    "numSpeakersPlaceholder": "自动检测"
+  },
+  "speakerCount": {
+    "title": "设置发言人数量",
+    "description": "请输入会议中的发言人数量，有助于提高说话人识别准确率。如果不确定，可以跳过，系统将自动识别。",
+    "placeholder": "请输入发言人数量（如：2）",
+    "confirm": "确认",
+    "skip": "跳过（自动识别）"
   },
   "recording": {
     "start": "开始录制",
@@ -35,5 +98,53 @@
   },
   "player": {
     "speed": "倍速"
+  },
+  "attachments": {
+    "empty": "暂无附件",
+    "add": "添加附件",
+    "dragHint": "拖拽文件到此处",
+    "deleteConfirm": "确定要删除这个附件吗？",
+    "open": "打开文件"
+  },
+  "notes": {
+    "placeholder": "在这里记录会议笔记...",
+    "saved": "已保存",
+    "saving": "保存中...",
+    "editMode": "编辑模式",
+    "startWriting": "开始写笔记"
+  },
+  "toolbar": {
+    "bold": "加粗",
+    "italic": "斜体",
+    "strikethrough": "删除线",
+    "h1": "一级标题",
+    "h2": "二级标题",
+    "h3": "三级标题",
+    "bulletList": "无序列表",
+    "orderedList": "有序列表",
+    "taskList": "任务列表",
+    "quote": "引用",
+    "code": "行内代码",
+    "hr": "分隔线",
+    "source": "源码",
+    "toggleSource": "切换源码/富文本模式"
+  },
+  "mindmap": {
+    "empty": "生成摘要后将显示思维导图",
+    "exportXmind": "导出 XMind"
+  },
+  "voiceprint": {
+    "searchPlaceholder": "搜索音色或输入新名字...",
+    "noMatch": "未找到匹配的音色",
+    "renameAs": "重命名为「{{name}}」"
+  },
+  "chat": {
+    "title": "AI 助手",
+    "currentProject": "当前会议",
+    "allKnowledge": "全部知识库",
+    "clear": "清空对话",
+    "placeholder": "向 AI 助手提问关于会议的问题...",
+    "inputPlaceholder": "输入问题...",
+    "sources": "来源引用"
   }
 }

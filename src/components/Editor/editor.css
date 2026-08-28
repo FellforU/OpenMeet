@@ -1,0 +1,153 @@
+/* Milkdown editor Tailwind integration styles */
+.milkdown-editor .ProseMirror {
+  min-height: 200px;
+  outline: none;
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  line-height: 1.625;
+}
+
+.milkdown-editor .ProseMirror p {
+  margin: 0.375em 0;
+}
+
+.milkdown-editor .ProseMirror h1 {
+  font-size: 1.5em;
+  font-weight: 700;
+  margin: 0.8em 0 0.4em;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  padding-bottom: 0.3em;
+}
+
+.milkdown-editor .ProseMirror h2 {
+  font-size: 1.25em;
+  font-weight: 600;
+  margin: 0.6em 0 0.3em;
+}
+
+.milkdown-editor .ProseMirror h3 {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin: 0.5em 0 0.25em;
+}
+
+.milkdown-editor .ProseMirror ul,
+.milkdown-editor .ProseMirror ol {
+  padding-left: 1.5em;
+  margin: 0.375em 0;
+}
+
+.milkdown-editor .ProseMirror ul {
+  list-style-type: disc;
+}
+
+.milkdown-editor .ProseMirror ol {
+  list-style-type: decimal;
+}
+
+.milkdown-editor .ProseMirror li {
+  margin: 0.15em 0;
+}
+
+.milkdown-editor .ProseMirror li p {
+  margin: 0;
+}
+
+.milkdown-editor .ProseMirror blockquote {
+  border-left: 3px solid var(--border, #e5e7eb);
+  padding-left: 1em;
+  margin: 0.5em 0;
+  color: var(--muted-foreground, #6b7280);
+}
+
+.milkdown-editor .ProseMirror code {
+  background: var(--muted, #f3f4f6);
+  border-radius: 0.25em;
+  padding: 0.15em 0.3em;
+  font-size: 0.9em;
+  font-family: ui-monospace, monospace;
+}
+
+.milkdown-editor .ProseMirror pre {
+  background: var(--muted, #f3f4f6);
+  border-radius: 0.5em;
+  padding: 0.75em 1em;
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+
+.milkdown-editor .ProseMirror pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+
+.milkdown-editor .ProseMirror table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.5em 0;
+}
+
+.milkdown-editor .ProseMirror th,
+.milkdown-editor .ProseMirror td {
+  border: 1px solid var(--border, #e5e7eb);
+  padding: 0.4em 0.6em;
+  text-align: left;
+}
+
+.milkdown-editor .ProseMirror th {
+  background: var(--muted, #f3f4f6);
+  font-weight: 600;
+}
+
+.milkdown-editor .ProseMirror hr {
+  border: none;
+  border-top: 1px solid var(--border, #e5e7eb);
+  margin: 1em 0;
+}
+
+/* Task list (GFM) */
+.milkdown-editor .ProseMirror .task-list-item {
+  list-style: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5em;
+}
+
+.milkdown-editor .ProseMirror .task-list-item input[type="checkbox"] {
+  margin-top: 0.25em;
+  cursor: pointer;
+}
+
+/* Strikethrough (GFM) */
+.milkdown-editor .ProseMirror del {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+/* Links */
+.milkdown-editor .ProseMirror a {
+  color: var(--primary, #3b82f6);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.milkdown-editor .ProseMirror a:hover {
+  opacity: 0.8;
+}
+
+/* Images */
+.milkdown-editor .ProseMirror img {
+  max-width: 100%;
+  border-radius: 0.5em;
+}
+
+/* Selection highlight */
+.milkdown-editor .ProseMirror ::selection {
+  background: var(--accent, #dbeafe);
+}
+
+/* Focus ring for edit mode */
+.milkdown-editor .ProseMirror-focused {
+  outline: none;
+}

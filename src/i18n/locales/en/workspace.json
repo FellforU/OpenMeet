@@ -2,17 +2,53 @@
   "tabs": {
     "transcript": "Transcript",
     "summary": "Summary",
-    "edit": "Edit"
+    "edit": "Edit",
+    "notes": "Notes",
+    "attachments": "Attachments",
+    "mindmap": "Mind Map"
   },
   "transcript": {
     "empty": "Upload audio or start recording to begin transcription",
-    "transcribing": "Transcribing..."
+    "transcribing": "Transcribing...",
+    "editMode": "Edit Mode",
+    "processing": "Processing...",
+    "waitingForSegments": "Recording, waiting for transcription...",
+    "liveRecording": "Live transcribing",
+    "step": {
+      "loading_model": "Loading Model",
+      "transcribing": "Transcribing",
+      "hallucination": "Removing Hallucinations",
+      "itn": "Normalizing Numbers",
+      "filler": "Filtering Filler Words",
+      "llm_correction": "AI Correction",
+      "segmentation": "Paragraph Segmentation",
+      "punctuation": "Adding Punctuation",
+      "diarizing": "Speaker Diarization",
+      "embedding": "Extracting Voiceprints",
+      "summarizing": "Generating Summary"
+    }
   },
   "summary": {
     "topic": "Topic",
     "conclusions": "Conclusions",
     "actionItems": "Action Items",
     "discussion": "Discussion Summary",
+    "decisions": "Decisions",
+    "technicalDetails": "Technical Details",
+    "nextSteps": "Next Steps",
+    "keyData": "Key Data",
+    "participants": "Participants",
+    "priority": "Priority",
+    "priorityHigh": "High",
+    "priorityMedium": "Medium",
+    "priorityLow": "Low",
+    "status": "Status",
+    "statusNotStarted": "Not Started",
+    "statusInProgress": "In Progress",
+    "statusCompleted": "Completed",
+    "madeBy": "Made by",
+    "reasoning": "Reasoning",
+    "keyPoints": "Key Points",
     "empty": "Summary will appear after transcription completes",
     "generating": "Generating summary...",
     "editSummary": "Edit Summary",
@@ -23,10 +59,37 @@
     "deadline": "Deadline"
   },
   "export": {
-    "title": "Export",
+    "title": "Export Minutes",
     "markdown": "Markdown (.md)",
     "plainText": "Plain Text (.txt)",
-    "json": "JSON (.json)"
+    "json": "JSON (.json)",
+    "success": "Exported as {{format}}",
+    "successPath": "Saved to {{path}}",
+    "failed": "Export failed"
+  },
+  "regenerate": {
+    "title": "Regenerate",
+    "summary": "Regenerate Summary",
+    "transcript": "Regenerate Transcript",
+    "summaryGenerating": "Generating summary...",
+    "transcriptGenerating": "Transcribing...",
+    "postProcess": "Re-run Post-processing",
+    "postProcessing": "Post-processing...",
+    "postProcessSuccess": "Post-processing completed",
+    "postProcessFailed": "Post-processing failed: {{message}}",
+    "correction": "AI Correction",
+    "correctionRunning": "AI correcting...",
+    "correctionSuccess": "AI correction completed",
+    "correctionFailed": "AI correction failed: {{message}}",
+    "numSpeakers": "Number of speakers",
+    "numSpeakersPlaceholder": "Auto-detect"
+  },
+  "speakerCount": {
+    "title": "Set Number of Speakers",
+    "description": "Enter the number of speakers in the meeting to improve speaker identification accuracy. If unsure, skip and the system will auto-detect.",
+    "placeholder": "Enter number of speakers (e.g., 2)",
+    "confirm": "Confirm",
+    "skip": "Skip (auto-detect)"
   },
   "recording": {
     "start": "Start Recording",
@@ -35,5 +98,53 @@
   },
   "player": {
     "speed": "Speed"
+  },
+  "attachments": {
+    "empty": "No attachments yet",
+    "add": "Add Attachment",
+    "dragHint": "Drag and drop files here",
+    "deleteConfirm": "Are you sure you want to delete this attachment?",
+    "open": "Open file"
+  },
+  "notes": {
+    "placeholder": "Take meeting notes here...",
+    "saved": "Saved",
+    "saving": "Saving...",
+    "editMode": "Edit Mode",
+    "startWriting": "Start Writing"
+  },
+  "toolbar": {
+    "bold": "Bold",
+    "italic": "Italic",
+    "strikethrough": "Strikethrough",
+    "h1": "Heading 1",
+    "h2": "Heading 2",
+    "h3": "Heading 3",
+    "bulletList": "Bullet List",
+    "orderedList": "Ordered List",
+    "taskList": "Task List",
+    "quote": "Blockquote",
+    "code": "Inline Code",
+    "hr": "Horizontal Rule",
+    "source": "Source",
+    "toggleSource": "Toggle source / rich text mode"
+  },
+  "mindmap": {
+    "empty": "Mind map will appear after summary is generated",
+    "exportXmind": "Export XMind"
+  },
+  "voiceprint": {
+    "searchPlaceholder": "Search voiceprint or enter new name...",
+    "noMatch": "No matching voiceprints found",
+    "renameAs": "Rename to \"{{name}}\""
+  },
+  "chat": {
+    "title": "AI Assistant",
+    "currentProject": "Current Meeting",
+    "allKnowledge": "All Knowledge",
+    "clear": "Clear Chat",
+    "placeholder": "Ask AI about your meetings...",
+    "inputPlaceholder": "Type your question...",
+    "sources": "Sources"
   }
 }

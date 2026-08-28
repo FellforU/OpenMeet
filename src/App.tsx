@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
-import { Toaster } from "sonner";
+import { invoke } from "@tauri-apps/api/core";
+import { Toaster, toast } from "sonner";
+import { listen } from "@tauri-apps/api/event";
 import { Sidebar } from "./components/Sidebar";
 import { HeaderBar } from "./components/HeaderBar";
 import { Workspace } from "./components/Workspace";
@@ -8,46 +10,105 @@ import { StatusBar } from "./components/StatusBar";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FirstRunGuide } from "./components/Guide/FirstRunGuide";
 import { TooltipProvider } from "./components/ui/tooltip";
-import { startAsrService, checkAsrHealth, configureEngine } from "./services/asrClient";
+import { startAsrService, checkAsrHealth, configureEngine, pushCustomModels } from "./services/asrClient";
+import { configureKnowledge } from "./services/knowledgeClient";
+import { migrateFromLocalStorage } from "./services/dataMigration";
 import { useSettingsStore } from "./stores/settingsStore";
-
-const FIRST_RUN_KEY = "openmeet_first_run_done";
+import { useProjectStore } from "./stores/projectStore";
+import { useEngineStore } from "./stores/engineStore";
+import { ChatButton } from "./components/Chat/ChatButton";
 
 function App() {
   const [collapsed, setCollapsed] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [asrReady, setAsrReady] = useState(false);
 
-  useEffect(() => {
-    const done = localStorage.getItem(FIRST_RUN_KEY);
-    if (!done) {
-      setShowGuide(true);
-    }
-  }, []);
-
-  // ASR service lifecycle + credential push
+  // Database + ASR initialization (sequential to ensure settings load before ASR starts)
   useEffect(() => {
     let cancelled = false;
 
-    async function initAsr() {
+    async function init() {
+      // 1. Load settings first — ASR startup depends on cacheDir
       try {
-        await startAsrService();
+        await migrateFromLocalStorage();
+        await useProjectStore.getState().loadProjects();
+        await useSettingsStore.getState().loadSettings();
+
+        const done = await invoke<string | null>("db_get_setting", {
+          key: "first_run_done",
+        });
+        if (!done) {
+          setShowGuide(true);
+        }
+      } catch {
+        const done = localStorage.getItem("openmeet_first_run_done");
+        if (!done) {
+          setShowGuide(true);
+        }
+      }
+
+      // 打包版：安装包自带 CPU torch，检测到 NVIDIA 显卡后后台安装 CUDA 版
+      listen<string>("gpu-setup", (e) => {
+        if (e.payload === "installing") {
+          toast.info("检测到 NVIDIA 显卡，正在后台安装 GPU 加速组件（约 2.5GB），期间转录以 CPU 模式运行", { duration: 15000 });
+        } else if (e.payload === "installed") {
+          toast.success("GPU 加速组件安装完成，重启 OpenMeet 后生效", { duration: Infinity, closeButton: true });
+        } else if (e.payload === "failed") {
+          toast.error("GPU 加速组件安装失败，已回退 CPU 模式（日志见 gpu_setup.log）", { duration: 15000 });
+        }
+      }).then((un) => { if (cancelled) un(); });
+
+      // 2. Start ASR with correct cache dir (settings are now loaded)
+      try {
+        const { general } = useSettingsStore.getState();
+        const cacheDir = general.cacheDir || undefined;
+        await startAsrService(cacheDir);
       } catch {
         // May already be running or in browser dev mode
       }
 
+      // 3. Wait for ASR health, then push config and refresh engines
       const check = async () => {
         try {
           await checkAsrHealth();
           if (!cancelled) {
-            setAsrReady(true);
+            await pushKnowledgeConfig();
             pushCredentials();
+            pushCustomModelConfigs();
+            // Refresh engine list after config is applied (correct cache dir)
+            useEngineStore.getState().fetchEngines();
+            setAsrReady(true);
           }
         } catch {
           if (!cancelled) setTimeout(check, 2000);
         }
       };
       check();
+    }
+
+    async function pushKnowledgeConfig() {
+      try {
+        const appDataDir = await invoke<string>("get_app_data_dir");
+        await configureKnowledge(appDataDir);
+      } catch {
+        // Knowledge features unavailable without config
+      }
+    }
+
+    function pushCustomModelConfigs() {
+      const { general } = useSettingsStore.getState();
+      if (general.customASRModels?.length) {
+        pushCustomModels(
+          general.customASRModels.map((m) => ({
+            id: m.id,
+            name: m.name,
+            platform: m.platform,
+            model_id: m.modelId,
+            mirror_url: m.mirrorUrl || null,
+            vram_gb: m.vramGb,
+          }))
+        ).catch(() => {});
+      }
     }
 
     function pushCredentials() {
@@ -65,15 +126,23 @@ function App() {
       }
     }
 
-    initAsr();
+    init();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const handleCloseGuide = () => {
+  const handleCloseGuide = async () => {
     setShowGuide(false);
-    localStorage.setItem(FIRST_RUN_KEY, "true");
+    try {
+      await invoke("db_set_setting", {
+        key: "first_run_done",
+        value: "true",
+      });
+    } catch {
+      // Fallback for browser dev mode
+      localStorage.setItem("openmeet_first_run_done", "true");
+    }
   };
 
   return (
@@ -90,6 +159,7 @@ function App() {
             <StatusBar asrReady={asrReady} />
           </div>
         </div>
+        <ChatButton />
         <Toaster position="top-right" richColors />
         <FirstRunGuide open={showGuide} onClose={handleCloseGuide} />
       </TooltipProvider>

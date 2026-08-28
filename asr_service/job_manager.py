@@ -10,6 +10,7 @@ from asr_service.engines.qwen3_engine import Qwen3Engine
 from asr_service.engines.paraformer_engine import ParaformerEngine
 from asr_service.engines.openai_api_engine import OpenAIWhisperEngine
 from asr_service.engines.alibaba_asr_engine import AlibabaASREngine
+from asr_service.engines.custom_engine import CustomEngine
 from asr_service.processors.audio_preprocessor import preprocess_audio
 from asr_service.services.post_processing import PostProcessingPipeline
 
@@ -27,6 +28,7 @@ class JobManager:
             "paraformer": ParaformerEngine(),
             "openai-whisper": OpenAIWhisperEngine(),
             "alibaba-asr": AlibabaASREngine(),
+            "custom": CustomEngine(),
         }
         self._running_tasks: dict[str, asyncio.Task] = {}
 
@@ -63,14 +65,19 @@ class JobManager:
             if not engine:
                 raise ValueError(f"Engine '{job.engine}' not available")
 
-            if not engine.is_loaded():
-                job.progress = 5.0
-                await engine.load_model(job.model_size)
+            # load_model() internally checks if the same model_size is already
+            # loaded and returns immediately — no double-loading.  If a
+            # *different* model_size is requested it calls unload_model() first.
+            job.progress = 5.0
+            await engine.load_model(job.model_size)
 
             job.progress = 10.0
 
-            # Preprocess audio
+            # Preprocess audio; point the job at the 16kHz mono wav so
+            # post-processing (diarization/alignment/embedding) reuses it
+            # instead of re-reading and resampling the original file
             wav_path = await preprocess_audio(job.audio_path)
+            job.audio_path = wav_path
             job.progress = 15.0
 
             # Transcribe
@@ -87,6 +94,10 @@ class JobManager:
             job.segments = segments
             job.progress = 100.0
             job.status = JobStatus.COMPLETED
+
+            # Release GPU memory after transcription so post-processing
+            # (and the next job) don't compete for VRAM
+            await engine.unload_model()
 
             # Run post-processing pipeline (fault-tolerant)
             try:

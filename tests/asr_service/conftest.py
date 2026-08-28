@@ -20,6 +20,7 @@ async def client():
         yield c
 
     jobs.set_manager(None)
+    engines.reset_loading_state()
     engines.set_manager(None)
     stream.set_manager(None)
     search.set_manager(None)

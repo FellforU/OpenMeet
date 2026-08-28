@@ -7,13 +7,19 @@ import {
   SelectValue,
 } from "../ui/select";
 import { Badge } from "../ui/badge";
-import { useEngineStore } from "../../stores/engineStore";
-
-const ENGINE_KEYS = ["whisper", "qwen3", "paraformer"] as const;
+import {
+  useEngineStore,
+  ENGINE_KEYS,
+  CLOUD_ENGINES,
+  isEngineAvailable,
+  isCloudEngineConfigured,
+} from "../../stores/engineStore";
+import { useSettingsStore } from "../../stores/settingsStore";
 
 export function EngineSelector() {
   const { t } = useTranslation();
   const { engines, selectedEngine, setSelectedEngine } = useEngineStore();
+  const cloudAsr = useSettingsStore((s) => s.cloudAsr);
 
   return (
     <Select value={selectedEngine} onValueChange={setSelectedEngine}>
@@ -24,14 +30,33 @@ export function EngineSelector() {
       </SelectTrigger>
       <SelectContent>
         {ENGINE_KEYS.map((key) => {
+          const isCloud = CLOUD_ENGINES.has(key);
           const engine = engines.find((e) => e.name === key);
+          const available = isEngineAvailable(key, engines, cloudAsr);
+          const downloadedCount = engine?.downloaded_models?.length ?? 0;
+
           return (
-            <SelectItem key={key} value={key}>
+            <SelectItem key={key} value={key} disabled={!available}>
               <div className="flex items-center gap-2">
-                <span>{t(`engine.${key}`)}</span>
-                {engine?.is_loaded && (
+                <span className={available ? "" : "text-muted-foreground"}>
+                  {t(`engine.${key}`)}
+                </span>
+                {/* Local engine: loaded badge */}
+                {!isCloud && engine?.is_loaded && (
                   <Badge variant="secondary" className="text-[10px] px-1 py-0">
                     {t("status.loaded")}
+                  </Badge>
+                )}
+                {/* Local engine: downloaded count badge */}
+                {!isCloud && downloadedCount > 0 && !engine?.is_loaded && (
+                  <Badge variant="outline" className="text-[10px] px-1 py-0 border-blue-300 text-blue-600">
+                    {downloadedCount}
+                  </Badge>
+                )}
+                {/* Cloud engine: API configured badge */}
+                {isCloud && isCloudEngineConfigured(key, cloudAsr) && (
+                  <Badge variant="outline" className="text-[10px] px-1 py-0 border-green-300 text-green-600">
+                    {t("status.apiReady")}
                   </Badge>
                 )}
               </div>

@@ -12,33 +12,28 @@ import { ProjectList } from "./ProjectList";
 import { ProjectNameDialog } from "./ProjectNameDialog";
 import { SearchBar } from "./SearchBar";
 import { useProjectStore } from "../../stores/projectStore";
+import { generateDefaultMeetingName } from "../../lib/meetingName";
+import logoHorizontal from "../../../ico/OpenMeet_logo5.png";
 
 interface SidebarProps {
   collapsed: boolean;
   onCollapse: (collapsed: boolean) => void;
 }
 
-type DialogMode = "project" | "folder" | null;
-
 export function Sidebar({ collapsed, onCollapse }: SidebarProps) {
   const { t } = useTranslation();
   const addProject = useProjectStore((s) => s.addProject);
   const addFolder = useProjectStore((s) => s.addFolder);
-  const [dialogMode, setDialogMode] = useState<DialogMode>(null);
+  const [folderDialogOpen, setFolderDialogOpen] = useState(false);
 
-  const handleConfirm = (name: string) => {
-    if (dialogMode === "project") {
-      addProject(name);
-    } else if (dialogMode === "folder") {
-      addFolder(name);
-    }
-    setDialogMode(null);
+  const handleNewMeeting = async () => {
+    await addProject(generateDefaultMeetingName());
   };
 
-  const dialogTitle =
-    dialogMode === "project"
-      ? t("sidebar.newProjectTitle")
-      : t("sidebar.newFolderTitle");
+  const handleFolderConfirm = async (name: string) => {
+    await addFolder(name);
+    setFolderDialogOpen(false);
+  };
 
   return (
     <aside
@@ -46,28 +41,35 @@ export function Sidebar({ collapsed, onCollapse }: SidebarProps) {
     >
       {!collapsed && (
         <>
-          <div className="flex items-center justify-between px-3 pt-4 pb-2">
-            <span className="text-[15px] font-semibold">OpenMeet</span>
+          <div className="flex justify-center px-3 pt-5 pb-4">
+            <img
+              src={logoHorizontal}
+              alt="OpenMeet"
+              className="h-8 object-contain"
+            />
+          </div>
+          <div className="flex items-center gap-2 px-3 pb-2">
+            <div className="flex-1">
+              <SearchBar compact />
+            </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button size="sm">
-                  <Plus className="mr-1 h-4 w-4" />
-                  {t("action.new")}
+                <Button size="sm" className="h-8 shrink-0 px-2.5">
+                  <Plus className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setDialogMode("project")}>
+                <DropdownMenuItem onClick={handleNewMeeting}>
                   <FileText className="mr-2 h-4 w-4" />
                   {t("sidebar.newProject")}
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setDialogMode("folder")}>
+                <DropdownMenuItem onClick={() => setFolderDialogOpen(true)}>
                   <FolderPlus className="mr-2 h-4 w-4" />
                   {t("sidebar.newFolder")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-          <SearchBar />
           <ProjectList />
         </>
       )}
@@ -79,10 +81,10 @@ export function Sidebar({ collapsed, onCollapse }: SidebarProps) {
       </button>
 
       <ProjectNameDialog
-        open={dialogMode !== null}
-        onClose={() => setDialogMode(null)}
-        onConfirm={handleConfirm}
-        title={dialogTitle}
+        open={folderDialogOpen}
+        onClose={() => setFolderDialogOpen(false)}
+        onConfirm={handleFolderConfirm}
+        title={t("sidebar.newFolderTitle")}
       />
     </aside>
   );

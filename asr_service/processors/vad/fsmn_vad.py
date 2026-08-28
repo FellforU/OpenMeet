@@ -4,11 +4,12 @@ Uses FunASR's FSMN-VAD model, optimized for Chinese speech.
 """
 
 import asyncio
-from pathlib import Path
+import logging
 from typing import Optional
 
-from asr_service import config
+from asr_service.processors.model_utils import resolve_modelscope_model
 
+logger = logging.getLogger(__name__)
 
 FSMN_VAD_MODEL_DIR = "speech_fsmn_vad_zh-cn-16k-common-pytorch"
 
@@ -20,13 +21,7 @@ class FSMNVadProcessor:
         self._model = None
 
     def _resolve_model_path(self) -> Optional[str]:
-        local = config.PROJECT_ROOT / "meeting" / "models" / FSMN_VAD_MODEL_DIR
-        if local.exists():
-            return str(local)
-        models = config.MODELS_DIR / FSMN_VAD_MODEL_DIR
-        if models.exists():
-            return str(models)
-        return None
+        return resolve_modelscope_model(FSMN_VAD_MODEL_DIR)
 
     async def load(self) -> None:
         if self._model:
@@ -34,13 +29,17 @@ class FSMNVadProcessor:
 
         model_path = self._resolve_model_path()
         if not model_path:
-            model_path = f"iic/{FSMN_VAD_MODEL_DIR}"
+            logger.info("VAD model not found locally, skipping")
+            return
 
         def _load():
             try:
+                import torch
                 from funasr import AutoModel
-                return AutoModel(model=model_path)
-            except Exception:
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                return AutoModel(model=model_path, device=device)
+            except Exception as e:
+                logger.warning("Failed to load VAD model from %s: %s", model_path, e)
                 return None
 
         self._model = await asyncio.to_thread(_load)

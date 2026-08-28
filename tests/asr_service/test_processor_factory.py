@@ -5,16 +5,21 @@ from asr_service.processors.vad.fsmn_vad import FSMNVadProcessor
 from asr_service.processors.vad.silero_vad import SileroVadProcessor
 from asr_service.processors.punctuation.ct_transformer import CTTransformerPunctuator
 from asr_service.processors.itn import ChineseITNProcessor
+from asr_service.processors.filler_filter import FillerFilterProcessor
+from asr_service.processors.hallucination_detector import HallucinationDetector
 from asr_service.processors.diarization.campplus import CAMPPlusDiarizer
 from asr_service.processors.diarization.pyannote_diarizer import PyAnnoteDiarizer
 
 
 def test_chinese_pipeline():
+    # pyannote 对所有语言优先，不可用时才在运行时回退 CAMPPlus
     pipeline = create_pipeline("zh")
     assert isinstance(pipeline.vad, FSMNVadProcessor)
     assert isinstance(pipeline.punctuator, CTTransformerPunctuator)
     assert isinstance(pipeline.itn, ChineseITNProcessor)
-    assert isinstance(pipeline.diarizer, CAMPPlusDiarizer)
+    assert isinstance(pipeline.filler_filter, FillerFilterProcessor)
+    assert isinstance(pipeline.hallucination_detector, HallucinationDetector)
+    assert isinstance(pipeline.diarizer, PyAnnoteDiarizer)
 
 
 def test_cantonese_pipeline():
@@ -22,7 +27,9 @@ def test_cantonese_pipeline():
     assert isinstance(pipeline.vad, FSMNVadProcessor)
     assert isinstance(pipeline.punctuator, CTTransformerPunctuator)
     assert isinstance(pipeline.itn, ChineseITNProcessor)
-    assert isinstance(pipeline.diarizer, CAMPPlusDiarizer)
+    assert isinstance(pipeline.filler_filter, FillerFilterProcessor)
+    assert isinstance(pipeline.hallucination_detector, HallucinationDetector)
+    assert isinstance(pipeline.diarizer, PyAnnoteDiarizer)
 
 
 def test_english_pipeline():
@@ -30,6 +37,8 @@ def test_english_pipeline():
     assert isinstance(pipeline.vad, SileroVadProcessor)
     assert pipeline.punctuator is None
     assert pipeline.itn is None
+    assert isinstance(pipeline.filler_filter, FillerFilterProcessor)
+    assert isinstance(pipeline.hallucination_detector, HallucinationDetector)
     assert isinstance(pipeline.diarizer, PyAnnoteDiarizer)
 
 
@@ -38,4 +47,6 @@ def test_japanese_pipeline():
     assert isinstance(pipeline.vad, SileroVadProcessor)
     assert pipeline.punctuator is None
     assert pipeline.itn is None
+    assert isinstance(pipeline.filler_filter, FillerFilterProcessor)
+    assert isinstance(pipeline.hallucination_detector, HallucinationDetector)
     assert isinstance(pipeline.diarizer, PyAnnoteDiarizer)

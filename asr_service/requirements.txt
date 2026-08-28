@@ -8,3 +8,31 @@ pytest-asyncio==0.25.*
 pytest-cov==6.*
 faster-whisper==1.1.*
 requests==2.*
+
+# Traditional-to-Simplified Chinese conversion for ASR post-processing
+opencc==1.2.0
+
+# FunASR engines (Paraformer, FSMN-VAD, CT-Transformer, CAMPPlus)
+funasr>=1.2,<2.0
+
+# Qwen3-ASR engine (0.0.6 起含 Qwen3ForcedAligner)
+qwen-asr>=0.0.6,<1.0
+
+# OpenAI Whisper API engine (cloud, optional)
+openai>=1.0,<3.0
+
+# VAD / Diarization / ITN (optional, lazy-loaded with try-except)
+torch>=2.0,<3.0
+torchaudio>=2.0,<3.0
+pypinyin>=0.50,<1.0
+# 4.x 的 DiarizeOutput.speaker_embeddings 被声纹步骤直接复用
+pyannote-audio>=3.1,<5.0
+# Windows 无 pynini wheel，装不上；itn.py 会自动回退到内置规则
+WeTextProcessing>=1.0,<2.0; sys_platform != "win32"
+
+# Knowledge platform (Phase 2)
+sentence-transformers>=3.0,<4.0
+lancedb>=0.17,<1.0
+pymupdf>=1.24,<2.0
+python-docx>=1.1,<2.0
+sse-starlette>=1.8,<2.0

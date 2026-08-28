@@ -4,12 +4,13 @@ Uses FunASR's CT-Transformer model for restoring punctuation marks.
 """
 
 import asyncio
-from pathlib import Path
+import logging
 from typing import Optional
 
-from asr_service import config
 from asr_service.models.job import Segment
+from asr_service.processors.model_utils import resolve_modelscope_model
 
+logger = logging.getLogger(__name__)
 
 CT_PUNC_MODEL_DIR = "punc_ct-transformer_zh-cn-common-vad_realtime-vocab272727"
 
@@ -21,13 +22,7 @@ class CTTransformerPunctuator:
         self._model = None
 
     def _resolve_model_path(self) -> Optional[str]:
-        local = config.PROJECT_ROOT / "meeting" / "models" / CT_PUNC_MODEL_DIR
-        if local.exists():
-            return str(local)
-        models = config.MODELS_DIR / CT_PUNC_MODEL_DIR
-        if models.exists():
-            return str(models)
-        return None
+        return resolve_modelscope_model(CT_PUNC_MODEL_DIR)
 
     async def load(self) -> None:
         if self._model:
@@ -35,13 +30,17 @@ class CTTransformerPunctuator:
 
         model_path = self._resolve_model_path()
         if not model_path:
-            model_path = f"iic/{CT_PUNC_MODEL_DIR}"
+            logger.info("Punctuation model not found locally, skipping")
+            return
 
         def _load():
             try:
+                import torch
                 from funasr import AutoModel
-                return AutoModel(model=model_path)
-            except Exception:
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                return AutoModel(model=model_path, device=device)
+            except Exception as e:
+                logger.warning("Failed to load punctuation model from %s: %s", model_path, e)
                 return None
 
         self._model = await asyncio.to_thread(_load)
@@ -61,16 +60,32 @@ class CTTransformerPunctuator:
         texts = [s.text for s in segments]
 
         def _punctuate():
-            results = []
-            for text in texts:
+            results = list(texts)
+            todo = [i for i, t in enumerate(texts) if t and t.strip()]
+            if not todo:
+                return results
+
+            # Batch all texts in one generate() call — a per-text loop pays
+            # the funasr pipeline overhead once per segment
+            try:
+                batch = model_ref.generate(input=[texts[i] for i in todo])
+                if isinstance(batch, list) and len(batch) == len(todo):
+                    for i, item in zip(todo, batch):
+                        if isinstance(item, dict):
+                            results[i] = item.get("text", texts[i])
+                    return results
+            except Exception as e:
+                logger.warning(
+                    "Batch punctuation failed, falling back to per-text: %s", e,
+                )
+
+            for i in todo:
                 try:
-                    result = model_ref.generate(input=text)
+                    result = model_ref.generate(input=texts[i])
                     if isinstance(result, list) and result:
-                        results.append(result[0].get("text", text))
-                    else:
-                        results.append(text)
+                        results[i] = result[0].get("text", texts[i])
                 except Exception:
-                    results.append(text)
+                    pass
             return results
 
         punctuated = await asyncio.to_thread(_punctuate)

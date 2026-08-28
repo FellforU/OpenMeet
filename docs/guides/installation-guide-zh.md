@@ -612,6 +612,7 @@ print('模型下载完成')
 ```bash
 cd openMeet
 source .venv/bin/activate
+#.venv\Scripts\activate  
 python -m asr_service.main
 ```
 

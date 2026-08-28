@@ -10,11 +10,19 @@ interface ProviderCardProps {
   name: string;
   description: string;
   type: "local" | "cloud";
+  supportedTypes?: string[];
   isConfigured: boolean;
   isEnabled?: boolean;
+  modelCount?: number;
   onToggleEnabled?: (enabled: boolean) => void;
   onClick: () => void;
 }
+
+const TYPE_COLORS: Record<string, string> = {
+  LLM: "border-blue-300 text-blue-600",
+  EMBEDDING: "border-purple-300 text-purple-600",
+  RERANK: "border-amber-300 text-amber-600",
+};
 
 export function ProviderCard({
   logoSrc,
@@ -22,8 +30,10 @@ export function ProviderCard({
   name,
   description,
   type,
+  supportedTypes,
   isConfigured,
   isEnabled,
+  modelCount,
   onToggleEnabled,
   onClick,
 }: ProviderCardProps) {
@@ -60,6 +70,24 @@ export function ProviderCard({
               <Check className="h-2.5 w-2.5" />
               {t("llm.configured")}
             </Badge>
+          )}
+          {isConfigured && modelCount !== undefined && modelCount > 0 && (
+            <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-600">
+              {t("llm.enabledModels", { count: modelCount })}
+            </Badge>
+          )}
+          {supportedTypes && supportedTypes.length > 0 && (
+            <>
+              {supportedTypes.map((st) => (
+                <Badge
+                  key={st}
+                  variant="outline"
+                  className={`text-[9px] px-1 py-0 ${TYPE_COLORS[st] || ""}`}
+                >
+                  {st}
+                </Badge>
+              ))}
+            </>
           )}
         </div>
         <p className="mt-0.5 truncate text-xs text-muted-foreground">

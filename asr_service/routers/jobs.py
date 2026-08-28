@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File
 from fastapi.responses import PlainTextResponse, JSONResponse
 from pydantic import BaseModel
 from typing import Optional
@@ -8,6 +8,7 @@ import shutil
 from pathlib import Path
 
 from asr_service.models.job import TranscriptionJob, JobStatus
+from asr_service.services.post_processing import PostProcessingPipeline, PipelineConfig
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -41,6 +42,7 @@ class JobResponse(BaseModel):
     model_size: str
     language: Optional[str]
     progress: float
+    pipeline_step: Optional[str] = None
     segment_count: int
     error: Optional[str]
 
@@ -58,6 +60,7 @@ class JobResultResponse(BaseModel):
     status: str
     segments: list[SegmentResponse]
     summary: Optional[dict] = None
+    embeddings: Optional[list[Optional[list[float]]]] = None
 
 
 def _job_to_response(job: TranscriptionJob) -> JobResponse:
@@ -69,6 +72,7 @@ def _job_to_response(job: TranscriptionJob) -> JobResponse:
         model_size=job.model_size,
         language=job.language,
         progress=job.progress,
+        pipeline_step=job.pipeline_step,
         segment_count=len(job.segments),
         error=job.error,
     )
@@ -146,7 +150,134 @@ async def get_job_result(job_id: str):
             for s in job.segments
         ],
         summary=job.summary,
+        embeddings=job.embeddings if job.embeddings else None,
     )
+
+
+ALLOWED_AUDIO_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".mp4", ".mkv"}
+
+
+@router.post("/{job_id}/post-process", response_model=JobResponse)
+async def post_process_job(
+    job_id: str,
+    audio_path: Optional[str] = Query(None),
+    num_speakers: Optional[int] = Query(None),
+):
+    """Trigger post-processing on a completed streaming job.
+
+    Runs: ITN → Punctuation → Diarization (if audio_path provided)
+    Transitions: COMPLETED → POST_PROCESSING → READY
+    """
+    manager = get_manager()
+    job = manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status not in (JobStatus.COMPLETED, JobStatus.READY):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Job must be COMPLETED or READY, current status: {job.status.value}",
+        )
+    # Reset to COMPLETED so the pipeline can run
+    job.status = JobStatus.COMPLETED
+
+    # Validate and set audio_path for diarization
+    if audio_path:
+        import os
+        resolved = os.path.realpath(audio_path)
+        if not os.path.isfile(resolved):
+            raise HTTPException(status_code=400, detail="Audio file not found")
+        ext = os.path.splitext(resolved)[1].lower()
+        if ext not in ALLOWED_AUDIO_EXTENSIONS:
+            raise HTTPException(status_code=400, detail="Invalid audio file type")
+        job.audio_path = resolved
+
+    config = PipelineConfig()
+    if num_speakers is not None:
+        config.num_speakers = num_speakers
+    pipeline = PostProcessingPipeline(config=config)
+    try:
+        await pipeline.run(job)  # COMPLETED → POST_PROCESSING → READY
+    except Exception as e:
+        # Reset job status so it can be retried
+        job.status = JobStatus.COMPLETED
+        raise HTTPException(status_code=500, detail=f"Post-processing failed: {str(e)}")
+    finally:
+        await pipeline.close()
+
+    return _job_to_response(job)
+
+
+class ReprocessRequest(BaseModel):
+    segments: list[SegmentResponse]
+    audio_path: Optional[str] = None
+    engine: str = "whisper"
+    language: Optional[str] = None
+    num_speakers: Optional[int] = None
+
+
+class ReprocessStartResponse(BaseModel):
+    job_id: str
+
+
+@router.post("/reprocess", response_model=ReprocessStartResponse)
+async def reprocess_segments(req: ReprocessRequest):
+    """Run post-processing pipeline on existing segments.
+
+    注册一个临时 job 并在后台执行流水线，立即返回 job_id。
+    前端轮询 GET /jobs/{id} 获取 pipeline_step 进度，
+    完成（status=ready）后经 GET /jobs/{id}/result 取回结果。
+    """
+    import asyncio
+    import logging
+    import os
+    from asr_service.models.job import Segment
+
+    logger = logging.getLogger(__name__)
+    manager = get_manager()
+
+    # Validate audio path if provided
+    audio_path = None
+    if req.audio_path:
+        resolved = os.path.realpath(req.audio_path)
+        if os.path.isfile(resolved):
+            ext = os.path.splitext(resolved)[1].lower()
+            if ext in ALLOWED_AUDIO_EXTENSIONS:
+                audio_path = resolved
+
+    # Register job with manager so status/result endpoints can find it
+    job = manager.create_job(engine=req.engine, language=req.language or "zh")
+    job.status = JobStatus.COMPLETED
+    job.audio_path = audio_path
+    job.segments = [
+        Segment(
+            start=s.start,
+            end=s.end,
+            text=s.text,
+            speaker=s.speaker,
+            confidence=s.confidence,
+        )
+        for s in req.segments
+    ]
+
+    config = PipelineConfig()
+    if req.num_speakers is not None:
+        config.num_speakers = req.num_speakers
+    pipeline = PostProcessingPipeline(config=config)
+
+    async def _run():
+        try:
+            await pipeline.run(job)
+        except Exception as e:
+            logger.warning("Reprocess pipeline failed: %s", e)
+            # 保留已处理到的 segments，标记 READY 让前端取回并提示错误
+            job.error = f"Post-processing failed: {e}"
+            job.pipeline_step = None
+            job.status = JobStatus.READY
+        finally:
+            await pipeline.close()
+
+    asyncio.create_task(_run())
+    return ReprocessStartResponse(job_id=job.id)
 
 
 @router.put("/{job_id}/pause", response_model=JobResponse)

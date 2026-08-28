@@ -1,124 +1,266 @@
 """Post-processing pipeline for completed transcriptions.
 
-Orchestrates: ITN → Punctuation → Diarization → Summary generation.
+Orchestrates: Hallucination Detection → ITN → Filler Filter → LLM Correction
+→ Segmentation → Punctuation → Diarization → Embedding.
+Summary generation is handled by the frontend via llmClient.ts (Map-Reduce).
 Auto-triggers when a job transitions to COMPLETED status.
 """
 
-import json
+import asyncio
+import inspect
 import logging
+from dataclasses import dataclass, field
 from typing import Optional
 
 from asr_service.models.job import TranscriptionJob, JobStatus, Segment
-from asr_service.services.ollama_client import OllamaClient
-from asr_service.services.summary_templates import (
-    get_summary_prompt,
-    format_transcript,
-)
 from asr_service.processors.factory import create_pipeline
+from asr_service.processors.diarization.factory import create_embedding_extractor
 
 logger = logging.getLogger(__name__)
+
+# Module-level LLM client reference, set by main.py
+_llm_client = None
+
+# Module-level pipeline toggle config, set by /config endpoint
+_pipeline_toggles: dict = {}
+
+
+def set_llm_client(client):
+    global _llm_client
+    _llm_client = client
+
+
+def set_pipeline_config(toggles: dict):
+    """Store pipeline toggle settings from frontend."""
+    global _pipeline_toggles
+    _pipeline_toggles = toggles
+    logger.info("Pipeline config updated: %s", toggles)
+
+
+@dataclass
+class PipelineConfig:
+    """Configuration for which pipeline steps to enable."""
+    enable_hallucination_detection: bool = True
+    enable_itn: bool = True
+    enable_filler_filter: bool = True
+    enable_segmentation: bool = True
+    enable_punctuation: bool = True
+    enable_diarization: bool = True
+    enable_embedding: bool = True
+    enable_llm_correction: bool = True
+    segmentation_strategy: str = "hybrid"  # time/semantic/hybrid
+    num_speakers: Optional[int] = None
 
 
 class PostProcessingPipeline:
     """Orchestrates post-processing steps after transcription completes."""
 
-    def __init__(self, ollama_host: Optional[str] = None):
-        self._ollama_client = OllamaClient(ollama_host) if ollama_host else OllamaClient()
+    def __init__(self, config: Optional[PipelineConfig] = None) -> None:
+        if config is not None:
+            self._config = config
+        elif _pipeline_toggles:
+            # Build config from frontend toggle settings
+            self._config = PipelineConfig(**{
+                k: v for k, v in _pipeline_toggles.items()
+                if hasattr(PipelineConfig, k)
+            })
+        else:
+            self._config = PipelineConfig()
+
+    # Engines that already produce punctuated output — skip CT-Transformer
+    PUNCTUATED_ENGINES = {"qwen3", "whisper"}
 
     async def run(self, job: TranscriptionJob) -> None:
         """Run the full post-processing pipeline on a completed job.
 
-        Steps: ITN → Punctuation → Diarization → Summary
+        Steps: Hallucination Detection → ITN → Filler Filter → LLM Correction
+        → Segmentation → Punctuation → Diarization → Embedding.
         Each step is fault-tolerant — failure skips to next step.
+        Summary generation is handled by the frontend (Map-Reduce).
         """
         if job.status != JobStatus.COMPLETED:
             return
+
+        # Release GPU memory from ASR engine before post-processing
+        self._release_gpu_memory()
 
         job.status = JobStatus.POST_PROCESSING
         language = job.language or "zh"
         segments = job.segments
 
-        # Step 1: ITN (Inverse Text Normalization)
-        try:
-            segments = await self._run_itn(segments, language)
-        except Exception as e:
-            logger.warning("ITN step failed: %s", e)
+        # Create pipeline ONCE and reuse across all steps
+        pipeline = create_pipeline(
+            language,
+            segmentation_strategy=self._config.segmentation_strategy,
+        )
 
-        # Step 2: Punctuation restoration
-        try:
-            segments = await self._run_punctuation(segments, language)
-        except Exception as e:
-            logger.warning("Punctuation step failed: %s", e)
+        # Step 1: Hallucination detection (remove ASR artifacts)
+        if self._config.enable_hallucination_detection:
+            job.pipeline_step = "hallucination"
+            try:
+                segments = pipeline.hallucination_detector.detect(segments, language)
+            except Exception as e:
+                logger.warning("Hallucination detection step failed: %s", e)
 
-        # Step 3: Speaker diarization
-        try:
-            segments = await self._run_diarization(job.audio_path, segments, language)
-        except Exception as e:
-            logger.warning("Diarization step failed: %s", e)
+        # Step 2: ITN (Inverse Text Normalization)
+        if self._config.enable_itn and pipeline.itn is not None:
+            job.pipeline_step = "itn"
+            try:
+                segments = await pipeline.itn.normalize(segments, language)
+            except Exception as e:
+                logger.warning("ITN step failed: %s", e)
+
+        # Step 3: Filler word filtering
+        if self._config.enable_filler_filter:
+            job.pipeline_step = "filler"
+            try:
+                segments = await pipeline.filler_filter.filter(segments, language)
+            except Exception as e:
+                logger.warning("Filler filter step failed: %s", e)
+
+        # Load audio ONCE for all audio-based steps (diarization, forced
+        # alignment, embedding) — previously each step re-read the full file
+        audio = None
+        if job.audio_path and (
+            self._config.enable_diarization or self._config.enable_embedding
+        ):
+            audio = await self._load_audio(job.audio_path)
+
+        # Kick off diarization inference in the background: it only needs
+        # audio, so it can overlap with the text-only steps below (the LLM
+        # correction network wait in particular)
+        diarization_task = None
+        if self._config.enable_diarization and job.audio_path:
+            precompute = getattr(pipeline.diarizer, "precompute", None)
+            if inspect.iscoroutinefunction(precompute):
+                diarization_task = asyncio.create_task(precompute(
+                    job.audio_path, audio=audio,
+                    num_speakers=self._config.num_speakers,
+                ))
+
+        # Step 4: LLM-based ASR error correction
+        if self._config.enable_llm_correction and _llm_client is not None:
+            job.pipeline_step = "llm_correction"
+            try:
+                from asr_service.processors.llm_correction import LLMCorrector
+                corrector = LLMCorrector(_llm_client)
+                segments = await corrector.correct(segments)
+            except Exception as e:
+                logger.warning("LLM correction step failed: %s", e)
+
+        # Step 5: Semantic segmentation (paragraph boundaries)
+        if self._config.enable_segmentation:
+            job.pipeline_step = "segmentation"
+            try:
+                segments = pipeline.segmenter.process(segments)
+            except Exception as e:
+                logger.warning("Segmentation step failed: %s", e)
+
+        # Step 6: Punctuation restoration (skip for engines that already produce punctuation)
+        if self._config.enable_punctuation and job.engine not in self.PUNCTUATED_ENGINES:
+            job.pipeline_step = "punctuation"
+            try:
+                if pipeline.punctuator is not None:
+                    segments = await pipeline.punctuator.restore(segments)
+            except Exception as e:
+                logger.warning("Punctuation step failed: %s", e)
+        elif job.engine in self.PUNCTUATED_ENGINES:
+            logger.info("Skipping punctuation for engine '%s' (already punctuated)", job.engine)
+
+        # Step 7: Speaker diarization (inference may already be running
+        # in the background — wait for it, then assign speakers)
+        if self._config.enable_diarization and job.audio_path:
+            job.pipeline_step = "diarizing"
+            try:
+                if diarization_task is not None:
+                    await diarization_task
+                segments = await pipeline.diarizer.process(
+                    job.audio_path, segments,
+                    num_speakers=self._config.num_speakers,
+                    audio=audio,
+                )
+            except TypeError:
+                # Fallback diarizers may not accept the audio kwarg
+                try:
+                    segments = await pipeline.diarizer.process(
+                        job.audio_path, segments,
+                        num_speakers=self._config.num_speakers,
+                    )
+                except Exception as e:
+                    logger.warning("Diarization step failed: %s", e)
+            except Exception as e:
+                logger.warning("Diarization step failed: %s", e)
+
+        # Step 8: Extract speaker embeddings for voiceprint matching
+        # Prefer pyannote: reuses per-speaker centroids computed during
+        # diarization (free), else its built-in wespeaker embedding model
+        if self._config.enable_embedding and job.audio_path:
+            job.pipeline_step = "embedding"
+            job.embeddings = []
+            try:
+                if hasattr(pipeline.diarizer, 'extract_embeddings'):
+                    job.embeddings = await pipeline.diarizer.extract_embeddings(
+                        job.audio_path, segments, audio=audio,
+                    )
+                    has_valid = any(e is not None for e in job.embeddings)
+                    if has_valid:
+                        logger.info("Embeddings extracted via pyannote")
+            except Exception as e:
+                logger.warning("pyannote embedding extraction failed: %s", e)
+
+            # Fallback to ECAPA-TDNN if pyannote embeddings unavailable
+            if not job.embeddings or not any(e is not None for e in job.embeddings):
+                try:
+                    extractor = create_embedding_extractor()
+                    job.embeddings = await extractor.extract_embeddings(
+                        job.audio_path, segments, audio=audio,
+                    )
+                except Exception as e:
+                    logger.warning("ECAPA-TDNN embedding extraction failed: %s", e)
+                    job.embeddings = []
+        else:
+            job.embeddings = []
 
         job.segments = segments
-
-        # Step 4: Summary generation
-        try:
-            await self._run_summary(job)
-        except Exception as e:
-            logger.warning("Summary step failed: %s", e)
-
+        job.pipeline_step = None
         job.status = JobStatus.READY
 
-    async def _run_itn(
-        self, segments: list[Segment], language: str
-    ) -> list[Segment]:
-        """Apply Inverse Text Normalization."""
-        pipeline = create_pipeline(language)
-        if pipeline.itn is None:
-            return segments
-        return await pipeline.itn.normalize(segments, language)
+    @staticmethod
+    async def _load_audio(audio_path: str):
+        """Load audio as (mono float32 samples, sample_rate), or None.
 
-    async def _run_punctuation(
-        self, segments: list[Segment], language: str
-    ) -> list[Segment]:
-        """Apply punctuation restoration."""
-        pipeline = create_pipeline(language)
-        if pipeline.punctuator is None:
-            return segments
-        return await pipeline.punctuator.restore(segments)
-
-    async def _run_diarization(
-        self, audio_path: Optional[str], segments: list[Segment], language: str
-    ) -> list[Segment]:
-        """Apply speaker diarization."""
-        if not audio_path:
-            return segments
-        pipeline = create_pipeline(language)
-        return await pipeline.diarizer.process(audio_path, segments)
-
-    async def _run_summary(self, job: TranscriptionJob) -> None:
-        """Generate meeting summary using Ollama LLM."""
-        available = await self._ollama_client.is_available()
-        if not available:
-            logger.info("Ollama not available, skipping summary")
-            return
-
-        language = job.language or "zh"
-        transcript = format_transcript(job.segments)
-        if not transcript.strip():
-            return
-
-        system_prompt, user_prompt = get_summary_prompt(transcript, language)
-        response = await self._ollama_client.generate(
-            prompt=user_prompt,
-            system=system_prompt,
+        Falls back to ffmpeg conversion for formats soundfile cannot read
+        (e.g. mp4/m4a passed to the /post-process endpoint).
+        """
+        from asr_service.processors.diarization.pyannote_diarizer import (
+            _read_mono_audio,
         )
 
         try:
-            # Try to parse JSON from response
-            summary = json.loads(response)
-            job.summary = summary
-        except json.JSONDecodeError:
-            # Store raw text if not valid JSON
-            job.summary = {"raw": response}
+            return await asyncio.to_thread(_read_mono_audio, audio_path)
+        except Exception:
+            pass
+
+        try:
+            from asr_service.processors.audio_preprocessor import preprocess_audio
+
+            wav_path = await preprocess_audio(audio_path)
+            return await asyncio.to_thread(_read_mono_audio, wav_path)
+        except Exception as e:
+            logger.warning("Audio loading failed for %s: %s", audio_path, e)
+            return None
+
+    @staticmethod
+    def _release_gpu_memory() -> None:
+        """Release GPU memory from previous ASR engine before post-processing."""
+        try:
+            import gc
+            gc.collect()
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
 
     async def close(self) -> None:
-        """Clean up resources."""
-        await self._ollama_client.close()
+        """Clean up resources (no-op, kept for API compatibility)."""
