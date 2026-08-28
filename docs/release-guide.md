@@ -121,6 +121,8 @@ gh release create v0.1.0 \
   --notes-file docs/releases/v0.1.0.md
 ```
 
+> `.github/workflows/release.yml` 已改为**仅手动触发**且不自动发布：CI 上 tauri-action 打出的包不含 Python 运行时，装上无法启动。推 tag 不会再自动建 Release。
+
 Release notes 模板见 `docs/releases/`。写清楚：安装包内容与体积、GPU 组件自动安装、显卡驱动要求（≥570）、SmartScreen 提示、SHA256。
 
 ## 6. 路线图
