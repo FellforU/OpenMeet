@@ -26,7 +26,7 @@
 
 安装模式为 **当前用户**（`%LOCALAPPDATA%\OpenMeet`），不需要管理员权限——这也是 pip 能在安装目录里后装 CUDA 的前提。
 
-**模型不在安装包里**：应用内从魔搭下载，或使用离线模型包解压到缓存目录。
+**模型不在安装包里**：应用内从魔搭（ModelScope）国内源下载。
 
 ## 2. 运行时布局是怎么被识别的
 
@@ -46,8 +46,8 @@
 前置条件（构建机，仅需一次）：
 
 - Node 20+、Rust stable、Visual Studio Build Tools（C++ 桌面开发）
-- 本地 wheel 缓存（可选但强烈建议）：离线整合包的 `env/wheels/`，脚本会优先从这里离线安装，2 分钟装完；没有则走阿里云镜像
-- `ffmpeg.exe`（默认取离线整合包 `env/ffmpeg/ffmpeg.exe`，可用 `-FfmpegExe` 指定）
+- 本地 wheel 缓存（可选但强烈建议）：用 `pip download -r asr_service/requirements.txt -d <dir>` 预下载一份，通过 `-WheelsDir` 指定，脚本会优先从这里离线安装，2 分钟装完；没有则走阿里云镜像
+- `ffmpeg.exe`（静态构建版即可，用 `-FfmpegExe` 指定路径）
 - Tauri 首次打 NSIS 会从 GitHub 下载 NSIS 工具链，需要能访问 GitHub
 
 ```powershell
