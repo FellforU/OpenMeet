@@ -271,15 +271,16 @@ Windows 安装包由 `scripts/build_release.ps1` 生成：组装嵌入式 Python
 - [x] 后处理流水线并发优化与进度可视化
 - [x] 全局转录搜索
 - [x] Windows 安装包内置 Python 运行时（免环境配置，GPU 组件按需自动安装）
-- [ ] faster-whisper 增加 large-v3-turbo 档
-- [ ] 中文 ASR 引擎评估 FireRedASR2（公开中文 SOTA）
-- [ ] sherpa-onnx Rust 轻量模式（免 Python 依赖的即装即用）
-- [ ] 系统音频捕获完善（WASAPI / CoreAudio 回环）
+- [ ] macOS / Linux 安装包
+- [ ] 中文识别再上一个台阶：方言与口音场景
+- [ ] 转录提速：新增更快的高精度档位
+- [ ] 轻量模式：免 Python 环境，装完即用
+- [ ] 系统声音捕获完善（线上会议直接录）
 - [ ] 会议模板（站会 / 评审 / 头脑风暴）
 - [ ] 多语言实时翻译
-- [ ] Windows 代码签名
+- [ ] Windows 代码签名（消除安装时的安全警告）
 
-> 更多技术升级调研结论见 [docs/plans/2026-08-14-tech-upgrade-todo.md](docs/plans/2026-08-14-tech-upgrade-todo.md)
+> 每一项背后的模型选型、评测数据和取舍理由，见 [技术选型复查（2026-08）](docs/plans/2026-08-14-tech-upgrade-todo.md)
 
 ## 🤝 贡献
 
