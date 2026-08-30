@@ -291,6 +291,10 @@ Windows 安装包由 `scripts/build_release.ps1` 生成：组装嵌入式 Python
 3. 提交更改并推送
 4. 创建 Pull Request
 
+## 🔗 友情链接
+
+- [LINUX DO](https://linux.do) — 新的理想型社区。本项目在此分享交流，感谢社区佬友的反馈与建议。
+
 ## 💬 联系作者
 
 觉得项目有用的话，点个 ⭐ Star 是对我最大的鼓励！
