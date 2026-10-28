@@ -212,15 +212,20 @@ export function SummaryPanel({
   const pipelineStep = useTranscriptionStore((s) => s.job.pipelineStep);
 
   const [editText, setEditText] = useState("");
+  // Milkdown only reads defaultValue on mount, so the editor waits until this is filled
+  const [editInitialText, setEditInitialText] = useState<string | null>(null);
 
   // 进入编辑模式时初始化编辑内容
   useEffect(() => {
     if (editing && summary) {
-      setEditText(
+      const md =
         summary.editedMarkdown ??
-          summary.rawMarkdown ??
-          formatSummaryToMarkdown(summary)
-      );
+        summary.rawMarkdown ??
+        formatSummaryToMarkdown(summary);
+      setEditText(md);
+      setEditInitialText(md);
+    } else {
+      setEditInitialText(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
@@ -301,10 +306,12 @@ export function SummaryPanel({
             </Button>
           </div>
         </div>
-        <MilkdownEditor
-          defaultValue={editText}
-          onChange={(md) => setEditText(md)}
-        />
+        {editInitialText !== null && (
+          <MilkdownEditor
+            defaultValue={editInitialText}
+            onChange={(md) => setEditText(md)}
+          />
+        )}
       </div>
     );
   }

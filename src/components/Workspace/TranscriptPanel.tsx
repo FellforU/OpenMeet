@@ -47,7 +47,8 @@ export function TranscriptPanel({
 
   const isRecording = useRecordingStore((s) => s.status === "recording");
 
-  const [editInitialText, setEditInitialText] = useState("");
+  // Milkdown only reads defaultValue on mount, so the editor waits until this is filled
+  const [editInitialText, setEditInitialText] = useState<string | null>(null);
   const editTextRef = useRef("");
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -130,6 +131,8 @@ export function TranscriptPanel({
       const md = segmentsToMarkdown(segments);
       editTextRef.current = md;
       setEditInitialText(md);
+    } else {
+      setEditInitialText(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
@@ -216,10 +219,12 @@ export function TranscriptPanel({
           </div>
         </div>
         <div className="min-h-0 flex-1">
-          <MilkdownEditor
-            defaultValue={editInitialText}
-            onChange={(md) => { editTextRef.current = md; }}
-          />
+          {editInitialText !== null && (
+            <MilkdownEditor
+              defaultValue={editInitialText}
+              onChange={(md) => { editTextRef.current = md; }}
+            />
+          )}
         </div>
       </div>
     );
