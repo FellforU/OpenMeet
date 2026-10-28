@@ -26,7 +26,18 @@ async fn http_fetch(
     headers: Option<HashMap<String, String>>,
     body: Option<String>,
 ) -> Result<HttpFetchResponse, String> {
-    let client = reqwest::Client::new();
+    // Shared client; read_timeout is an idle timeout so slow non-streaming LLM calls still fit
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    let client = CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(15))
+            .read_timeout(std::time::Duration::from_secs(600))
+            .build()
+            .unwrap_or_default()
+    });
+    // Strip query string from logs (may carry API keys)
+    let log_url = url.split('?').next().unwrap_or(&url).to_string();
+    let started = std::time::Instant::now();
     let mut builder = match method.to_uppercase().as_str() {
         "GET" => client.get(&url),
         "POST" => client.post(&url),
@@ -45,9 +56,29 @@ async fn http_fetch(
         builder = builder.body(b);
     }
 
-    let resp = builder.send().await.map_err(|e| e.to_string())?;
-    let status = resp.status().as_u16();
-    let resp_body = resp.text().await.map_err(|e| e.to_string())?;
+    let result = async {
+        let resp = builder.send().await?;
+        let status = resp.status().as_u16();
+        let resp_body = resp.text().await?;
+        Ok::<_, reqwest::Error>((status, resp_body))
+    }
+    .await;
+    let elapsed = started.elapsed().as_secs_f32();
+
+    let (status, resp_body) = match result {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("[http_fetch] {} {} failed after {:.1}s: {:?}", method, log_url, elapsed, e);
+            return Err(e.to_string());
+        }
+    };
+    // Only log slow or failed requests; ASR job polling would otherwise flood the console
+    if status >= 400 {
+        let snippet: String = resp_body.chars().take(500).collect();
+        eprintln!("[http_fetch] {} {} -> HTTP {} in {:.1}s: {}", method, log_url, status, elapsed, snippet);
+    } else if elapsed >= 5.0 {
+        eprintln!("[http_fetch] {} {} -> HTTP {} in {:.1}s", method, log_url, status, elapsed);
+    }
 
     Ok(HttpFetchResponse {
         status,

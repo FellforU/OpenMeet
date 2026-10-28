@@ -31,15 +31,38 @@ const PROVIDER_ENDPOINTS: Record<string, { url: string; isOllama?: boolean }> = 
   volcengine: { url: "https://ark.cn-beijing.volces.com/api/v3/chat/completions" },
 };
 
+// Resolve provider and model from compound key (new) or fallback to old provider-based logic
+function resolveActiveProvider(): { providerKey: string; modelOverride?: string } {
+  const { general } = useSettingsStore.getState();
+  const modelRef = general.defaultLLMModel;
+  if (modelRef && modelRef.includes("/")) {
+    const parsed = parseModelRef(modelRef);
+    return { providerKey: parsed.provider, modelOverride: parsed.model };
+  }
+  return { providerKey: general.defaultLLMProvider };
+}
+
+/** Whether the active LLM is a local Ollama model (small context window by default). */
+function isLocalLLM(): boolean {
+  return PROVIDER_ENDPOINTS[resolveActiveProvider().providerKey]?.isOllama === true;
+}
+
 async function callOllama(
   host: string,
   model: string,
-  prompt: string
+  prompt: string,
+  numCtx?: number
 ): Promise<string> {
+  // Ollama silently truncates prompts beyond num_ctx (default is only a few K tokens)
   const resp = await tauriFetch(`${host}/api/generate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model, prompt, stream: false }),
+    body: JSON.stringify({
+      model,
+      prompt,
+      stream: false,
+      ...(numCtx ? { options: { num_ctx: numCtx } } : {}),
+    }),
   });
   if (resp.status !== 200) {
     throw new Error(`Ollama error: HTTP ${resp.status}`);
@@ -66,34 +89,66 @@ async function callOpenAICompatible(
       messages: [{ role: "user", content: prompt }],
       max_tokens: maxTokens,
       temperature: 0.3,
+      // Stream so bytes keep flowing: gateways drop idle non-streaming requests after ~60s,
+      // which thinking models easily exceed. tauriFetch still buffers the full body.
+      stream: true,
     }),
   });
   if (resp.status !== 200) {
-    throw new Error(`LLM API error: HTTP ${resp.status}`);
+    throw new LLMHttpError(resp.status, resp.body);
   }
-  const data = JSON.parse(resp.body);
-  return data.choices[0].message.content;
+  return parseCompletionBody(resp.body);
+}
+
+/** Non-200 from an LLM API, carrying the provider's own error message. */
+class LLMHttpError extends Error {
+  constructor(
+    public status: number,
+    body: string
+  ) {
+    let detail = "";
+    try {
+      const err = JSON.parse(body).error;
+      detail = err?.message ?? (typeof err === "string" ? err : "");
+    } catch {
+      detail = body.slice(0, 200);
+    }
+    super(`LLM API error: HTTP ${status}${detail ? ` - ${detail}` : ""}`);
+  }
+}
+
+/** Collect content from an SSE stream body; falls back to a plain JSON completion. */
+function parseCompletionBody(body: string): string {
+  if (body.trimStart().startsWith("{")) {
+    const data = JSON.parse(body);
+    return data.choices?.[0]?.message?.content ?? "";
+  }
+  let content = "";
+  for (const line of body.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("data:")) continue;
+    const payload = trimmed.slice(5).trim();
+    if (payload === "[DONE]") break;
+    try {
+      const obj = JSON.parse(payload);
+      if (obj.error) {
+        throw new Error(`LLM API error: ${obj.error.message ?? JSON.stringify(obj.error)}`);
+      }
+      content += obj.choices?.[0]?.delta?.content ?? "";
+    } catch (err) {
+      if (err instanceof Error && err.message.startsWith("LLM API error")) throw err;
+      // Skip malformed SSE lines
+    }
+  }
+  return content;
 }
 
 export async function generateText(
   prompt: string,
-  options?: { maxTokens?: number }
+  options?: { maxTokens?: number; numCtx?: number }
 ): Promise<LLMResponse> {
-  const { general, llmProviders } = useSettingsStore.getState();
-
-  // Resolve provider and model from compound key (new) or fallback to old provider-based logic
-  let providerKey: string;
-  let modelOverride: string | undefined;
-
-  const modelRef = general.defaultLLMModel;
-  if (modelRef && modelRef.includes("/")) {
-    const parsed = parseModelRef(modelRef);
-    providerKey = parsed.provider;
-    modelOverride = parsed.model;
-  } else {
-    providerKey = general.defaultLLMProvider;
-  }
-
+  const { llmProviders } = useSettingsStore.getState();
+  const { providerKey, modelOverride } = resolveActiveProvider();
   const config = llmProviders[providerKey];
 
   if (!config?.enabled) {
@@ -110,7 +165,7 @@ export async function generateText(
   if (endpoint.isOllama) {
     const host = config.host || "http://localhost:11434";
     const model = modelOverride || resolveModel(config, "LLM", "qwen2.5:7b");
-    text = await callOllama(host, model, prompt);
+    text = await callOllama(host, model, prompt, options?.numCtx);
   } else {
     const apiKey = config.apiKey;
     if (!apiKey) {
@@ -223,21 +278,8 @@ export async function* generateChatStream(
   systemPrompt: string,
   userPrompt: string
 ): AsyncGenerator<string> {
-  const { general, llmProviders } = useSettingsStore.getState();
-
-  // Resolve provider and model from compound key
-  let providerKey: string;
-  let modelOverride: string | undefined;
-
-  const modelRef = general.defaultLLMModel;
-  if (modelRef && modelRef.includes("/")) {
-    const parsed = parseModelRef(modelRef);
-    providerKey = parsed.provider;
-    modelOverride = parsed.model;
-  } else {
-    providerKey = general.defaultLLMProvider;
-  }
-
+  const { llmProviders } = useSettingsStore.getState();
+  const { providerKey, modelOverride } = resolveActiveProvider();
   const config = llmProviders[providerKey];
   if (!config?.enabled) {
     throw new Error(`LLM provider "${providerKey}" is not enabled`);
@@ -345,28 +387,39 @@ Reply with ONLY the short title, nothing else.`;
 
 // -- Map-Reduce summary helpers --
 
-const CHUNK_SIZE = 2500;
+// Local Ollama models run with a small context window; cloud models handle 128K+ tokens,
+// so most meetings fit in a single request.
+const LOCAL_CHUNK_SIZE = 2500;
+const CLOUD_CHUNK_SIZE = 60000;
+const OLLAMA_SUMMARY_NUM_CTX = 16384;
+const SUMMARY_MAX_TOKENS = 8000;
+const CHUNK_CONCURRENCY = 3;
+const CHUNK_RETRIES = 2;
+
+function summaryLLMOptions(): { maxTokens: number; numCtx: number } {
+  return { maxTokens: SUMMARY_MAX_TOKENS, numCtx: OLLAMA_SUMMARY_NUM_CTX };
+}
 
 /** Split transcript into chunks at sentence boundaries. */
-function splitTranscript(text: string): string[] {
-  if (text.length <= CHUNK_SIZE) return [text];
+function splitTranscript(text: string, chunkSize: number): string[] {
+  if (text.length <= chunkSize) return [text];
 
   const chunks: string[] = [];
   let remaining = text;
 
   while (remaining.length > 0) {
-    if (remaining.length <= CHUNK_SIZE) {
+    if (remaining.length <= chunkSize) {
       chunks.push(remaining);
       break;
     }
 
     // Find a sentence boundary near the chunk size limit
-    let splitIdx = CHUNK_SIZE;
+    let splitIdx = chunkSize;
     const sentenceEnders = ["。", "！", "？", ".", "!", "?", "\n"];
     let bestIdx = -1;
     for (const ender of sentenceEnders) {
-      const idx = remaining.lastIndexOf(ender, CHUNK_SIZE);
-      if (idx > CHUNK_SIZE * 0.5 && idx > bestIdx) {
+      const idx = remaining.lastIndexOf(ender, chunkSize);
+      if (idx > chunkSize * 0.5 && idx > bestIdx) {
         bestIdx = idx;
       }
     }
@@ -434,12 +487,49 @@ async function summarizeChunk(chunk: string, chunkIndex: number, totalChunks: nu
 转录片段：
 ${chunk}`;
 
-  const { text } = await generateText(prompt, { maxTokens: 3000 });
+  const { text } = await generateText(prompt, summaryLLMOptions());
   try {
     return JSON.parse(extractJson(text));
   } catch {
-    return { topics: [], conclusions: [], decisions: [], action_items: [], discussion: [], technical_details: [], next_steps: [], key_data: [], participants: [] };
+    // Usually a truncated response; throw so the caller retries this chunk
+    throw new Error(`chunk ${chunkIndex + 1}/${totalChunks}: invalid JSON from LLM`);
   }
+}
+
+const FINAL_SUMMARY_FORMAT = `仅返回JSON格式：
+{
+  "topic": "会议主题（一句话概括，10-20字）",
+  "conclusions": ["结论1", "结论2"],
+  "decisions": [{"decision": "决策内容", "made_by": "决策人", "reasoning": "理由"}],
+  "action_items": [{"assignee": "责任人", "task": "具体任务描述", "deadline": "截止时间或null", "priority": "high/medium/low", "status": "not_started/in_progress/completed"}],
+  "discussion": [{"topic": "子话题名称", "summary": "详细摘要", "participants": ["参与者"], "key_points": ["要点1"]}],
+  "technical_details": [{"category": "分类", "details": "技术细节描述"}],
+  "next_steps": ["下一步行动1"],
+  "key_data": ["关键数据1", "关键数据2"],
+  "participants": ["参与者1", "参与者2"]
+}`;
+
+/** Summarize a whole transcript in one request, producing the final summary format directly. */
+async function summarizeFull(transcript: string): Promise<Summary> {
+  const prompt = `你是一个专业的会议记录助手。请分析以下完整的会议转录，整理成一份完整的会议纪要。
+
+要求：
+1. 提取所有讨论的话题（不遗漏任何话题，包括闲聊、建议、经验分享）
+2. 提取所有决策，包含决策内容、决策人和理由
+3. 提取所有行动项（包括明确说的和隐含的），标注优先级和状态
+4. 结论按重要性排序
+5. 每个讨论要点的摘要应详细（50-150字），标注参与者和关键要点
+6. 提取技术细节、下一步行动，保留所有关键数据：金额、日期、数字、百分比、技术名词
+7. 识别参与讨论的人员名称或称呼
+8. 用中文输出
+
+${FINAL_SUMMARY_FORMAT}
+
+会议转录：
+${transcript}`;
+
+  const { text } = await generateText(prompt, summaryLLMOptions());
+  return parseFinalSummary(text);
 }
 
 /** Merge multiple chunk summaries into a final summary. */
@@ -457,24 +547,17 @@ async function mergeChunkSummaries(chunks: ChunkSummary[]): Promise<Summary> {
 6. 每个讨论要点的摘要应详细（50-150字），标注参与者和关键要点
 7. 讨论要点应覆盖会议中提到的所有话题，包括非正式讨论
 
-仅返回JSON格式：
-{
-  "topic": "会议主题（一句话概括，10-20字）",
-  "conclusions": ["结论1", "结论2"],
-  "decisions": [{"decision": "决策内容", "made_by": "决策人", "reasoning": "理由"}],
-  "action_items": [{"assignee": "责任人", "task": "具体任务描述", "deadline": "截止时间或null", "priority": "high/medium/low", "status": "not_started/in_progress/completed"}],
-  "discussion": [{"topic": "子话题名称", "summary": "详细摘要", "participants": ["参与者"], "key_points": ["要点1"]}],
-  "technical_details": [{"category": "分类", "details": "技术细节描述"}],
-  "next_steps": ["下一步行动1"],
-  "key_data": ["关键数据1", "关键数据2"],
-  "participants": ["参与者1", "参与者2"]
-}
+${FINAL_SUMMARY_FORMAT}
 
 分段总结数据：
 ${mergedData}`;
 
-  const { text } = await generateText(prompt, { maxTokens: 3000 });
+  const { text } = await generateText(prompt, summaryLLMOptions());
+  return parseFinalSummary(text);
+}
 
+/** Parse the final-format JSON response into a Summary (falls back to raw text). */
+function parseFinalSummary(text: string): Summary {
   let parsed: {
     topic?: string;
     conclusions?: string[];
@@ -623,24 +706,71 @@ ${mergedData}`;
   };
 }
 
+/** Run tasks with a concurrency cap; each slot settles independently. */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      try {
+        results[i] = { status: "fulfilled", value: await fn(items[i], i) };
+      } catch (reason) {
+        results[i] = { status: "rejected", reason };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+async function withRetry<R>(fn: () => Promise<R>, retries: number): Promise<R> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      // Client errors (bad key, arrears, invalid params) won't fix themselves; 429 is rate limiting
+      const permanent = err instanceof LLMHttpError && err.status >= 400 && err.status < 500 && err.status !== 429;
+      if (permanent || attempt >= retries) throw err;
+      console.warn(`[summary] attempt ${attempt + 1} failed, retrying:`, err);
+    }
+  }
+}
+
 export async function generateMeetingSummary(
   transcriptText: string
 ): Promise<Summary> {
-  const chunks = splitTranscript(transcriptText);
+  const chunkSize = isLocalLLM() ? LOCAL_CHUNK_SIZE : CLOUD_CHUNK_SIZE;
+  const chunks = splitTranscript(transcriptText, chunkSize);
 
   if (chunks.length === 1) {
-    // Short transcript: single-pass summary with enhanced prompt
-    const chunkResult = await summarizeChunk(chunks[0], 0, 1);
-    return mergeChunkSummaries([chunkResult]);
+    // Fits in one request: summarize directly into the final format
+    return withRetry(() => summarizeFull(chunks[0]), CHUNK_RETRIES);
   }
 
-  // Map phase: summarize each chunk independently
-  const chunkSummaries = await Promise.all(
-    chunks.map((chunk, i) => summarizeChunk(chunk, i, chunks.length))
+  // Map phase: summarize chunks with limited concurrency, retrying each on failure
+  const settled = await mapWithConcurrency(chunks, CHUNK_CONCURRENCY, (chunk, i) =>
+    withRetry(() => summarizeChunk(chunk, i, chunks.length), CHUNK_RETRIES)
   );
+  const chunkSummaries: ChunkSummary[] = [];
+  settled.forEach((r, i) => {
+    if (r.status === "fulfilled") {
+      chunkSummaries.push(r.value);
+    } else {
+      console.error(`[summary] chunk ${i + 1}/${chunks.length} dropped:`, r.reason);
+    }
+  });
+  if (chunkSummaries.length === 0) {
+    const first = settled.find((r): r is PromiseRejectedResult => r.status === "rejected");
+    throw first?.reason instanceof Error ? first.reason : new Error(String(first?.reason));
+  }
 
-  // Reduce phase: merge all chunk summaries
-  return mergeChunkSummaries(chunkSummaries);
+  // Reduce phase: merge whatever chunks succeeded
+  return withRetry(() => mergeChunkSummaries(chunkSummaries), CHUNK_RETRIES);
 }
 
 // -- ASR error correction via LLM --
